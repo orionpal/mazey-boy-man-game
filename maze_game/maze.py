@@ -75,3 +75,15 @@ def farthest_reachable_cell(
                 queue.append((nx, ny))
 
     return farthest
+
+def random_cell(
+        grid: list[list[int]]
+) -> tuple[int, int]:
+    """
+    Literally just get a random cell
+    """
+    
+    cols = len(grid[0])
+    rows = len(grid)
+
+    return (random.randrange(cols), random.randrange(rows))

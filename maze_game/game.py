@@ -11,7 +11,7 @@ timer.  It delegates maze generation to `maze.py` and movement to
 import time
 
 from maze_game.constants import COLS, ROWS
-from maze_game.maze import generate_maze, farthest_reachable_cell
+from maze_game.maze import generate_maze, farthest_reachable_cell, random_cell
 from maze_game.player import slide
 
 # The player always starts at the top-left passage cell.
@@ -32,7 +32,7 @@ class Game:
         """Generate a fresh maze and reset round state."""
         self.grid      = generate_maze(COLS, ROWS)
         self.player    = START_POS
-        self.goal      = farthest_reachable_cell(self.grid, START_POS)
+        self.goal      = random_cell(self.grid)
         self.elapsed   = 0.0
         self.finished  = False
         self._start    = time.time()

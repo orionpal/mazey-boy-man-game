@@ -6,8 +6,8 @@ customise the look and feel without touching game logic.
 """
 
 # ── Grid dimensions (must be odd for the DFS maze carver) ────────────────
-COLS = 21
-ROWS = 21
+COLS = 13
+ROWS = 13
 
 # ── Display ───────────────────────────────────────────────────────────────
 CELL   = 28          # pixels per maze cell
