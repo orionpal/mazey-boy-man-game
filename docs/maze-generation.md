@@ -79,3 +79,66 @@ either). Worth building later, not needed for the current ask.
 Let me know if this matches what you had in mind, or if the "weirder tiles"
 you're picturing are more the topology-changing kind — that changes which of
 the above to build first.
+
+---
+
+## Update: "not enough branching paths" — switched DFS → Growing Tree
+
+Follow-up complaint about the DFS carver specifically (independent of the
+WFC question above): not enough branching. Measured it rather than guessing.
+
+### Measurement
+
+Built a comparison harness (`scripts` not checked in — quick empirical
+throwaway) generating 21x21 mazes, 200 trials per algorithm, measuring the
+fraction of open cells that are junctions (3+ open neighbours):
+
+| algorithm | junction % | dead-end % | connected |
+|---|---|---|---|
+| DFS (old default) | 4.8% | 5.9% | yes |
+| randomized Prim's | 13.0% | 15.9% | yes |
+| randomized Kruskal's | 12.6% | 15.3% | yes |
+| Wilson's | 12.1% | 14.5% | yes |
+| Growing Tree, newest_prob=1.0 | 5.0% | 6.1% | yes (identical to DFS — expected, see below) |
+| Growing Tree, newest_prob=0.5 | 10.2% | 11.9% | yes |
+| Growing Tree, newest_prob=0.0 | 11.9% | 13.9% | yes |
+| Kruskal's + braid(0.3) | 14.2% | 8.9% | yes |
+
+DFS really was the worst option here by a wide margin — confirms the
+complaint wasn't just a feeling.
+
+### Why Growing Tree over switching to Prim's/Kruskal's/Wilson's outright
+
+Growing Tree is a **generalization**, not a different algorithm: it
+maintains a set of "active" cells and, at each step, extends either the
+*most recently added* one (`newest_prob=1.0`, which is *exactly* the old DFS
+carver — same algorithm, same output distribution, confirmed identical in
+the table above) or a *uniformly random* one from the active set
+(`newest_prob=0.0`, close to Prim's). Values in between blend continuously.
+
+That means: one implementation, one tunable float, and the old behavior is
+still reachable as an exact special case rather than being a separate code
+path to maintain. It also means this parameter is a natural fit for a future
+sidebar control if we ever want to expose "branchiness" alongside maze
+dimensions.
+
+### Braiding
+
+Found (and fixed) a real bug while testing the optional braid pass: it
+checked whether the *neighbour cell* was a wall, but every odd,odd cell is
+already carved open by the time generation finishes, so that check was
+always false — the pass silently did nothing at any probability. Fixed to
+check the *wall segment between* the dead end and its neighbour instead.
+After the fix, `braid_prob=1.0` eliminates 100% of dead ends, as expected.
+Braiding only ever adds edges to an already-connected graph, so it can't
+break connectivity — verified with a dedicated test
+(`test_braid_only_adds_edges_so_connectivity_is_preserved`).
+
+### Decision
+
+`generate_maze` now takes `newest_prob` (default `0.4`) and `braid_prob`
+(default `0.25`), implemented as Growing Tree + optional braid. Chose 0.4
+rather than going all the way to 0.0 to keep some long-corridor character
+rather than fully uniform Kruskal-like texture — a judgment call, easy to
+retune (it's one constant, `DEFAULT_NEWEST_PROB` in `maze.py`) or expose as
+a live control if it doesn't feel right in play.

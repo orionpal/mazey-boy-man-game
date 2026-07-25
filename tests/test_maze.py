@@ -4,10 +4,11 @@ scalability (no reliance on Python's recursion limit).
 """
 
 import random
+import statistics
 
 import pytest
 
-from maze_game.maze import generate_maze, farthest_reachable_cell
+from maze_game.maze import generate_maze, farthest_reachable_cell, braid, _open_neighbour_count
 
 SIZES = [5, 9, 21, 51]
 
@@ -146,3 +147,113 @@ def test_farthest_reachable_cell_is_actually_the_farthest():
     expected_max = max(dist.values())
     goal = farthest_reachable_cell(grid, start)
     assert dist[goal] == expected_max
+
+
+# ── Growing Tree branching-density parameter ─────────────────────────────
+
+
+def _junction_fraction(grid):
+    open_cells = _open_cells(grid)
+    junctions = sum(1 for x, y in open_cells if _open_neighbour_count(grid, x, y) >= 3)
+    return junctions / len(open_cells)
+
+
+@pytest.mark.parametrize("newest_prob", [0.0, 0.4, 1.0])
+def test_generate_maze_stays_connected_across_newest_prob(newest_prob):
+    grid = generate_maze(21, 21, newest_prob=newest_prob, braid_prob=0.0)
+    open_cells = set(_open_cells(grid))
+    assert _reachable_from(grid, (1, 1)) == open_cells
+
+
+def test_lower_newest_prob_increases_branching():
+    """
+    newest_prob=1.0 is exactly the old DFS/recursive-backtracker behaviour
+    (long, low-branching corridors); lower values should measurably increase
+    junction density on average. Averaged over many trials to avoid flakiness
+    from any single maze's randomness.
+    """
+    random.seed(99)
+    trials = 40
+    high = [_junction_fraction(generate_maze(21, 21, newest_prob=1.0, braid_prob=0.0)) for _ in range(trials)]
+    low = [_junction_fraction(generate_maze(21, 21, newest_prob=0.0, braid_prob=0.0)) for _ in range(trials)]
+    assert statistics.mean(low) > statistics.mean(high) * 1.5
+
+
+def test_default_newest_prob_is_meaningfully_branchier_than_pure_dfs():
+    """
+    Regression guard for the actual fix here: the shipped default should not
+    quietly regress back toward the old ~5%-junction DFS feel.
+    """
+    random.seed(123)
+    trials = 40
+    default = [_junction_fraction(generate_maze(21, 21)) for _ in range(trials)]
+    pure_dfs = [_junction_fraction(generate_maze(21, 21, newest_prob=1.0, braid_prob=0.0)) for _ in range(trials)]
+    assert statistics.mean(default) > statistics.mean(pure_dfs) * 1.5
+
+
+# ── Braiding ──────────────────────────────────────────────────────────────
+
+
+def test_braid_reduces_dead_ends():
+    random.seed(5)
+    grid = generate_maze(21, 21, newest_prob=0.4, braid_prob=0.0)
+    open_cells = _open_cells(grid)
+    dead_ends_before = sum(1 for x, y in open_cells if _open_neighbour_count(grid, x, y) == 1)
+
+    braided = braid(grid, p=1.0)
+    dead_ends_after = sum(1 for x, y in open_cells if _open_neighbour_count(braided, x, y) == 1)
+
+    assert dead_ends_before > 0
+    assert dead_ends_after < dead_ends_before
+
+
+def test_braid_at_p_1_eliminates_all_dead_ends():
+    random.seed(5)
+    grid = generate_maze(21, 21, newest_prob=0.4, braid_prob=0.0)
+    braided = braid(grid, p=1.0)
+    open_cells = _open_cells(braided)
+    assert all(_open_neighbour_count(braided, x, y) != 1 for x, y in open_cells)
+
+
+def test_braid_only_adds_edges_so_connectivity_is_preserved():
+    random.seed(5)
+    grid = generate_maze(21, 21, newest_prob=0.4, braid_prob=0.0)
+    braided = braid(grid, p=1.0)
+    open_cells = set(_open_cells(braided))
+    assert _reachable_from(braided, (1, 1)) == open_cells
+
+
+def test_braid_does_not_mutate_input():
+    random.seed(5)
+    grid = generate_maze(21, 21, newest_prob=0.4, braid_prob=0.0)
+    before = [row[:] for row in grid]
+    braid(grid, p=1.0)
+    assert grid == before
+
+
+def test_braid_never_opens_the_even_even_wall_intersections():
+    """
+    Regression guard for the exact bug found while building this: braid()
+    originally checked whether the *neighbour cell* was a wall, which is
+    never true post-generation (every odd,odd cell is already carved), so
+    it silently did nothing. This checks the real invariant instead: the
+    even,even grid-intersection points must never be carved, in either the
+    base generator or after braiding -- carving one would open a true 2x2
+    block, which would break the "no open rooms/loops-outside-the-lattice"
+    structure the game's corridor rendering assumes.
+    """
+    random.seed(5)
+    grid = braid(generate_maze(21, 21, newest_prob=0.2, braid_prob=0.0), p=1.0)
+    for y in range(0, len(grid), 2):
+        for x in range(0, len(grid[0]), 2):
+            assert grid[y][x] == 1, f"even,even intersection ({x},{y}) was carved open"
+
+
+def test_generate_maze_with_braid_has_no_2x2_open_blocks():
+    random.seed(5)
+    grid = generate_maze(21, 21, newest_prob=0.3, braid_prob=1.0)
+    size = 21
+    for y in range(size - 1):
+        for x in range(size - 1):
+            block = (grid[y][x], grid[y][x + 1], grid[y + 1][x], grid[y + 1][x + 1])
+            assert block != (0, 0, 0, 0), f"open 2x2 block at ({x},{y})"
