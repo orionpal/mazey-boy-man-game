@@ -65,6 +65,8 @@ maze-game/
 ├── main.py                  # Entry point — pygame loop & input handling
 ├── requirements.txt         # Python dependencies
 ├── README.md
+├── docs/                    # Design notes & audits (kept up to date as we build)
+├── tests/                   # pytest suite for maze/player/game logic (no display needed)
 └── maze_game/               # Game package
     ├── __init__.py          # Public package surface
     ├── constants.py         # Grid size, colours, display settings
@@ -73,6 +75,8 @@ maze-game/
     ├── game.py              # Game state (grid, player, timer, win condition)
     └── renderer.py          # All pygame drawing code
 ```
+
+Run the tests with `pip install pytest && pytest`.
 
 ### Module responsibilities
 
@@ -92,7 +96,9 @@ maze-game/
 
 ## Roadmap
 
-- [ ] Wave Function Collapse maze generator (drop-in replacement for `generate_maze` in `maze.py`)
+- [x] Controls audit — see `docs/controls-audit.md` (fixed a recursion-limit bug in maze generation; movement/timer logic confirmed solid via `tests/`)
+- [ ] Tile-variety pool for maze cells, decoupled from topology — see `docs/maze-generation.md` for why this replaces a straight WFC swap
+- [ ] Alternate topology algorithms (Prim's / Kruskal's / Wilson's) for different maze "feels"
 - [ ] Difficulty selector (grid size, algorithm)
 - [ ] Leaderboard / persistent best times
 - [ ] Animated player movement

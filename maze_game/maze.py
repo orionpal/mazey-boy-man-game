@@ -20,7 +20,13 @@ def generate_maze(cols: int, rows: int) -> list[list[int]]:
     """
     Return a 2-D grid where 1 = wall and 0 = open passage.
 
-    Uses the recursive-backtracker (DFS) algorithm.
+    Uses the recursive-backtracker (DFS) algorithm, carved iteratively with
+    an explicit stack rather than Python function-call recursion. A
+    call-stack version hits RecursionError around ~100x100 (the default
+    sys.getrecursionlimit() of 1000 is exhausted by the carve depth on
+    grids that size or larger); an explicit stack scales to arbitrarily
+    large grids, bounded only by available memory.
+
     Both `cols` and `rows` must be odd integers >= 3.
     """
     if cols % 2 == 0 or rows % 2 == 0:
@@ -28,7 +34,11 @@ def generate_maze(cols: int, rows: int) -> list[list[int]]:
 
     grid = [[1] * cols for _ in range(rows)]
 
-    def carve(cx: int, cy: int) -> None:
+    # Carve starting from the top-left passage cell.
+    grid[1][1] = 0
+    stack = [(1, 1)]
+    while stack:
+        cx, cy = stack[-1]
         directions = [(0, -2), (0, 2), (-2, 0), (2, 0)]
         random.shuffle(directions)
         for dx, dy in directions:
@@ -37,11 +47,12 @@ def generate_maze(cols: int, rows: int) -> list[list[int]]:
                 # Remove the wall between current cell and neighbour.
                 grid[cy + dy // 2][cx + dx // 2] = 0
                 grid[ny][nx] = 0
-                carve(nx, ny)
+                stack.append((nx, ny))
+                break
+        else:
+            # No unvisited neighbour from here -- backtrack.
+            stack.pop()
 
-    # Carve starting from the top-left passage cell.
-    grid[1][1] = 0
-    carve(1, 1)
     return grid
 
 
