@@ -173,3 +173,37 @@ def farthest_reachable_cell(
                 queue.append((nx, ny))
 
     return farthest
+
+
+def shortest_path(
+    grid: list[list[int]], start: tuple[int, int], goal: tuple[int, int]
+) -> list[tuple[int, int]]:
+    """
+    BFS shortest path from `start` to `goal`, inclusive of both ends.
+    Used by the labyrinth progression mode to estimate a fair per-maze time
+    limit from the actual generated maze rather than a size-only guess.
+    """
+    cols, rows = len(grid[0]), len(grid)
+    prev: dict[tuple[int, int], tuple[int, int] | None] = {start: None}
+    queue: deque[tuple[int, int]] = deque([start])
+
+    while queue:
+        cx, cy = queue.popleft()
+        if (cx, cy) == goal:
+            break
+        for dx, dy in ((0, 1), (0, -1), (1, 0), (-1, 0)):
+            nx, ny = cx + dx, cy + dy
+            if (
+                0 <= nx < cols
+                and 0 <= ny < rows
+                and grid[ny][nx] == 0
+                and (nx, ny) not in prev
+            ):
+                prev[(nx, ny)] = (cx, cy)
+                queue.append((nx, ny))
+
+    path = [goal]
+    while prev[path[-1]] is not None:
+        path.append(prev[path[-1]])
+    path.reverse()
+    return path

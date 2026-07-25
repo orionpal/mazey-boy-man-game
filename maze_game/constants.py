@@ -24,6 +24,17 @@ FPS          = 60
 # History log
 MAX_HISTORY_SHOWN = 12      # how many past runs the right sidebar lists
 
+# ── Labyrinth progression mode ──────────────────────────────────────────────
+# See docs/progression.md for how these were chosen -- all first-guess
+# starting values, meant to be retuned after playtesting.
+LABYRINTH_TOTAL_MAZES = 100
+LABYRINTH_GROUP_SIZE  = 5     # mazes per group; a break+resume prompt follows each group
+# Dimensions ramp: MIN_DIMENSION at group 1, +DIMENSION_STEP per group after
+# that, capped at MAX_DIMENSION (reused from the free-play sidebar bounds
+# above, rather than inventing a separate ceiling).
+LABYRINTH_TIME_BASE      = 10.0   # seconds, flat per-maze buffer (orientation time)
+LABYRINTH_TIME_PER_TURN  = 2.0    # seconds budgeted per direction-change needed on the shortest path
+
 # ── Colours  (R, G, B) ────────────────────────────────────────────────────
 C_BG        = (15,  15,  25)
 C_WALL      = (40,  80, 140)
