@@ -32,7 +32,7 @@ LABYRINTH_GROUP_SIZE  = 5     # mazes per group; a break+resume prompt follows e
 # Dimensions ramp: MIN_DIMENSION at group 1, +DIMENSION_STEP per group after
 # that, capped at MAX_DIMENSION (reused from the free-play sidebar bounds
 # above, rather than inventing a separate ceiling).
-LABYRINTH_TIME_BASE      = 10.0   # seconds, flat per-maze buffer (orientation time)
+LABYRINTH_TIME_BASE      = 0.0    # seconds, flat per-maze buffer (orientation time)
 LABYRINTH_TIME_PER_TURN  = 2.0    # seconds budgeted per direction-change needed on the shortest path
 
 # ── Colours  (R, G, B) ────────────────────────────────────────────────────

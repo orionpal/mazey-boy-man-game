@@ -53,13 +53,18 @@ before picking the constants:
 counted" below. The key-press counts here are higher than the first
 version of this table.)
 
-With `LABYRINTH_TIME_BASE=10.0` and `LABYRINTH_TIME_PER_TURN=2.0`, that
-puts the *average* maze at roughly 22s (9x9) up to 83s (41x41) — 2 seconds
-per turn is a generous per-press budget (covers reading the junction and
+With `LABYRINTH_TIME_BASE=0.0` and `LABYRINTH_TIME_PER_TURN=2.0`, that puts
+the *average* maze at roughly 12s (9x9) up to 73s (41x41) — 2 seconds per
+turn is a generous per-press budget (covers reading the junction and
 reacting, not just the keypress itself), meant to be comfortably
 completable by a careful player while still creating real time pressure
-for a wandering one. Almost certainly the first thing worth retuning after
-playing it.
+for a wandering one.
+
+(`LABYRINTH_TIME_BASE` started at 10.0 -- a flat per-maze buffer for
+orientation time on top of the per-turn budget -- and was cut to 0.0 after
+playtesting felt too generous across the board. Since it's a flat additive
+term, removing it reduces every maze's limit by exactly 10s regardless of
+size.)
 
 ### Bug: forced stops at junctions weren't counted (found via playtesting)
 
