@@ -3,8 +3,9 @@
 The core loop beyond a single maze: get through 100 mazes. Gradually
 bigger, each with a time limit, in groups of 5 that stitch together
 seamlessly with a break-and-resume prompt between groups. Implemented in
-`maze_game/progression.py` (`LabyrinthRun`), playable via
-`progression_main.py`. Everything below is a **first guess to playtest**,
+`maze_game/progression.py` (`LabyrinthRun`), playable via `main.py` (this
+is now the default entry point — see the "Renamed" note at the bottom).
+Everything below is a **first guess to playtest**,
 not a balance pass — the constants live in `constants.py` under "Labyrinth
 progression mode" and are meant to move.
 
@@ -61,7 +62,7 @@ playing it.
 Within a group of 5, finishing a maze immediately starts the next one --
 no pause, matching "they stitch together seamlessly." After the 5th maze
 in a group, `on_break=True`: the timer stops advancing and nothing happens
-until `resume()` (SPACE in `progression_main.py`), at which point the next
+until `resume()` (SPACE in `main.py`), at which point the next
 maze generates at the new (possibly larger) size.
 
 ## Failure: full reset, not a retry
@@ -80,8 +81,17 @@ likely to need adjusting.
 - No persistent history/leaderboard for labyrinth runs (unlike free-play's
   `run_history.json`) — didn't want to lock in a record schema before the
   numbers above are even validated by playing it.
-- `progression_main.py` is a minimal, separate entry point rather than
-  integrated into `main.py`'s sidebar UI — free-play's sidebars
-  (dimension adjustment, history log) don't apply to a structured
-  progression run, and building a unified shell felt premature before
-  knowing whether this pacing is even fun. Worth merging once it is.
+- `main.py` is a minimal, separate entry point rather than integrated into
+  free-play's (`mvp_main.py`) sidebar UI — free-play's sidebars (dimension
+  adjustment, history log) don't apply to a structured progression run, and
+  building a unified shell felt premature before knowing whether this
+  pacing is even fun. Worth merging once it is.
+
+## Renamed: this is now the default `main.py`
+
+After a first playtest, this became the primary mode: what was `main.py`
+(single maze, adjustable size, no timer) is now `mvp_main.py`, and what was
+`progression_main.py` is now `main.py`. The playtest also surfaced that the
+maze counter (`Maze N/100`) and the "All 100 mazes complete!" win screen
+already existed in this file but went unnoticed — the actual issue was
+running the wrong entry point, not missing features.

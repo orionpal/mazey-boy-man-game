@@ -2,9 +2,12 @@
 
 A minimal, keyboard-driven maze game built with Python and pygame.
 
-A new maze is procedurally generated each round. Press an arrow key and your dot slides in that direction until it hits a wall or reaches a junction — then you choose again. Reach the red goal as fast as you can.
-
-The window has three parts: a **left sidebar** for adjusting maze size, the **maze** in the middle, and a **right sidebar** logging your past runs (dimensions, time, date — persisted to `run_history.json` between sessions).
+The main experience (`main.py`) is a **labyrinth progression run**: 100
+mazes, gradually growing in size, each with its own time limit. Press an
+arrow key and your dot slides in that direction until it hits a wall or
+reaches a junction — then you choose again. There's also a simpler
+**free-play mode** (`mvp_main.py`) for practicing without a timer: a single
+maze at a time, with adjustable size and a run-history log.
 
 ---
 
@@ -45,8 +48,8 @@ pip install -r requirements.txt
 ### 4. Run the game
 
 ```bash
-python main.py              # free play: adjustable size, no time limit
-python progression_main.py  # labyrinth mode: 100 mazes, gradually bigger, timed -- see docs/progression.md
+python main.py      # labyrinth mode: 100 mazes, gradually bigger, timed -- see docs/progression.md
+python mvp_main.py  # free play: adjustable size, no time limit
 ```
 
 ---
@@ -60,6 +63,8 @@ pip install pyinstaller
 pyinstaller --onefile --name maze-game main.py
 ```
 
+(Swap `main.py` for `mvp_main.py` in that command to package free-play mode instead.)
+
 The executable lands in `dist/maze-game` (`dist/maze-game.exe` on Windows) — a
 single ~16MB file with no dependencies to install; just double-click it (or
 run it) to play. A couple of things worth knowing:
@@ -72,25 +77,13 @@ run it) to play. A couple of things worth knowing:
 
 ---
 
-## Controls
+## Labyrinth Progression Mode (`main.py`)
 
-| Key | Action |
-|-----|--------|
-| `↑ ↓ ← →` | Slide the player in that direction |
-| `R` | Generate a new maze and restart the timer |
-| `Esc` / `Q` | Quit |
-
-Click the `-`/`+` buttons in the left sidebar to change the number of columns/rows — this immediately starts a fresh maze at the new size (clamped to 9–41, always odd, since the carver requires it).
-
----
-
-## Labyrinth Progression Mode
-
-`python progression_main.py` — a run of 100 mazes, starting small (9x9) and
-gradually growing to 41x41, each with its own time limit shown as a
-countdown. Every 5 mazes stitch together seamlessly (finish one, the next
-starts immediately); after each group of 5 there's a break screen until you
-resume. Running out of time on any maze ends the run back at maze 1.
+A run of 100 mazes, starting small (9x9) and gradually growing to 41x41,
+each with its own time limit shown as a countdown. Every 5 mazes stitch
+together seamlessly (finish one, the next starts immediately); after each
+group of 5 there's a break screen until you resume. Running out of time on
+any maze ends the run back at maze 1.
 
 | Key | Action |
 |-----|--------|
@@ -105,12 +98,30 @@ fail behavior were chosen, and which of those are expected to need retuning.
 
 ---
 
+## Free-Play Mode (`mvp_main.py`)
+
+A single maze at a time, no time limit — useful for practicing or just
+adjusting settings without the pressure of a timed run. The window has
+three parts: a **left sidebar** for adjusting maze size, the **maze** in
+the middle, and a **right sidebar** logging your past runs (dimensions,
+time, date — persisted to `run_history.json` between sessions).
+
+| Key | Action |
+|-----|--------|
+| `↑ ↓ ← →` | Slide the player in that direction |
+| `R` | Generate a new maze and restart the timer |
+| `Esc` / `Q` | Quit |
+
+Click the `-`/`+` buttons in the left sidebar to change the number of columns/rows — this immediately starts a fresh maze at the new size (clamped to 9–41, always odd, since the carver requires it).
+
+---
+
 ## Project Structure
 
 ```
 maze-game/
-├── main.py                  # Free-play entry point — pygame loop & input handling
-├── progression_main.py      # Labyrinth-mode entry point (100-maze run)
+├── main.py                  # Labyrinth-mode entry point (100-maze run)
+├── mvp_main.py             # Free-play entry point — pygame loop & input handling
 ├── requirements.txt         # Python dependencies
 ├── README.md
 ├── docs/                    # Design notes & audits (kept up to date as we build)
@@ -132,21 +143,21 @@ Run the tests with `pip install pytest && pytest`.
 
 **`constants.py`** — The single source of truth for every tuneable value (grid dimensions, colours, FPS). Change things here to customise the game without touching logic.
 
-**`maze.py`** — Procedural maze generation (Growing Tree algorithm — a tunable generalization that covers the recursive backtracker/DFS as one special case — plus an optional braid pass; see `docs/maze-generation.md`) and a BFS helper that finds the farthest reachable cell from a given start point, which is used to place the goal.
+**`maze.py`** — Procedural maze generation (Growing Tree algorithm — a tunable generalization that covers the recursive backtracker/DFS as one special case — plus an optional braid pass; see `docs/maze-generation.md`) and BFS helpers (farthest reachable cell for goal placement, shortest path for the labyrinth mode's time-limit estimate).
 
 **`player.py`** — The sliding movement algorithm. The player moves cell-by-cell in the chosen direction, stopping at walls or junctions (cells with 3+ open neighbours).
 
-**`game.py`** — Owns all mutable round state: the grid, player position, goal position, elapsed time, best time, adjustable dimensions, and the run-history log. Delegates to `maze.py`, `player.py`, and `history.py`.
-
-**`history.py`** — Loads/saves the run-history log (`run_history.json`, gitignored — it's per-player save data) as a list of `RunRecord(cols, rows, seconds, finished_at)`. Pure logic, no pygame dependency.
-
-**`renderer.py`** — Drawing code plus the `Layout` class, which computes every rect (maze offset, sidebar bounds, +/- button positions) from the current cols/rows. `main.py` reuses the same `Layout` for mouse click hit-testing, so drawing and click detection can never drift out of sync.
-
-**`main.py`** — Initialises pygame, maps key events to game actions, and runs the free-play frame loop.
-
 **`progression.py`** — `LabyrinthRun`, the labyrinth-mode state machine: which maze you're on, its dimensions/time limit, group breaks, and pass/fail. Pure logic, no pygame dependency, same pattern as `game.py`/`history.py`. See `docs/progression.md`.
 
-**`progression_main.py`** — Minimal pygame loop for labyrinth mode: maze + countdown HUD + break/fail/victory overlays. Deliberately separate from `main.py` rather than merged into the sidebar UI -- see the "not built yet" note in `docs/progression.md`.
+**`main.py`** — Labyrinth-mode pygame loop: maze + countdown HUD + break/fail/victory overlays.
+
+**`game.py`** — Owns free-play's mutable round state: the grid, player position, goal position, elapsed time, best time, adjustable dimensions, and the run-history log. Delegates to `maze.py`, `player.py`, and `history.py`.
+
+**`history.py`** — Loads/saves free-play's run-history log (`run_history.json`, gitignored — it's per-player save data) as a list of `RunRecord(cols, rows, seconds, finished_at)`. Pure logic, no pygame dependency.
+
+**`renderer.py`** — Free-play's drawing code plus the `Layout` class, which computes every rect (maze offset, sidebar bounds, +/- button positions) from the current cols/rows. `mvp_main.py` reuses the same `Layout` for mouse click hit-testing, so drawing and click detection can never drift out of sync.
+
+**`mvp_main.py`** — Initialises pygame, maps key events to free-play game actions, and runs the frame loop.
 
 ---
 
@@ -155,9 +166,10 @@ Run the tests with `pip install pytest && pytest`.
 - [x] Controls audit — see `docs/controls-audit.md` (fixed a recursion-limit bug in maze generation; movement/timer logic confirmed solid via `tests/`)
 - [x] More branching maze generation — DFS replaced with tunable Growing Tree + braid pass, see `docs/maze-generation.md` (~doubled junction density; old DFS feel still reachable via `newest_prob=1.0`)
 - [x] Sidebar UI — left panel for adjustable maze dimensions, right panel logging past runs (dimensions, time, date), persisted to `run_history.json`
-- [x] Labyrinth progression mode — 100-maze run, growing size, per-maze time limits, group breaks; see `docs/progression.md` (first pass, needs playtesting)
+- [x] Labyrinth progression mode — 100-maze run, growing size, per-maze time limits, group breaks; see `docs/progression.md` (first pass, needs playtesting). Promoted to `main.py`; the original single-maze mode is now `mvp_main.py`.
 - [x] Fix single-wall-pillar loops in maze generation — braid() could isolate one wall pixel inside a 1-cell loop; see `docs/maze-generation.md`
-- [ ] Merge progression mode into the main sidebar UI once its pacing is validated
+- [ ] Progress tracker polish (bigger/clearer "maze N/100" display, visual group indicator)
+- [ ] Merge labyrinth and free-play modes into one entry point with a mode switch, now that labyrinth mode is the default experience
 - [ ] Persistent history/leaderboard for labyrinth runs (mazes reached, total time)
 - [ ] Tile-variety pool for maze cells, decoupled from topology — see `docs/maze-generation.md` for why this replaces a straight WFC swap
 - [ ] Expose `newest_prob`/`braid_prob` (branchiness) as a live sidebar control alongside dimensions

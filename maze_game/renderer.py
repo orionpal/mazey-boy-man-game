@@ -4,7 +4,7 @@ renderer.py
 All pygame drawing code, plus the layout math for the three-column window
 (left sidebar / maze / right sidebar / bottom HUD). The Renderer knows
 nothing about game rules -- it takes state and paints it, but it *does* own
-the layout geometry, since main.py needs the same button rects for click
+the layout geometry, since mvp_main.py needs the same button rects for click
 hit-testing that draw() uses for painting (single source of truth, computed
 by `Renderer.layout`).
 """
@@ -28,7 +28,7 @@ RIGHT_BOTTOM_PADDING = 16
 class Layout:
     """
     Computed rects for the current cols/rows (and history length) -- shared
-    by draw() and main.py's click handling.
+    by draw() and mvp_main.py's click handling.
 
     Window height must fit whichever is tallest: the maze+HUD column, the
     left sidebar's controls, or the right sidebar's history list. Previously
