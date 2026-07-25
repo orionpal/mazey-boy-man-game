@@ -26,13 +26,30 @@ class Game:
     def __init__(self, history_path: Path = DEFAULT_HISTORY_PATH) -> None:
         self.cols = DEFAULT_COLS
         self.rows = DEFAULT_ROWS
-        self.best_time: float | None = None
         self.history_path = history_path
         self.history: list[RunRecord] = load_history(history_path)
         # Kick off the first maze immediately.
         self.new_maze()
 
     # ── Public API ────────────────────────────────────────────────────────
+
+    @property
+    def best_time(self) -> float | None:
+        """
+        Shortest recorded time for the *current* dimensions, across this and
+        past sessions (derived from `history`, which is persisted to disk and
+        loaded on startup -- there is no separately-tracked best_time value
+        to fall out of sync with it).
+
+        Previously this was a single value tracked across all dimensions and
+        only within the current session, which meant: (a) it wasn't
+        dimension-specific, so switching maze size could show an unrelated
+        size's time as "best", and (b) it reset to None on every restart, so
+        it could show a worse time as "best" than what was actually in your
+        history from an earlier session.
+        """
+        times = [r.seconds for r in self.history if r.cols == self.cols and r.rows == self.rows]
+        return min(times) if times else None
 
     def new_maze(self) -> None:
         """Generate a fresh maze and reset round state."""
@@ -68,8 +85,6 @@ class Game:
         self.elapsed = time.time() - self._start
         if self.player == self.goal:
             self.finished = True
-            if self.best_time is None or self.elapsed < self.best_time:
-                self.best_time = self.elapsed
             record = new_record(self.cols, self.rows, self.elapsed)
             self.history = append_record(self.history, record, self.history_path)
 

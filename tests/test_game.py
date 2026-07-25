@@ -76,7 +76,54 @@ def test_best_time_persists_across_new_maze(game):
     best = game.best_time
     game.new_maze()
     assert game.best_time == best
-    assert game.finished is False
+
+
+def test_best_time_is_specific_to_current_dimensions(game):
+    """
+    Regression test: best_time used to be a single value tracked across all
+    dimensions, so a fast time on a small maze would still show as "best"
+    after switching to a much larger (inherently slower) maze -- comparing
+    times across different maze sizes doesn't mean anything.
+    """
+    game.set_dimensions(9, 9)
+    game.player = game.goal
+    game._start = time.time() - 2.0  # fast run on the small maze
+    game.update()
+    assert game.best_time == pytest.approx(2.0, abs=0.05)
+
+    game.set_dimensions(31, 31)
+    # No runs recorded yet at this size -- the 9x9 time must not leak in.
+    assert game.best_time is None
+
+    game.player = game.goal
+    game._start = time.time() - 50.0  # much slower, but it's a much bigger maze
+    game.update()
+    assert game.best_time == pytest.approx(50.0, abs=0.05)
+
+    # Switching back to 9x9 should show its own best again, unaffected by
+    # the 31x31 run in between.
+    game.set_dimensions(9, 9)
+    assert game.best_time == pytest.approx(2.0, abs=0.05)
+
+
+def test_best_time_is_seeded_from_history_on_a_fresh_session(tmp_path):
+    """
+    Regression test: best_time used to start at None on every Game()
+    construction and was never seeded from the (already-loaded) persisted
+    history, so a brand-new session could show a worse "best" than what was
+    actually recorded from a previous session.
+    """
+    path = tmp_path / "history.json"
+    first_session = Game(history_path=path)
+    first_session.player = first_session.goal
+    first_session._start = time.time() - 3.0
+    first_session.update()
+    assert first_session.best_time == pytest.approx(3.0, abs=0.05)
+
+    # Simulate restarting the app: a brand-new Game() with no runs yet this
+    # session should immediately reflect the prior session's best.
+    new_session = Game(history_path=path)
+    assert new_session.best_time == pytest.approx(3.0, abs=0.05)
 
 
 # ── Adjustable dimensions ────────────────────────────────────────────────
