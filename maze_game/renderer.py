@@ -19,22 +19,41 @@ from maze_game.constants import (
 )
 
 BUTTON_SIZE = 28
-MIN_PANEL_HEIGHT = 260  # keeps the sidebars usable even on a tiny maze
+LEFT_CONTENT_HEIGHT = 260   # height needed for the (fixed) left sidebar controls
+RIGHT_HEADER_HEIGHT = 56    # "HISTORY" title + top padding, before the first entry
+RIGHT_ENTRY_HEIGHT  = 44    # vertical space per history row
+RIGHT_BOTTOM_PADDING = 16
 
 
 class Layout:
-    """Computed rects for the current cols/rows -- shared by draw() and main.py's click handling."""
+    """
+    Computed rects for the current cols/rows (and history length) -- shared
+    by draw() and main.py's click handling.
 
-    def __init__(self, cols: int, rows: int) -> None:
+    Window height must fit whichever is tallest: the maze+HUD column, the
+    left sidebar's controls, or the right sidebar's history list. Previously
+    this only considered the maze, so a small maze with several history
+    entries would draw history text past the bottom of the window and into
+    the HUD bar -- passing `history_count` in lets the right sidebar's
+    actual content height be part of that max().
+    """
+
+    def __init__(self, cols: int, rows: int, history_count: int = 0) -> None:
         self.maze_w = cols * CELL
         self.maze_h = rows * CELL
-        self.left = pygame.Rect(0, 0, SIDEBAR_W, max(self.maze_h, MIN_PANEL_HEIGHT))
-        self.maze_origin = (SIDEBAR_W, 0)
-        self.right = pygame.Rect(SIDEBAR_W + self.maze_w, 0, SIDEBAR_W, max(self.maze_h, MIN_PANEL_HEIGHT))
-        self.hud = pygame.Rect(SIDEBAR_W, self.maze_h, self.maze_w, HUD_HEIGHT)
 
+        shown = min(history_count, MAX_HISTORY_SHOWN)
+        right_content_h = RIGHT_HEADER_HEIGHT + shown * RIGHT_ENTRY_HEIGHT + RIGHT_BOTTOM_PADDING
+
+        self.window_h = max(self.maze_h + HUD_HEIGHT, LEFT_CONTENT_HEIGHT, right_content_h)
         self.window_w = SIDEBAR_W + self.maze_w + SIDEBAR_W
-        self.window_h = max(self.maze_h + HUD_HEIGHT, MIN_PANEL_HEIGHT)
+
+        # Sidebars always span the full window height, so their background
+        # can never end above the HUD or above their own content.
+        self.left = pygame.Rect(0, 0, SIDEBAR_W, self.window_h)
+        self.maze_origin = (SIDEBAR_W, 0)
+        self.right = pygame.Rect(SIDEBAR_W + self.maze_w, 0, SIDEBAR_W, self.window_h)
+        self.hud = pygame.Rect(SIDEBAR_W, self.maze_h, self.maze_w, HUD_HEIGHT)
 
         # Left sidebar: cols/rows +/- buttons.
         bx = self.left.x + 16
@@ -58,8 +77,8 @@ class Renderer:
         self.surface = surface
 
     @staticmethod
-    def window_size(cols: int, rows: int) -> tuple[int, int]:
-        layout = Layout(cols, rows)
+    def window_size(cols: int, rows: int, history_count: int = 0) -> tuple[int, int]:
+        layout = Layout(cols, rows, history_count)
         return layout.window_w, layout.window_h
 
     # ── Public API ────────────────────────────────────────────────────────
@@ -77,7 +96,7 @@ class Renderer:
         history: list,
     ) -> None:
         """Render a complete frame."""
-        layout = Layout(cols, rows)
+        layout = Layout(cols, rows, len(history))
         mouse_pos = pygame.mouse.get_pos()
 
         self.surface.fill(C_BG)
