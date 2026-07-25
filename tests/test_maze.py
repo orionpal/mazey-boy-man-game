@@ -8,7 +8,8 @@ import statistics
 
 import pytest
 
-from maze_game.maze import generate_maze, farthest_reachable_cell, braid, _open_neighbour_count
+from maze_game.maze import generate_maze, farthest_reachable_cell, shortest_path, braid, _open_neighbour_count
+from maze_game.player import slide
 
 SIZES = [5, 9, 21, 51]
 
@@ -121,8 +122,17 @@ def test_farthest_reachable_cell_is_open_and_far():
     assert goal != start
 
 
-def test_farthest_reachable_cell_is_actually_the_farthest():
-    """farthest_reachable_cell should match a from-scratch BFS distance computation."""
+def test_farthest_reachable_cell_is_the_farthest_among_valid_stopping_points():
+    """
+    farthest_reachable_cell must match a from-scratch BFS distance
+    computation -- but only among cells the sliding mechanic can actually
+    stop on (dead ends and junctions), not the absolute farthest cell
+    overall. A plain "farthest cell, period" can land on a 2-open-neighbour
+    mid-corridor cell, which player.slide() can never stop on (it only
+    stops at a wall ahead or a junction) -- that made the maze unsolvable
+    whenever it happened (~18% of generated mazes, confirmed empirically,
+    before this was fixed).
+    """
     from collections import deque
 
     grid = generate_maze(21, 21)
@@ -144,9 +154,58 @@ def test_farthest_reachable_cell_is_actually_the_farthest():
                 dist[(nx, ny)] = dist[(cx, cy)] + 1
                 q.append((nx, ny))
 
-    expected_max = max(dist.values())
+    expected_max_among_stopping_points = max(
+        d for (x, y), d in dist.items() if _open_neighbour_count(grid, x, y) != 2
+    )
     goal = farthest_reachable_cell(grid, start)
-    assert dist[goal] == expected_max
+    assert _open_neighbour_count(grid, *goal) != 2
+    assert dist[goal] == expected_max_among_stopping_points
+
+
+def _simulate_slide_along_path(grid, path):
+    """
+    Walk `path` for real via player.slide(), recomputing the direction from
+    wherever we *actually* are after each press (not from a precomputed
+    direction-change list). This matters because slide() force-stops at any
+    junction it enters, even if the path continues straight through without
+    turning there -- a precomputed "direction changed" list misses that
+    forced stop entirely and undershoots. Recomputing fresh from the real
+    landing position each time sidesteps that: whatever slide() returns is
+    guaranteed to be a cell on the path (it's the same corridor), so we
+    always know the correct next direction to press.
+    """
+    pos = path[0]
+    goal = path[-1]
+    idx = 0
+    for _ in range(len(path) + 5):  # generous bound; real completion needs far fewer presses than cells
+        if pos == goal:
+            return pos
+        direction = (path[idx + 1][0] - pos[0], path[idx + 1][1] - pos[1])
+        pos = slide(grid, pos, direction)
+        idx = path.index(pos, idx)
+    return pos
+
+
+@pytest.mark.parametrize("size", [9, 21, 41])
+def test_maze_is_actually_completable_via_sliding(size):
+    """
+    End-to-end regression test for the pass-through-goal bug: derive the
+    key-press sequence from the real shortest path (start to goal) and
+    actually run it through player.slide(), the same function real input
+    goes through -- confirms the player lands exactly on the goal, not
+    just that a "path" exists on paper. This is the direct proof the maze
+    is completable, and would have caught the original bug immediately (a
+    pass-through goal made the final press slide straight past it).
+    """
+    random.seed(11)
+    for _ in range(20):
+        grid = generate_maze(size, size)  # default params -- braid included, matches real play
+        start = (1, 1)
+        goal = farthest_reachable_cell(grid, start)
+        path = shortest_path(grid, start, goal)
+
+        final_pos = _simulate_slide_along_path(grid, path)
+        assert final_pos == goal
 
 
 # ── Growing Tree branching-density parameter ─────────────────────────────

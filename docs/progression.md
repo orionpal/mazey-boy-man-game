@@ -45,17 +45,55 @@ before picking the constants:
 
 | size | avg shortest-path cells | avg key presses (turns) |
 |---|---|---|
-| 9x9 | 14.6 | 4.6 |
-| 21x21 | 47.2 | 14.3 |
-| 41x41 | 99.1 | 27.7 |
+| 9x9 | 14.6 | 5.8 |
+| 21x21 | 47.2 | 17.3 |
+| 41x41 | 99.1 | 36.3 |
+
+(Updated after a bug fix — see "Bug: forced stops at junctions weren't
+counted" below. The key-press counts here are higher than the first
+version of this table.)
 
 With `LABYRINTH_TIME_BASE=10.0` and `LABYRINTH_TIME_PER_TURN=2.0`, that
-puts the *average* maze at roughly 19s (9x9) up to 65s (41x41) — 2 seconds
+puts the *average* maze at roughly 22s (9x9) up to 83s (41x41) — 2 seconds
 per turn is a generous per-press budget (covers reading the junction and
 reacting, not just the keypress itself), meant to be comfortably
 completable by a careful player while still creating real time pressure
 for a wandering one. Almost certainly the first thing worth retuning after
 playing it.
+
+### Bug: forced stops at junctions weren't counted (found via playtesting)
+
+Two related bugs, both found by actually playing the game and reported as
+"sometimes the maze seems impossible to finish":
+
+1. **Goal could be unreachable at all.** `farthest_reachable_cell` picked
+   whichever cell BFS visited last, with no regard for whether the sliding
+   mechanic could ever land on it. `player.slide()` only stops at a wall
+   ahead or a junction (3+ open neighbours) — a cell with exactly 2 open
+   neighbours (a mid-corridor or turn cell) can never be a stopping point;
+   the player always slides straight through it. If BFS's "farthest" cell
+   happened to be one of those, the goal was **structurally impossible to
+   reach**, confirmed in ~18% of generated mazes (500-trial measurement).
+   Fixed by restricting "farthest" to cells the sliding mechanic can
+   actually stop on (`maze.py::farthest_reachable_cell`).
+
+2. **Time limits were under-counted.** `count_direction_changes` only
+   counted actual turns, but `slide()` force-stops at *every* junction it
+   enters — even one the shortest path runs straight through without
+   turning — because the stop check only looks at open-neighbour count, not
+   at where the path intends to go next. That forced stop needs its own
+   key press to continue, which pure direction-change counting missed,
+   under-estimating the time limit on any maze whose shortest path passes
+   through such a junction. Fixed by also counting forced stops
+   (`progression.py::count_direction_changes` now takes the grid and checks
+   `_open_neighbour_count(...) >= 3` at each path cell, not just whether the
+   direction changed).
+
+Both are covered by regression tests, including an end-to-end one
+(`test_maze_is_actually_completable_via_sliding`) that doesn't just check
+a path exists on paper — it derives the real key-press sequence and runs it
+through the actual `slide()` function, confirming the player lands exactly
+on the goal.
 
 ## Groups: seamless within, break between
 

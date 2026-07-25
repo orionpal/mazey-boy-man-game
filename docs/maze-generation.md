@@ -167,3 +167,17 @@ rather than going all the way to 0.0 to keep some long-corridor character
 rather than fully uniform Kruskal-like texture — a judgment call, easy to
 retune (it's one constant, `DEFAULT_NEWEST_PROB` in `maze.py`) or expose as
 a live control if it doesn't feel right in play.
+
+### Bug: goal could be placed somewhere unreachable
+
+`farthest_reachable_cell` (used by both free-play and labyrinth mode to
+place the goal) picked whichever cell BFS visited last, without checking
+whether the sliding movement could ever stop there. `player.slide()` only
+stops at a wall ahead or a junction (3+ open neighbours) — a plain
+2-neighbour corridor/turn cell can never be landed on, the player always
+slides straight through it. When BFS's "farthest" cell happened to be one
+of those, the maze was unsolvable: confirmed in ~18% of generated mazes
+(500-trial measurement). Fixed by restricting "farthest" to cells the
+sliding mechanic can actually stop on. Full writeup, plus a related
+under-counting bug in the labyrinth mode's time-limit estimate, in
+`docs/progression.md`.

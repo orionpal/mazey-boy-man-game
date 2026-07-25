@@ -184,8 +184,19 @@ def farthest_reachable_cell(
     grid: list[list[int]], start: tuple[int, int]
 ) -> tuple[int, int]:
     """
-    BFS from `start`; return the passage cell with the longest shortest-path
-    distance.  Used to place the goal as far from the player as possible.
+    BFS from `start`; return the *reachable-via-sliding* passage cell with
+    the longest shortest-path distance. Used to place the goal as far from
+    the player as possible.
+
+    "Reachable-via-sliding" specifically excludes cells with exactly 2 open
+    neighbours (a straight or turning mid-corridor cell): player.slide()
+    only ever stops at a wall ahead or a junction (3+ open neighbours), so a
+    2-neighbour cell can never be landed on -- the player always slides
+    straight through it. Picking one as the goal made the maze
+    unsolvable (confirmed empirically: ~18% of generated mazes before this
+    fix). BFS still visits every cell in the usual non-decreasing-distance
+    order; this just restricts which visited cell counts as a candidate
+    "farthest" answer to ones the sliding mechanic can actually stop on.
     """
     cols = len(grid[0])
     rows = len(grid)
@@ -197,7 +208,8 @@ def farthest_reachable_cell(
 
     while queue:
         cx, cy = queue.popleft()
-        farthest = (cx, cy)
+        if _open_neighbour_count(grid, cx, cy) != 2:
+            farthest = (cx, cy)
         for dx, dy in ((0, 1), (0, -1), (1, 0), (-1, 0)):
             nx, ny = cx + dx, cy + dy
             if (

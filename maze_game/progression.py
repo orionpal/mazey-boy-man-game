@@ -21,7 +21,7 @@ from maze_game.constants import (
     LABYRINTH_TIME_BASE, LABYRINTH_TIME_PER_TURN,
     MIN_DIMENSION, MAX_DIMENSION, DIMENSION_STEP,
 )
-from maze_game.maze import generate_maze, farthest_reachable_cell, shortest_path
+from maze_game.maze import generate_maze, farthest_reachable_cell, shortest_path, _open_neighbour_count
 from maze_game.player import slide
 
 START_POS: tuple[int, int] = (1, 1)
@@ -38,19 +38,27 @@ def dimensions_for_maze(maze_index: int) -> tuple[int, int]:
     return size, size
 
 
-def count_direction_changes(path: list[tuple[int, int]]) -> int:
+def count_direction_changes(grid: list[list[int]], path: list[tuple[int, int]]) -> int:
     """
     Number of arrow-key presses a perfect, no-mistakes player would need to
-    walk `path` under this game's sliding movement -- a straight run of any
-    length costs one press, so this counts direction changes, not cells.
+    walk `path` under this game's sliding movement. A straight run costs one
+    press -- *unless* it passes through a junction (3+ open neighbours)
+    partway along: player.slide() force-stops at every junction it enters,
+    even if the path continues straight through without turning, so an
+    extra press is needed to carry on from there. Missing this (an earlier
+    version only counted actual direction changes) under-counted presses --
+    and so under-estimated the time limit -- for any maze whose shortest
+    path happens to run through a junction it doesn't turn at.
     """
     if len(path) < 2:
         return 0
     presses = 1
     last_dir = (path[1][0] - path[0][0], path[1][1] - path[0][1])
     for i in range(1, len(path) - 1):
-        d = (path[i + 1][0] - path[i][0], path[i + 1][1] - path[i][1])
-        if d != last_dir:
+        cx, cy = path[i]
+        d = (path[i + 1][0] - cx, path[i + 1][1] - cy)
+        forced_stop = _open_neighbour_count(grid, cx, cy) >= 3
+        if d != last_dir or forced_stop:
             presses += 1
             last_dir = d
     return presses
@@ -59,7 +67,7 @@ def count_direction_changes(path: list[tuple[int, int]]) -> int:
 def estimate_time_limit(grid: list[list[int]], start: tuple[int, int], goal: tuple[int, int]) -> float:
     """LABYRINTH_TIME_BASE plus a per-turn budget based on this specific maze's actual shortest path."""
     path = shortest_path(grid, start, goal)
-    turns = count_direction_changes(path)
+    turns = count_direction_changes(grid, path)
     return LABYRINTH_TIME_BASE + LABYRINTH_TIME_PER_TURN * turns
 
 

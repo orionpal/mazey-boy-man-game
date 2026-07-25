@@ -47,25 +47,72 @@ def test_dimensions_cap_at_max_dimension():
 
 
 # ── count_direction_changes ───────────────────────────────────────────────
+# Grids below are built so every intermediate path cell has exactly 2 open
+# neighbours (a plain corridor cell or corner, never a junction) *unless* a
+# test is specifically checking the forced-stop-at-a-junction case -- that
+# keeps these tests isolated to one behaviour at a time.
 
 
 def test_count_direction_changes_trivial_path():
-    assert count_direction_changes([(1, 1)]) == 0
+    grid = [[1, 1, 1], [1, 0, 1], [1, 1, 1]]
+    assert count_direction_changes(grid, [(1, 1)]) == 0
 
 
 def test_count_direction_changes_straight_line():
+    grid = [
+        [1, 1, 1],
+        [1, 0, 1],
+        [1, 0, 1],
+        [1, 0, 1],
+        [1, 0, 1],
+        [1, 1, 1],
+    ]
     path = [(1, 1), (1, 2), (1, 3), (1, 4)]
-    assert count_direction_changes(path) == 1
+    assert count_direction_changes(grid, path) == 1
 
 
 def test_count_direction_changes_one_turn():
+    grid = [
+        [1, 1, 1, 1, 1],
+        [1, 0, 1, 1, 1],
+        [1, 0, 1, 1, 1],
+        [1, 0, 0, 0, 1],
+        [1, 1, 1, 1, 1],
+    ]
     path = [(1, 1), (1, 2), (1, 3), (2, 3), (3, 3)]
-    assert count_direction_changes(path) == 2
+    assert count_direction_changes(grid, path) == 2
 
 
 def test_count_direction_changes_zigzag():
+    grid = [
+        [1, 1, 1, 1, 1],
+        [1, 0, 0, 1, 1],
+        [1, 1, 0, 0, 1],
+        [1, 1, 1, 0, 1],
+        [1, 1, 1, 1, 1],
+    ]
     path = [(1, 1), (2, 1), (2, 2), (3, 2), (3, 3)]
-    assert count_direction_changes(path) == 4
+    assert count_direction_changes(grid, path) == 4
+
+
+def test_count_direction_changes_counts_a_forced_stop_at_a_pass_through_junction():
+    """
+    Regression test for the bug this was built to catch: the path runs
+    straight through (2,2) without turning, but (2,2) is a junction (it also
+    has an opening down to (2,3) that the path doesn't use) -- slide()
+    force-stops there regardless, so continuing costs an *extra* press that
+    pure direction-change counting misses entirely.
+    """
+    grid = [
+        [1, 1, 1, 1, 1],
+        [1, 0, 0, 0, 1],
+        [1, 1, 0, 1, 1],
+        [1, 1, 0, 1, 1],
+        [1, 1, 1, 1, 1],
+    ]
+    path = [(1, 1), (2, 1), (3, 1)]  # straight through (2,1), which has a 3rd opening down to (2,2)
+    # (2,1) neighbours: (1,1) open, (3,1) open, (2,2) open -> 3 open neighbours, a junction.
+    assert count_direction_changes(grid, path) == 2  # not 1 -- the forced stop needs its own press
 
 
 # ── estimate_time_limit ───────────────────────────────────────────────────

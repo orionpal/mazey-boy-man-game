@@ -168,6 +168,7 @@ Run the tests with `pip install pytest && pytest`.
 - [x] Sidebar UI — left panel for adjustable maze dimensions, right panel logging past runs (dimensions, time, date), persisted to `run_history.json`
 - [x] Labyrinth progression mode — 100-maze run, growing size, per-maze time limits, group breaks; see `docs/progression.md` (first pass, needs playtesting). Promoted to `main.py`; the original single-maze mode is now `mvp_main.py`.
 - [x] Fix single-wall-pillar loops in maze generation — braid() could isolate one wall pixel inside a 1-cell loop; see `docs/maze-generation.md`
+- [x] Fix unsolvable mazes — goal could be placed on an unreachable pass-through cell (~18% of mazes), and labyrinth time limits under-counted forced stops at junctions; see `docs/maze-generation.md` and `docs/progression.md`
 - [ ] Progress tracker polish (bigger/clearer "maze N/100" display, visual group indicator)
 - [ ] Merge labyrinth and free-play modes into one entry point with a mode switch, now that labyrinth mode is the default experience
 - [ ] Persistent history/leaderboard for labyrinth runs (mazes reached, total time)
