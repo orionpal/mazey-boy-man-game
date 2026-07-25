@@ -48,6 +48,27 @@ python main.py
 
 ---
 
+## Building a Standalone Executable
+
+No need to have Python/pip installed to just play it — [PyInstaller](https://pyinstaller.org/) bundles the interpreter, pygame, and the game into one file:
+
+```bash
+pip install pyinstaller
+pyinstaller --onefile --name maze-game main.py
+```
+
+The executable lands in `dist/maze-game` (`dist/maze-game.exe` on Windows) — a
+single ~16MB file with no dependencies to install; just double-click it (or
+run it) to play. A couple of things worth knowing:
+
+- **Not cross-platform to build**: PyInstaller packages for whatever OS you
+  run it *on* — build on Windows for a `.exe`, macOS for a Mac app, Linux for
+  an ELF binary. There's no cross-compiling from one to produce another.
+- **`build/` and `dist/`** are gitignored — treat them as disposable output,
+  regenerate with the command above whenever you want a fresh binary.
+
+---
+
 ## Controls
 
 | Key | Action |
