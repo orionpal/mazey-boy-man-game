@@ -9,6 +9,7 @@ Run with:
 """
 
 import pygame
+from pygame._sdl2.video import Window
 
 from maze_game.constants import FPS
 from maze_game.game import Game
@@ -23,10 +24,23 @@ DIRECTION_MAP: dict[int, tuple[int, int]] = {
 }
 
 
-def resize_window(game: Game) -> pygame.Surface:
-    """(Re)create the display surface to fit the current maze dimensions."""
+def resize_window(window: Window, game: Game) -> pygame.Surface:
+    """
+    Resize the existing native window in place to fit the current maze
+    dimensions, and return the (possibly new) display surface.
+
+    Deliberately uses Window.size instead of calling pygame.display.set_mode()
+    again -- re-calling set_mode() with a different size tears down the old
+    native window and creates a brand new one (confirmed via
+    pygame.display.get_wm_info()['window'] changing), which is what made
+    resizing look like the whole game window closing and reopening. Setting
+    .size on the already-created Window resizes it in place; the window ID
+    stays the same.
+    """
     size = Renderer.window_size(game.cols, game.rows)
-    return pygame.display.set_mode(size)
+    if window.size != size:
+        window.size = size
+    return pygame.display.get_surface()
 
 
 def main() -> None:
@@ -35,7 +49,8 @@ def main() -> None:
     clock = pygame.time.Clock()
 
     game     = Game()
-    screen   = resize_window(game)
+    screen   = pygame.display.set_mode(Renderer.window_size(game.cols, game.rows))
+    window   = Window.from_display_module()
     renderer = Renderer(screen)
 
     running = True
@@ -57,20 +72,16 @@ def main() -> None:
                 layout = Layout(game.cols, game.rows)
                 if layout.cols_minus.collidepoint(event.pos):
                     game.adjust_cols(-1)
-                    screen = resize_window(game)
-                    renderer.set_surface(screen)
+                    renderer.set_surface(resize_window(window, game))
                 elif layout.cols_plus.collidepoint(event.pos):
                     game.adjust_cols(1)
-                    screen = resize_window(game)
-                    renderer.set_surface(screen)
+                    renderer.set_surface(resize_window(window, game))
                 elif layout.rows_minus.collidepoint(event.pos):
                     game.adjust_rows(-1)
-                    screen = resize_window(game)
-                    renderer.set_surface(screen)
+                    renderer.set_surface(resize_window(window, game))
                 elif layout.rows_plus.collidepoint(event.pos):
                     game.adjust_rows(1)
-                    screen = resize_window(game)
-                    renderer.set_surface(screen)
+                    renderer.set_surface(resize_window(window, game))
 
         # ── Update & draw ─────────────────────────────────────────────────
         game.update()
