@@ -125,6 +125,8 @@ def braid(grid: list[list[int]], p: float) -> list[list[int]]:
             # generation) -- what matters is whether the wall segment
             # between here and the neighbour is still closed.
             if 0 <= nx < cols and 0 <= ny < rows and grid[wy][wx] == 1:
+                if _opening_isolates_a_wall_pillar(grid, wx, wy):
+                    continue  # would carve a 1-cell loop around a single wall pixel
                 candidates.append((wx, wy))
 
         if candidates:
@@ -132,6 +134,41 @@ def braid(grid: list[list[int]], p: float) -> list[list[int]]:
             grid[wy][wx] = 0
 
     return grid
+
+
+def _opening_isolates_a_wall_pillar(grid: list[list[int]], seg_x: int, seg_y: int) -> bool:
+    """
+    True if carving the wall segment at (seg_x, seg_y) would leave either of
+    its two neighbouring even,even grid intersections fully surrounded by
+    open cells on all 4 sides -- a single standalone wall pixel with a
+    1-cell loop running all the way around it. Only possible via braid()
+    (the base spanning tree has no cycles at all, so this never occurs
+    before braiding); rejecting it here keeps braid's extra connections
+    from producing that specific pattern.
+    """
+    cols, rows = len(grid[0]), len(grid)
+    # The wall segment sits between two even,even intersections -- to its
+    # left/right if it's a vertical connector (odd x, even y), or above/below
+    # if it's a horizontal connector (even x, odd y).
+    if seg_x % 2 == 1:
+        intersections = [(seg_x - 1, seg_y), (seg_x + 1, seg_y)]
+    else:
+        intersections = [(seg_x, seg_y - 1), (seg_x, seg_y + 1)]
+
+    for ix, iy in intersections:
+        if not (0 <= ix < cols and 0 <= iy < rows):
+            continue
+        fully_open_if_carved = True
+        for dx, dy in ((0, 1), (0, -1), (1, 0), (-1, 0)):
+            nx, ny = ix + dx, iy + dy
+            if (nx, ny) == (seg_x, seg_y):
+                continue  # about to be carved open
+            if not (0 <= nx < cols and 0 <= ny < rows) or grid[ny][nx] != 0:
+                fully_open_if_carved = False
+                break
+        if fully_open_if_carved:
+            return True
+    return False
 
 
 def _open_neighbour_count(grid: list[list[int]], cx: int, cy: int) -> int:

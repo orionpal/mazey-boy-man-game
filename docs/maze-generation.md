@@ -129,10 +129,35 @@ checked whether the *neighbour cell* was a wall, but every odd,odd cell is
 already carved open by the time generation finishes, so that check was
 always false — the pass silently did nothing at any probability. Fixed to
 check the *wall segment between* the dead end and its neighbour instead.
-After the fix, `braid_prob=1.0` eliminates 100% of dead ends, as expected.
+After the fix, `braid_prob=1.0` eliminates nearly all dead ends (some are
+now deliberately left alone — see "Isolated wall pillars" below).
 Braiding only ever adds edges to an already-connected graph, so it can't
 break connectivity — verified with a dedicated test
 (`test_braid_only_adds_edges_so_connectivity_is_preserved`).
+
+### Isolated wall pillars (found via playtesting)
+
+Found by actually playing it, not by a test: occasionally a "square" path
+would loop all the way around a single standalone wall cell. Root cause —
+every wall pixel sits at either a *segment* position (between two maze
+cells, one axis odd) or a grid *intersection* (both axes even, never
+carved by generation itself). An intersection has 4 neighbouring segments;
+if all 4 happen to be open, that one wall pixel ends up fully surrounded by
+floor, with a 1-cell loop running around it. The base spanning tree can
+never do this (a tree has zero cycles, confirmed empirically: 0 occurrences
+across 200 trials with `braid_prob=0.0`) — it's specifically something
+`braid()` can cause, since braiding's whole purpose is adding extra loops.
+Measured 200 mazes at the default `braid_prob=0.25`: ~1.5 isolated pillars
+per maze before the fix, 0 after (confirmed 0 even at `braid_prob=1.0`
+across sizes 9/21/35, the worst-case stress test).
+
+Fixed by having `braid()` check, for each candidate wall segment, whether
+opening it would leave either of its two neighbouring intersections fully
+surrounded (i.e. this would be the 4th of that intersection's 4 segments)
+— and rejecting that candidate if so. This is why braiding no longer
+guarantees *eliminating every* dead end at `braid_prob=1.0`: a dead end
+whose only candidate would isolate a pillar is now deliberately left alone
+rather than braided at the cost of that visual artifact.
 
 ### Decision
 

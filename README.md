@@ -156,7 +156,7 @@ Run the tests with `pip install pytest && pytest`.
 - [x] More branching maze generation — DFS replaced with tunable Growing Tree + braid pass, see `docs/maze-generation.md` (~doubled junction density; old DFS feel still reachable via `newest_prob=1.0`)
 - [x] Sidebar UI — left panel for adjustable maze dimensions, right panel logging past runs (dimensions, time, date), persisted to `run_history.json`
 - [x] Labyrinth progression mode — 100-maze run, growing size, per-maze time limits, group breaks; see `docs/progression.md` (first pass, needs playtesting)
-- [ ] Fix single-wall-pillar loops in maze generation (a small loop sometimes forms all the way around one standalone wall cell)
+- [x] Fix single-wall-pillar loops in maze generation — braid() could isolate one wall pixel inside a 1-cell loop; see `docs/maze-generation.md`
 - [ ] Merge progression mode into the main sidebar UI once its pacing is validated
 - [ ] Persistent history/leaderboard for labyrinth runs (mazes reached, total time)
 - [ ] Tile-variety pool for maze cells, decoupled from topology — see `docs/maze-generation.md` for why this replaces a straight WFC swap

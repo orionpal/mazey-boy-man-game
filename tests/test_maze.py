@@ -207,12 +207,22 @@ def test_braid_reduces_dead_ends():
     assert dead_ends_after < dead_ends_before
 
 
-def test_braid_at_p_1_eliminates_all_dead_ends():
+def test_braid_at_p_1_eliminates_nearly_all_dead_ends():
+    """
+    Not necessarily *all* -- a dead end's only candidate wall can be
+    rejected specifically to avoid isolating a wall pillar (see
+    test_braid_never_isolates_a_wall_pillar), so a handful can survive even
+    at p=1.0. The overwhelming majority should still be eliminated.
+    """
     random.seed(5)
     grid = generate_maze(21, 21, newest_prob=0.4, braid_prob=0.0)
+    open_cells = _open_cells(grid)
+    dead_ends_before = sum(1 for x, y in open_cells if _open_neighbour_count(grid, x, y) == 1)
+
     braided = braid(grid, p=1.0)
-    open_cells = _open_cells(braided)
-    assert all(_open_neighbour_count(braided, x, y) != 1 for x, y in open_cells)
+    dead_ends_after = sum(1 for x, y in open_cells if _open_neighbour_count(braided, x, y) == 1)
+
+    assert dead_ends_after < dead_ends_before * 0.1
 
 
 def test_braid_only_adds_edges_so_connectivity_is_preserved():
@@ -257,3 +267,45 @@ def test_generate_maze_with_braid_has_no_2x2_open_blocks():
         for x in range(size - 1):
             block = (grid[y][x], grid[y][x + 1], grid[y + 1][x], grid[y + 1][x + 1])
             assert block != (0, 0, 0, 0), f"open 2x2 block at ({x},{y})"
+
+
+def _isolated_wall_pillars(grid):
+    """Wall cells (1) fully surrounded by open cells on all 4 sides -- a 1-cell loop around a single wall pixel."""
+    cols, rows = len(grid[0]), len(grid)
+    found = []
+    for y in range(rows):
+        for x in range(cols):
+            if grid[y][x] != 1:
+                continue
+            if all(
+                0 <= x + dx < cols and 0 <= y + dy < rows and grid[y + dy][x + dx] == 0
+                for dx, dy in ((0, 1), (0, -1), (1, 0), (-1, 0))
+            ):
+                found.append((x, y))
+    return found
+
+
+def test_base_generation_never_produces_an_isolated_wall_pillar():
+    """The spanning tree (no braid) has no cycles at all, so this can't happen before braiding."""
+    random.seed(1)
+    for _ in range(50):
+        grid = generate_maze(21, 21, newest_prob=0.4, braid_prob=0.0)
+        assert _isolated_wall_pillars(grid) == []
+
+
+def test_braid_never_isolates_a_wall_pillar():
+    """
+    Regression test: braid() used to sometimes open a wall segment that
+    completed a loop running all the way around a single standalone wall
+    cell (found by playtesting -- a "square" path around one wall pixel).
+    Root cause: opening any single wall segment can, coincidentally, be the
+    4th of the 4 segments surrounding one grid intersection, fully
+    surrounding that intersection's wall pixel with open cells. Checked at
+    braid_prob=1.0 (worst case -- most wall segments opened) across many
+    trials and maze sizes.
+    """
+    random.seed(3)
+    for size in (9, 21, 35):
+        for _ in range(30):
+            grid = generate_maze(size, size, newest_prob=0.3, braid_prob=1.0)
+            assert _isolated_wall_pillars(grid) == [], f"found an isolated pillar at size {size}"
