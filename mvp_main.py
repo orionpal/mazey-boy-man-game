@@ -16,8 +16,8 @@ import pygame
 from pygame._sdl2.video import Window
 
 from maze_game.constants import FPS
-from maze_game.game import Game
-from maze_game.renderer import Renderer, Layout
+from maze_game.freeplay.game import Game
+from maze_game.freeplay.renderer import Renderer, Layout
 
 # Arrow-key → direction vector mapping.
 DIRECTION_MAP: dict[int, tuple[int, int]] = {

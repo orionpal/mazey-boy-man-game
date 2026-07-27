@@ -14,7 +14,7 @@ from pathlib import Path
 from maze_game.constants import DEFAULT_COLS, DEFAULT_ROWS, MIN_DIMENSION, MAX_DIMENSION, DIMENSION_STEP
 from maze_game.maze import generate_maze, farthest_reachable_cell
 from maze_game.player import slide
-from maze_game.history import RunRecord, new_record, load_history, append_record, DEFAULT_HISTORY_PATH
+from maze_game.freeplay.history import RunRecord, new_record, load_history, append_record, DEFAULT_HISTORY_PATH
 
 # The player always starts at the top-left passage cell.
 START_POS: tuple[int, int] = (1, 1)

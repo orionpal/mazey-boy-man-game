@@ -1,13 +1,15 @@
 # Labyrinth Progression Mode
 
-The core loop beyond a single maze: get through 100 mazes. Gradually
-bigger, each with a time limit, in groups of 5 that stitch together
-seamlessly with a break-and-resume prompt between groups. Implemented in
-`maze_game/progression.py` (`LabyrinthRun`), playable via `main.py` (this
-is now the default entry point — see the "Renamed" note at the bottom).
-Everything below is a **first guess to playtest**,
-not a balance pass — the constants live in `constants.py` under "Labyrinth
-progression mode" and are meant to move.
+The core loop beyond a single maze: get through 100 mazes, gradually
+bigger, in groups of 5 that stitch together seamlessly with a perk-card
+choice between groups. A rogue-like resource layer sits on top: time is one
+persistent budget carried across the *whole* run, topped up by pellets and
+drained by enemies (and, every 20th maze, a boss). Implemented in
+`maze_game/progression/` (`run.py`'s `LabyrinthRun`, `perks.py`,
+`entities/`), playable via `main.py` (this is now the default entry point —
+see the "Renamed" note at the bottom). Everything below is a **first guess
+to playtest**, not a balance pass — the constants live in `constants.py`
+under "Labyrinth progression mode" and are meant to move.
 
 ## Dimensions: 9x9 -> 41x41, +2 every 5 mazes
 
@@ -24,47 +26,138 @@ plateau), the knobs are `MIN_DIMENSION`/`DIMENSION_STEP`/`MAX_DIMENSION` in
 `constants.py` — changing the step size directly trades off ramp length vs.
 plateau length.
 
-## Time limit: measured, not guessed
+## Time: a persistent resource, not a per-maze limit
 
-Rather than a fixed lookup table per size, `estimate_time_limit()` computes
-the limit from the **actual generated maze**: BFS the shortest path from
-start to goal, count direction changes needed under this game's sliding
-movement (`count_direction_changes` — a straight corridor of any length is
-one key press, so cells traveled isn't the right unit; turns are), then:
+Earlier versions of this mode estimated a fresh time *limit* for every
+maze (`estimate_time_limit()`, BFS'd from the shortest path and its turn
+count) and reset the clock at the start of each one. That's gone: time is
+now one persistent `TimeResource` (`progression/run.py`) the whole run
+shares, starting at `LABYRINTH_START_TIME` (75.0s) and ticking down
+continuously regardless of which maze is active. Running out ends the run,
+wherever you are — not "you failed maze 47," just "you ran out of time." A
+fresh per-maze estimate never mattered for a shared pool, so
+`estimate_time_limit()` and `count_direction_changes()` were deleted
+outright along with `LABYRINTH_TIME_BASE`/`LABYRINTH_TIME_BASE_STEP`/
+`LABYRINTH_TIME_PER_TURN` (their history, including the bug described
+below, is kept here for context even though the code is gone).
 
-```
-time_limit = LABYRINTH_TIME_BASE + LABYRINTH_TIME_PER_TURN * turns_on_shortest_path
-```
+75s was chosen to roughly cover the first group of 5 mazes at minimum size
+without collecting anything (the old per-maze measurements below put a 9x9
+maze at ~14.6s traversed carefully) — enough of a buffer that the pellet
+economy is a genuine top-up, not the only thing standing between the
+player and an instant first-maze death.
 
-This adapts to each specific maze's real difficulty (a lucky easy layout at
-a given size gets less time than an unlucky winding one), rather than
-averaging over size and getting it wrong in both directions half the time.
+### Pellets: the top-up
 
-Measured empirically (30 trials per size, actual `generate_maze` output)
-before picking the constants:
+`spawn_pellets()` (`progression/entities/hazards.py`) places
+`PELLET_TIME_VALUE` (1.0s) pickups on random open cells at maze generation
+time, excluding the start and goal (and, on boss mazes, the boss doesn't
+share a maze with pellets at all — see below). Count scales with
+`PELLET_DENSITY * sqrt(open_cell_count)` (0.6, e.g. ~3 pellets at 9x9, ~17
+at 41x41) rather than a flat fraction of cells, since traversal difficulty
+grows closer to linearly with maze size while a flat fraction grows
+quadratically. Collected pellets are removed — one-time pickups, not
+standing hazards. A pellet sitting mid-corridor is still collectible even
+though the player can't *stop* there: `move()` uses `player.slide_path()`
+(returns every cell entered, not just the final stop) and checks contact
+against every cell passed through, not just where the slide ends.
+
+(`PELLET_TIME_VALUE` started at 4.0s and `PELLET_DENSITY` at 1.2 -- both
+cut, after playtesting, to keep pellets a small, frequent trickle rather
+than a handful of big top-ups, and to thin out the early, small mazes
+specifically, which the sqrt-scaled count formula was flooding with
+pellets relative to their size.)
+
+### Enemies: persistent hazards, unlocked partway through
+
+Starting at `ENEMY_UNLOCK_MAZE` (11), `spawn_enemies()` places a handful of
+stationary hazards the same way pellets are placed (sqrt-scaled,
+excluding start/goal/pellet cells too — the two never overlap). Contact
+costs `ENEMY_TIME_PENALTY` (3.0s). Unlike pellets, enemies aren't removed
+on contact — backtracking over the same one costs again.
+
+Note this is now *larger* than a single pellet's value (1.0s) -- with
+pellets cut to a small frequent trickle, one enemy hit costs several
+pellets' worth of progress. Worth revisiting if that feels too punishing
+in practice; the two were originally tuned in the opposite relationship
+(enemy penalty deliberately below pellet value) back when a pellet was
+worth 4.0s.
+
+Extensibility was an explicit goal here: `Enemy` is a base class
+(`pos`, `penalty`, `on_contact()`) plus a module-level `ENEMY_TYPES`
+registry list that `spawn_enemies()` samples from. A new enemy type later
+is one subclass + one line appended to the registry — nothing else in the
+spawn/contact/rendering pipeline needs to change.
+
+### The boss: every 20th maze
+
+Every `BOSS_INTERVAL`-th maze (20, 40, ..., 100 —
+`progression/entities/boss.py::is_boss_maze()`) replaces the normal goal
+with a `Boss` instead: it occupies the maze's `farthest_reachable_cell`
+position (the same tested placement goal cells normally use), and
+defeating it — not reaching a cell — clears the maze. No pellets/enemies
+share a boss maze; it's a focused fight.
+
+The boss alternates every player move: idle turns (`move_count` 0, 2, 4,
+...) leave it stationary, and contact then damages it
+(`BOSS_BASE_DAMAGE`, scaled by the strength perk); active turns (1, 3, 5,
+...) step it one cell toward the player (via the existing `shortest_path`
+BFS — no new pathing code) and contact instead costs the player time, same
+as a regular enemy. This is the literal reading of "moves every other
+move": on the in-between turn it doesn't move, and that's the window to
+land a hit. HP is `BOSS_BASE_HP + BOSS_HP_STEP * encounter_index` (5, 8,
+11, 14, 17 across the 5 encounters) so later fights don't get relatively
+easier as the strength perk compounds. `BOSS_INTERVAL` must land on a
+group boundary (where a perk-choice break already exists) — enforced by an
+assertion next to `is_boss_maze()`, so retuning one constant without the
+other fails loudly instead of stranding a boss maze mid-group.
+
+Deliberately *not* an `Enemy` subclass: a boss is the maze's win condition
+with its own phase state, not "an enemy but bigger." The one bit of
+behaviour it shares with a regular enemy (costing the player time) goes
+through a small `apply_time_penalty()` helper instead of inheritance, so a
+boss can never accidentally end up iterated alongside randomly-spawned
+enemies.
+
+### Perks & the build: chosen every group, stacking compounds
+
+Every group-boundary break (mazes 5, 10, ..., 95) now offers 3 perk cards
+instead of a bare "press SPACE to continue" — `LabyrinthRun.choose_perk()`
+replaced the old `resume()`; picking a card *is* the resume action.
+Starter placeholders (`progression/perks.py::ALL_PERKS`): more pellet
+spawn frequency, more time per pellet, more damage to bosses. There are
+only 3 so far, so all 3 are offered every time and repeat picks are the
+common case, not an edge case — stacking is explicitly **multiplicative**
+(picking the same perk again multiplies its multiplier by its magnitude
+again), a deliberate rogue-like snowball. The accumulated `Build` is reset
+on death along with the time resource (see "Failure" below) and shown in a
+new left sidebar (`progression/renderer.py`) as one square per acquired
+perk with a stack-count badge; hovering shows the perk's description.
+
+Selectable by arrow keys + space (`LabyrinthRun.move_perk_cursor(delta)`
+moves a wrapping cursor across the 3 cards, `choose_perk(perk_cursor)`
+confirms it), by number keys 1/2/3, or by clicking a card directly — all
+three land on the same `choose_perk(index)` call.
+
+The break genuinely pauses the clock: `update()` skips
+`TimeResource.tick()` entirely while `on_break`, but the tick reference
+point (`_last_tick`) still needs an explicit `TimeResource.resync()` call
+in `choose_perk()` once the break ends — otherwise the very next `tick()`
+computes its delta against a timestamp from *before* the break started,
+charging the whole break duration in one lump the instant play resumes
+(this shipped as a bug before being caught in playtesting: it looked like
+"the timer didn't stop for the perk screen," just deferred by a frame).
+
+Measured empirically (30 trials per size, actual `generate_maze` output),
+back when time limits were per-maze-estimated rather than a shared pool —
+kept here since it's still the reference for how traversal difficulty
+scales with size, which the pellet/enemy density formulas above lean on:
 
 | size | avg shortest-path cells | avg key presses (turns) |
 |---|---|---|
 | 9x9 | 14.6 | 5.8 |
 | 21x21 | 47.2 | 17.3 |
 | 41x41 | 99.1 | 36.3 |
-
-(Updated after a bug fix — see "Bug: forced stops at junctions weren't
-counted" below. The key-press counts here are higher than the first
-version of this table.)
-
-With `LABYRINTH_TIME_BASE=0.0` and `LABYRINTH_TIME_PER_TURN=2.0`, that puts
-the *average* maze at roughly 12s (9x9) up to 73s (41x41) — 2 seconds per
-turn is a generous per-press budget (covers reading the junction and
-reacting, not just the keypress itself), meant to be comfortably
-completable by a careful player while still creating real time pressure
-for a wandering one.
-
-(`LABYRINTH_TIME_BASE` started at 10.0 -- a flat per-maze buffer for
-orientation time on top of the per-turn budget -- and was cut to 0.0 after
-playtesting felt too generous across the board. Since it's a flat additive
-term, removing it reduces every maze's limit by exactly 10s regardless of
-size.)
 
 ### Bug: forced stops at junctions weren't counted (found via playtesting)
 
@@ -89,10 +182,10 @@ Two related bugs, both found by actually playing the game and reported as
    at where the path intends to go next. That forced stop needs its own
    key press to continue, which pure direction-change counting missed,
    under-estimating the time limit on any maze whose shortest path passes
-   through such a junction. Fixed by also counting forced stops
-   (`progression.py::count_direction_changes` now takes the grid and checks
-   `_open_neighbour_count(...) >= 3` at each path cell, not just whether the
-   direction changed).
+   through such a junction. Fixed by also counting forced stops (this
+   function has since been deleted along with the per-maze time-limit
+   model it served — see "Time: a persistent resource" above — but the bug
+   it fixed, and why, is still worth keeping on record).
 
 Both are covered by regression tests, including an end-to-end one
 (`test_maze_is_actually_completable_via_sliding`) that doesn't just check
@@ -100,22 +193,25 @@ a path exists on paper — it derives the real key-press sequence and runs it
 through the actual `slide()` function, confirming the player lands exactly
 on the goal.
 
-## Groups: seamless within, break between
+## Groups: seamless within, a perk choice between
 
 Within a group of 5, finishing a maze immediately starts the next one --
 no pause, matching "they stitch together seamlessly." After the 5th maze
-in a group, `on_break=True`: the timer stops advancing and nothing happens
-until `resume()` (SPACE in `main.py`), at which point the next
-maze generates at the new (possibly larger) size.
+in a group, `on_break=True`: the timer stops advancing and the maze view
+is replaced with 3 perk cards (see "Perks & the build" above) until
+`choose_perk(index)` is called (click a card, or 1/2/3 in `main.py`), at
+which point the chosen perk is applied and the next maze generates at the
+new (possibly larger) size.
 
 ## Failure: full reset, not a retry
 
-Timing out on any maze ends the whole run back at maze 1 (`restart()`),
-rather than retrying that one maze or losing progress only within the
+Running out of the shared time resource ends the whole run back at maze 1
+(`restart()`) — both the time budget and the accumulated perk build reset
+— rather than retrying that one maze or losing progress only within the
 current group. This was pitched as a maze **rogue-like**, and permadeath-style
 stakes are the genre's whole tension — a softer failure mode (retry in
-place, or only lose the current group) is a one-line change in
-`LabyrinthRun.update()`/`_advance()` if full-reset turns out to feel too
+place, or only lose the current group) is a small change in
+`LabyrinthRun.update()`/`restart()` if full-reset turns out to feel too
 punishing in practice. Flagging this as the single decision here most
 likely to need adjusting.
 
@@ -129,6 +225,8 @@ likely to need adjusting.
   adjustment, history log) don't apply to a structured progression run, and
   building a unified shell felt premature before knowing whether this
   pacing is even fun. Worth merging once it is.
+- See `docs/future-ideas.md` for a longer backlog of mechanics considered
+  but deliberately deferred (stances, active perks, wall-breaking).
 
 ## Renamed: this is now the default `main.py`
 

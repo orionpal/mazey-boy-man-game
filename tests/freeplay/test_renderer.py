@@ -3,7 +3,7 @@ Tests for maze_game.renderer.Layout -- window/sidebar sizing math.
 Pure geometry (pygame.Rect), no display needed.
 """
 
-from maze_game.renderer import Layout, RIGHT_HEADER_HEIGHT, RIGHT_ENTRY_HEIGHT, RIGHT_BOTTOM_PADDING
+from maze_game.freeplay.renderer import Layout, RIGHT_HEADER_HEIGHT, RIGHT_ENTRY_HEIGHT, RIGHT_BOTTOM_PADDING
 from maze_game.constants import HUD_HEIGHT, MAX_HISTORY_SHOWN
 
 

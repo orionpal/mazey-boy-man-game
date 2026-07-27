@@ -8,7 +8,7 @@ import random
 import pytest
 
 from maze_game.maze import generate_maze
-from maze_game.player import slide, _open_neighbour_count
+from maze_game.player import slide, slide_path, _open_neighbour_count
 
 DIRECTIONS = [(0, -1), (0, 1), (-1, 0), (1, 0)]
 
@@ -128,6 +128,51 @@ def test_sliding_again_through_an_open_junction_continues(grid):
             twice = slide(grid, once, direction)
             assert twice != once
     assert found_a_case, "fixture maze had no through-junction case to exercise"
+
+
+# ── slide_path ────────────────────────────────────────────────────────────
+
+
+def test_slide_path_last_cell_matches_slide(grid):
+    for start in _open_cells(grid):
+        for direction in DIRECTIONS:
+            path = slide_path(grid, start, direction)
+            end = slide(grid, start, direction)
+            if path:
+                assert path[-1] == end
+            else:
+                assert end == start
+
+
+def test_slide_path_is_empty_for_a_no_op_slide(grid):
+    cols, rows = len(grid[0]), len(grid)
+    for start in _open_cells(grid):
+        for dx, dy in DIRECTIONS:
+            nx, ny = start[0] + dx, start[1] + dy
+            blocked = not (0 <= nx < cols and 0 <= ny < rows) or grid[ny][nx] == 1
+            if blocked:
+                assert slide_path(grid, start, (dx, dy)) == []
+
+
+def test_slide_path_never_includes_the_starting_cell_or_a_wall(grid):
+    for start in _open_cells(grid):
+        for direction in DIRECTIONS:
+            path = slide_path(grid, start, direction)
+            assert start not in path
+            for cx, cy in path:
+                assert grid[cy][cx] == 0
+
+
+def test_slide_path_cells_are_contiguous_steps_in_direction(grid):
+    """Every cell in the path is exactly one step from the previous one (or from `start` for the first), in `direction`."""
+    dx_dy = {d: d for d in DIRECTIONS}
+    for start in _open_cells(grid):
+        for direction in DIRECTIONS:
+            path = slide_path(grid, start, direction)
+            prev = start
+            for cell in path:
+                assert (cell[0] - prev[0], cell[1] - prev[1]) == dx_dy[direction]
+                prev = cell
 
 
 def test_round_trip_from_a_resolved_stop_returns_to_the_same_stop():

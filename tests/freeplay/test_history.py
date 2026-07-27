@@ -1,6 +1,6 @@
 """Tests for maze_game.history — run-log persistence."""
 
-from maze_game.history import RunRecord, new_record, load_history, save_history, append_record
+from maze_game.freeplay.history import RunRecord, new_record, load_history, save_history, append_record
 
 
 def test_load_history_missing_file_returns_empty_list(tmp_path):

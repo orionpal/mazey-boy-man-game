@@ -8,7 +8,7 @@ import time
 import pytest
 
 from maze_game.constants import MIN_DIMENSION, MAX_DIMENSION
-from maze_game.game import Game, START_POS
+from maze_game.freeplay.game import Game, START_POS
 
 
 @pytest.fixture

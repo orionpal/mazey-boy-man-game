@@ -28,12 +28,53 @@ MAX_HISTORY_SHOWN = 12      # how many past runs the right sidebar lists
 # See docs/progression.md for how these were chosen -- all first-guess
 # starting values, meant to be retuned after playtesting.
 LABYRINTH_TOTAL_MAZES = 100
-LABYRINTH_GROUP_SIZE  = 5     # mazes per group; a break+resume prompt follows each group
+LABYRINTH_GROUP_SIZE  = 5     # mazes per group; a perk-choice break follows each group
 # Dimensions ramp: MIN_DIMENSION at group 1, +DIMENSION_STEP per group after
 # that, capped at MAX_DIMENSION (reused from the free-play sidebar bounds
 # above, rather than inventing a separate ceiling).
-LABYRINTH_TIME_BASE      = 0.0    # seconds, flat per-maze buffer (orientation time)
-LABYRINTH_TIME_PER_TURN  = 2.0    # seconds budgeted per direction-change needed on the shortest path
+
+# Time is one persistent resource carried across the whole run (rogue-like),
+# not a per-maze budget: it ticks down continuously, pellets add to it,
+# enemies/the boss subtract from it, and it's only reset on death (restart()).
+LABYRINTH_START_TIME = 15.0   # seconds the run starts with
+
+# Speed bonus: clearing a maze quickly adds a little time back. "Fast
+# enough" is judged against a par time derived from that specific maze's
+# BFS shortest-path length (not a flat threshold, since mazes grow through
+# the run) -- SPEED_BONUS_SECONDS_PER_CELL is set faster than the ~0.75s/
+# cell a careful player needs on average (see docs/progression.md's old
+# per-size measurements), so it rewards genuinely brisk play, not just
+# "eventually got there."
+SPEED_BONUS_TIME = 3.0
+SPEED_BONUS_SECONDS_PER_CELL = 0.5
+
+# Pellets: collectible, one-time time top-ups. Count scales with sqrt(open
+# cell count) rather than a flat fraction, since traversal difficulty grows
+# closer to linearly with maze size while a flat fraction of cells grows
+# quadratically.
+PELLET_TIME_VALUE = 1.0       # seconds gained per pellet (before perk multiplier)
+PELLET_DENSITY    = 0.6       # pellet count = density * sqrt(open cell count)
+PELLET_MIN_COUNT  = 2
+
+# Enemies: persistent hazards (not consumed on contact), unlocked partway
+# through the run.
+ENEMY_UNLOCK_MAZE  = 11       # enemies start appearing from this maze index onward
+ENEMY_TIME_PENALTY = 3.0      # seconds lost on contact
+ENEMY_DENSITY      = 0.5      # enemy count = density * sqrt(open cell count)
+ENEMY_MAX_COUNT    = 6
+
+# Boss: every BOSS_INTERVAL-th maze replaces the goal with a boss fight.
+# BOSS_INTERVAL must land on a group boundary (a perk-choice break already
+# exists there) -- see the assertion next to its use in progression/run.py.
+BOSS_INTERVAL    = 20
+BOSS_BASE_HP     = 5
+BOSS_HP_STEP     = 3          # extra HP per boss encounter (encounter 0, 1, 2, ...)
+BOSS_BASE_DAMAGE = 1          # damage per idle-phase hit, before the strength perk multiplier
+
+# Perk magnitudes (multiplicative -- stacking compounds, see progression/perks.py).
+PELLET_FREQUENCY_PERK_MAGNITUDE = 1.2
+PELLET_VALUE_PERK_MAGNITUDE     = 1.3
+STRENGTH_PERK_MAGNITUDE         = 1.5
 
 # ── Colours  (R, G, B) ────────────────────────────────────────────────────
 C_BG        = (15,  15,  25)
@@ -49,3 +90,7 @@ C_PANEL_BG  = (18,  18,  30)
 C_PANEL_LINE = (45,  45,  65)
 C_BUTTON    = (35,  60, 100)
 C_BUTTON_HOVER = (55, 90, 140)
+C_PELLET    = (230, 210,  70)
+C_ENEMY     = (200, 60,   60)
+C_BOSS_IDLE = (230, 90,  200)
+C_BOSS_ACTIVE = (120, 40, 110)
