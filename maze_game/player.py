@@ -29,6 +29,8 @@ def slide_path(
     grid: list[list[int]],
     pos: tuple[int, int],
     direction: tuple[int, int],
+    *,
+    junction_stop_count: int | None = 1,
 ) -> list[tuple[int, int]]:
     """
     Slide the player from `pos` in `direction`, returning every cell entered
@@ -41,15 +43,25 @@ def slide_path(
     through, regardless of its own neighbour count. Empty if the immediate
     next cell is already a wall/out of bounds (a no-op slide).
 
-    Stops when the player:
-      1. Would move into a wall or out of bounds, OR
-      2. Arrives at an intersection (≥ 3 open neighbours).
+    Always stops if the next cell would be a wall or out of bounds (a
+    "forced turn" is never skippable, since there's nothing to keep going
+    straight into). Otherwise stops after passing `junction_stop_count`
+    intersections (≥ 3 open neighbours):
+      - The default, 1, stops at the very first intersection reached --
+        the normal single-press move.
+      - N > 1 blows straight through the first N-1 intersections reached
+        (continuing in the same `direction`, same as holding the key down
+        through them) and stops at the Nth -- the "hold a number key" combo,
+        for covering a known run of intersections in one press.
+      - None never stops at an intersection at all, only at a wall -- the
+        "hold spacebar" combo, for running a corridor out to its end.
     """
     cols = len(grid[0])
     rows = len(grid)
     dx, dy = direction
     cx, cy = pos
     path: list[tuple[int, int]] = []
+    junctions_passed = 0
 
     while True:
         nx, ny = cx + dx, cy + dy
@@ -61,9 +73,11 @@ def slide_path(
         cx, cy = nx, ny
         path.append((cx, cy))
 
-        # Stop at junctions so the player can choose a new direction.
+        # Stop at an intersection once junction_stop_count of them have been reached.
         if _open_neighbour_count(grid, cx, cy) > 2:
-            break
+            junctions_passed += 1
+            if junction_stop_count is not None and junctions_passed >= junction_stop_count:
+                break
 
     return path
 

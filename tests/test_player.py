@@ -175,6 +175,46 @@ def test_slide_path_cells_are_contiguous_steps_in_direction(grid):
                 prev = cell
 
 
+# ── slide_path(junction_stop_count=...) -- combo moves ────────────────────
+# A straight corridor at y=2 with three junctions in a row (branch openings
+# at x=3, 5, 7), used to test skipping through a known number of them.
+
+JUNCTION_CHAIN_GRID = [[1] * 11 for _ in range(5)]
+for _x in range(1, 10):
+    JUNCTION_CHAIN_GRID[2][_x] = 0
+JUNCTION_CHAIN_GRID[1][3] = 0
+JUNCTION_CHAIN_GRID[1][5] = 0
+JUNCTION_CHAIN_GRID[1][7] = 0
+
+
+def test_junction_stop_count_default_matches_plain_slide_path():
+    assert slide_path(JUNCTION_CHAIN_GRID, (1, 2), (1, 0)) == slide_path(
+        JUNCTION_CHAIN_GRID, (1, 2), (1, 0), junction_stop_count=1
+    )
+    assert slide_path(JUNCTION_CHAIN_GRID, (1, 2), (1, 0)) == [(2, 2), (3, 2)]  # stops at the 1st junction
+
+
+def test_junction_stop_count_n_skips_through_n_minus_1_junctions():
+    assert slide_path(JUNCTION_CHAIN_GRID, (1, 2), (1, 0), junction_stop_count=2) == [
+        (2, 2), (3, 2), (4, 2), (5, 2),
+    ]  # passes the 1st junction, stops at the 2nd
+    assert slide_path(JUNCTION_CHAIN_GRID, (1, 2), (1, 0), junction_stop_count=3) == [
+        (2, 2), (3, 2), (4, 2), (5, 2), (6, 2), (7, 2),
+    ]  # passes the 1st and 2nd, stops at the 3rd
+
+
+def test_junction_stop_count_none_ignores_junctions_and_stops_only_at_a_wall():
+    path = slide_path(JUNCTION_CHAIN_GRID, (1, 2), (1, 0), junction_stop_count=None)
+    assert path == [(2, 2), (3, 2), (4, 2), (5, 2), (6, 2), (7, 2), (8, 2), (9, 2)]  # runs to the dead end
+
+
+def test_junction_stop_count_larger_than_junctions_present_runs_to_the_wall():
+    """Asking to skip more junctions than the corridor has just runs it out, same as junction_stop_count=None."""
+    assert slide_path(JUNCTION_CHAIN_GRID, (1, 2), (1, 0), junction_stop_count=100) == slide_path(
+        JUNCTION_CHAIN_GRID, (1, 2), (1, 0), junction_stop_count=None
+    )
+
+
 def test_round_trip_from_a_resolved_stop_returns_to_the_same_stop():
     """
     From an already-resolved stopping point, sliding backward and then

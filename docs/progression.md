@@ -193,6 +193,28 @@ a path exists on paper — it derives the real key-press sequence and runs it
 through the actual `slide()` function, confirming the player lands exactly
 on the goal.
 
+## Movement combos: hold a modifier, then an arrow key
+
+A plain arrow press stops at the first intersection reached (`slide_path`'s
+default `junction_stop_count=1`) — the base feel described in
+`docs/controls-audit.md`. Two combos, checked in `main.py` against
+`pygame.key.get_pressed()` at the moment the arrow key is pressed, extend
+that:
+
+- **Hold spacebar + an arrow key**: ignore intersections entirely, running
+  all the way to the next wall (`junction_stop_count=None`).
+- **Hold a number key (1-9) + an arrow key**: blow through the first N-1
+  intersections reached and stop at the Nth (`junction_stop_count=N`) — a
+  way to cover a known run of intersections in one press instead of
+  repeating the arrow key.
+
+Both are just `player.slide_path()`'s existing wall-vs-junction stop rule
+generalized to "stop after the Nth junction" instead of hardcoded at the
+1st (`None` behaves as "never"). `LabyrinthRun.move()` passes the count
+straight through, so pellet/enemy/boss contact resolution (which already
+checks every cell in the returned path, not just the final stop) works
+identically for combo moves — a longer path is still just a longer path.
+
 ## Groups: seamless within, a perk choice between
 
 Within a group of 5, finishing a maze immediately starts the next one --

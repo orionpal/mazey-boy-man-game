@@ -116,10 +116,16 @@ class LabyrinthRun:
             self.finished = True
             self._advance()
 
-    def move(self, direction: tuple[int, int]) -> None:
+    def move(self, direction: tuple[int, int], junction_stop_count: int | None = 1) -> None:
+        """
+        junction_stop_count follows player.slide_path(): 1 (default) is a
+        normal single-press move; None is the "hold spacebar" combo (run to
+        the next wall, ignoring intersections); N>1 is the "hold a number
+        key" combo (blow through the first N-1 intersections, stop at the Nth).
+        """
         if self.on_break or self.failed or self.completed_run or self.finished:
             return
-        path = slide_path(self.grid, self.player, direction)
+        path = slide_path(self.grid, self.player, direction, junction_stop_count=junction_stop_count)
         if not path:
             return
         if self.boss is not None:

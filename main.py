@@ -38,6 +38,30 @@ PERK_CHOICE_KEYS: dict[int, int] = {
     pygame.K_3: 2,
 }
 
+# Movement combos, checked against pygame.key.get_pressed() at the moment an
+# arrow key is pressed (not the arrow key's own event) -- lets an arrow key
+# be held down "through" a modifier rather than needing a specific order.
+NUMBER_KEYS: dict[int, int] = {
+    pygame.K_1: 1, pygame.K_2: 2, pygame.K_3: 3,
+    pygame.K_4: 4, pygame.K_5: 5, pygame.K_6: 6,
+    pygame.K_7: 7, pygame.K_8: 8, pygame.K_9: 9,
+}
+
+
+def _junction_stop_count(keys_held) -> int | None:
+    """
+    Hold SPACE + an arrow key: run to the next wall, ignoring intersections.
+    Hold a number key (1-9) + an arrow key: blow through the first N-1
+    intersections reached and stop at the Nth. Neither held: a normal
+    single-press move, stopping at the first intersection.
+    """
+    if keys_held[pygame.K_SPACE]:
+        return None
+    for key, n in NUMBER_KEYS.items():
+        if keys_held[key]:
+            return n
+    return 1
+
 
 def sync_window_size(window: Window, run: LabyrinthRun) -> pygame.Surface:
     """Same in-place-resize approach as mvp_main.py -- see its docstring for why."""
@@ -77,7 +101,7 @@ def main() -> None:
                     elif event.key in PERK_CHOICE_KEYS:
                         run.choose_perk(PERK_CHOICE_KEYS[event.key])
                 elif event.key in DIRECTION_MAP:
-                    run.move(DIRECTION_MAP[event.key])
+                    run.move(DIRECTION_MAP[event.key], _junction_stop_count(pygame.key.get_pressed()))
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 and run.on_break:
                 layout = Layout(run.cols, run.rows)
                 for index, card in enumerate(layout.cards):

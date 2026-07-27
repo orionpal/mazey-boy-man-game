@@ -359,6 +359,50 @@ def test_move_takes_enemy_damage_along_the_slide_path_and_enemy_persists():
     assert run.enemies == [enemy]  # persistent hazard, not consumed
 
 
+# ── move() combo pass-through (junction_stop_count) ──────────────────────
+# A longer corridor with a junction partway through (branch opening at
+# (3, 1)), so a plain move stops early but a combo can be told to continue.
+
+JUNCTION_CORRIDOR_GRID = [
+    [1, 1, 1, 1, 1, 1],
+    [1, 0, 0, 0, 0, 1],
+    [1, 1, 1, 0, 1, 1],
+]
+
+
+def _junction_corridor_run() -> LabyrinthRun:
+    run = LabyrinthRun()
+    run.grid = [row[:] for row in JUNCTION_CORRIDOR_GRID]
+    run.player = (1, 1)
+    run.goal = (4, 1)
+    run.pellets = []
+    run.enemies = []
+    run.boss = None
+    return run
+
+
+def test_move_defaults_to_stopping_at_the_first_junction():
+    run = _junction_corridor_run()
+    run.move((1, 0))
+    assert run.player == (3, 1)  # (3,1) has a 3rd opening down to (3,2) -- a junction
+
+
+def test_move_with_spacebar_combo_ignores_junctions_and_runs_to_the_wall():
+    run = _junction_corridor_run()
+    run.move((1, 0), junction_stop_count=None)
+    assert run.player == (4, 1)  # dead end, past the junction
+
+
+def test_move_with_number_combo_collects_pellets_it_now_passes_through():
+    run = _junction_corridor_run()
+    run.pellets = [Pellet((3, 1), value=1.0)]  # sits on the junction cell itself
+    before = run.time.amount
+    run.move((1, 0), junction_stop_count=2)
+    assert run.player == (4, 1)
+    assert run.pellets == []
+    assert run.time.amount == pytest.approx(before + 1.0 * run.build.pellet_value_multiplier)
+
+
 def test_move_damages_an_idle_boss_without_costing_time():
     run = _corridor_run()
     run.goal = None
