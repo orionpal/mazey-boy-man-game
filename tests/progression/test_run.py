@@ -1,9 +1,9 @@
 """
 Tests for maze_game.progression.run -- dimension ramp, the persistent
-TimeResource, the LabyrinthRun state machine (sequencing, perk-choice
-breaks, boss mazes, timeout failure, restart), and pellet/enemy contact via
-move(). A banner-separated section covers Perk/Build in isolation (no
-LabyrinthRun needed).
+TimeResource, the LabyrinthRun state machine (sequencing, shop-choice
+breaks, boss mazes, timeout failure, restart), and pellet/enemy/item
+contact via move(). Perk/Build and Item/Loadout are tested in isolation
+under tests/progression/shop/.
 """
 
 import time
@@ -18,7 +18,8 @@ from maze_game.constants import (
 from maze_game.progression.run import dimensions_for_maze, TimeResource, LabyrinthRun
 from maze_game.progression.entities.hazards import Pellet, Enemy
 from maze_game.progression.entities.boss import Boss
-from maze_game.progression.perks import Perk, Build, ALL_PERKS
+from maze_game.progression.shop.perks import ALL_PERKS, Perk
+from maze_game.progression.shop.items import ALL_ITEMS
 
 # A trivial straight 3-cell corridor, (1,1)-(2,1)-(3,1), used to drive
 # move() deterministically instead of a randomly-generated maze.
@@ -133,65 +134,77 @@ def test_completing_a_non_group_boundary_maze_advances_seamlessly(run):
     assert run.finished is False  # finished is per-maze; the new maze isn't finished
 
 
-def test_completing_the_last_maze_of_a_group_offers_perk_choices():
+def test_completing_the_last_maze_of_a_group_offers_shop_choices():
+    """
+    Shop choices are now a random draw of 3 from the combined pool of all
+    perks and items (confirmed: this replaces the old guaranteed-all-3-perks
+    behavior), so this only checks length and pool membership, not exact
+    identity.
+    """
     run = LabyrinthRun()
     for _ in range(LABYRINTH_GROUP_SIZE):
         assert run.on_break is False
         run.player = run.goal
         run.update()
     assert run.on_break is True
-    assert run.maze_index == LABYRINTH_GROUP_SIZE  # doesn't advance until choose_perk()
-    assert run.perk_choices == list(ALL_PERKS)
+    assert run.maze_index == LABYRINTH_GROUP_SIZE  # doesn't advance until choose_shop_card()
+    assert len(run.shop_choices) == 3
+    pool = list(ALL_PERKS) + list(ALL_ITEMS)
+    assert all(card in pool for card in run.shop_choices)
 
 
-def test_choose_perk_applies_the_perk_and_advances_past_the_break():
+def test_choose_shop_card_applies_the_card_and_advances_past_the_break():
     run = LabyrinthRun()
     for _ in range(LABYRINTH_GROUP_SIZE):
         run.player = run.goal
         run.update()
     assert run.on_break is True
 
-    run.choose_perk(0)
+    chosen = run.shop_choices[0]
+    run.choose_shop_card(0)
     assert run.on_break is False
-    assert run.perk_choices is None
+    assert run.shop_choices is None
     assert run.maze_index == LABYRINTH_GROUP_SIZE + 1
     assert (run.cols, run.rows) == (MIN_DIMENSION + DIMENSION_STEP, MIN_DIMENSION + DIMENSION_STEP)
-    assert run.build.picks == {ALL_PERKS[0].id: 1}
+    if isinstance(chosen, Perk):
+        assert run.build.picks == {chosen.id: 1}
+    else:
+        assert run.loadout.picks == {chosen.id: 1}
 
 
-def test_choose_perk_is_a_no_op_when_not_on_break(run):
+def test_choose_shop_card_is_a_no_op_when_not_on_break(run):
     assert run.on_break is False
-    run.choose_perk(0)
+    run.choose_shop_card(0)
     assert run.maze_index == 1
     assert run.build.picks == {}
 
 
-def test_perk_cursor_starts_at_zero_and_wraps_with_move_perk_cursor():
+def test_shop_cursor_starts_at_zero_and_wraps_with_move_shop_cursor():
     run = LabyrinthRun()
     for _ in range(LABYRINTH_GROUP_SIZE):
         run.player = run.goal
         run.update()
     assert run.on_break is True
-    assert run.perk_cursor == 0
+    assert run.shop_cursor == 0
 
-    run.move_perk_cursor(-1)
-    assert run.perk_cursor == len(run.perk_choices) - 1  # wraps backward
-    run.move_perk_cursor(1)
-    assert run.perk_cursor == 0
-    run.move_perk_cursor(1)
-    assert run.perk_cursor == 1
+    run.move_shop_cursor(-1)
+    assert run.shop_cursor == len(run.shop_choices) - 1  # wraps backward
+    run.move_shop_cursor(1)
+    assert run.shop_cursor == 0
+    run.move_shop_cursor(1)
+    assert run.shop_cursor == 1
 
 
-def test_move_perk_cursor_is_a_no_op_when_not_on_break(run):
+def test_move_shop_cursor_is_a_no_op_when_not_on_break(run):
     assert run.on_break is False
-    run.move_perk_cursor(1)
-    assert run.perk_cursor == 0
+    run.move_shop_cursor(1)
+    assert run.shop_cursor == 0
 
 
 def test_choosing_a_perk_does_not_retroactively_charge_the_break_duration():
     """
     Regression test: update() correctly skips TimeResource.tick() while
-    on_break, but without TimeResource.resync() in choose_perk(), the tick
+    on_break, but without TimeResource.resync() in choose_shop_card(), the tick
     reference point goes stale for the whole break -- so the very next
     tick() after resuming would compute its delta against a timestamp from
     before the break started, charging the entire break duration in one
@@ -206,7 +219,7 @@ def test_choosing_a_perk_does_not_retroactively_charge_the_break_duration():
 
     time_at_break_start = run.time.amount
     run.time._last_tick -= 30.0  # simulate 30s spent choosing a perk
-    run.choose_perk(0)
+    run.choose_shop_card(0)
     assert run.time.amount == pytest.approx(time_at_break_start)  # resync alone changes nothing yet
 
     run.update()  # the first frame after resuming
@@ -243,7 +256,7 @@ def test_restart_resets_time_and_build():
     for _ in range(LABYRINTH_GROUP_SIZE):
         run.player = run.goal
         run.update()
-    run.choose_perk(0)
+    run.choose_shop_card(0)
     run.time.amount = 0.0
     run.update()
     assert run.failed is True
@@ -267,7 +280,7 @@ def test_completing_the_final_maze_sets_completed_run_not_on_break():
             run.player = run.goal
         run.update()
         if run.on_break and maze_num != LABYRINTH_TOTAL_MAZES:
-            run.choose_perk(0)
+            run.choose_shop_card(0)
     assert run.completed_run is True
     assert run.on_break is False
     assert run.maze_index == LABYRINTH_TOTAL_MAZES
@@ -280,7 +293,7 @@ def test_group_number_and_total_groups(run):
     for _ in range(LABYRINTH_GROUP_SIZE):
         run.player = run.goal
         run.update()
-    run.choose_perk(0)
+    run.choose_shop_card(0)
     assert run.group_number == 2
 
 
@@ -429,37 +442,134 @@ def test_move_costs_time_against_an_active_boss():
     assert run.time.amount < before_time
 
 
-# ── Perk / Build (no LabyrinthRun needed) ────────────────────────────────
+# ── Active items (Q/W/E/R) ────────────────────────────────────────────────
+# Hand-built grids drive LabyrinthRun.move()/activate_*() deterministically,
+# same approach as the corridor grids above.
+
+WALL_BREAKER_GRID = [
+    [1, 1, 1, 1, 1],
+    [1, 0, 1, 0, 1],
+    [1, 1, 1, 1, 1],
+]
 
 
-def test_build_starts_with_no_picks_and_unit_multipliers():
-    build = Build()
-    assert build.picks == {}
-    assert build.pellet_frequency_multiplier == 1.0
-    assert build.pellet_value_multiplier == 1.0
-    assert build.strength_multiplier == 1.0
+def _wall_breaker_run() -> LabyrinthRun:
+    run = _corridor_run()
+    run.grid = [row[:] for row in WALL_BREAKER_GRID]
+    run.player = (1, 1)
+    run.goal = (3, 1)
+    return run
 
 
-def test_acquiring_a_perk_records_the_pick_and_applies_its_effect():
-    build = Build()
-    perk = Perk(id="x", name="X", description="d", effect_key="pellet_value", magnitude=1.5)
-    build.acquire(perk)
-    assert build.picks == {"x": 1}
-    assert build.pellet_value_multiplier == pytest.approx(1.5)
+def test_wall_breaker_breaks_a_non_border_wall_and_continues():
+    run = _wall_breaker_run()
+    run.loadout.charges["wall_breaker"] = 1
+    run.move((1, 0), use_wall_breaker=True)
+    assert run.grid[1][2] == 0  # the wall is now open
+    assert run.player == (3, 1)  # slide continued through it
+    assert run.loadout.charges["wall_breaker"] == 0
 
 
-def test_acquiring_the_same_perk_twice_stacks_multiplicatively():
-    build = Build()
-    perk = Perk(id="x", name="X", description="d", effect_key="strength", magnitude=2.0)
-    build.acquire(perk)
-    build.acquire(perk)
-    assert build.picks == {"x": 2}
-    assert build.strength_multiplier == pytest.approx(4.0)  # 2.0 * 2.0, compounding
+def test_wall_breaker_without_a_charge_stops_at_the_wall():
+    run = _wall_breaker_run()
+    run.move((1, 0), use_wall_breaker=True)
+    assert run.grid[1][2] == 1  # unchanged
+    assert run.player == (1, 1)  # never moved -- stopped immediately at the wall
 
 
-def test_all_perks_have_distinct_ids_and_valid_effect_keys():
-    ids = [p.id for p in ALL_PERKS]
-    assert len(ids) == len(set(ids))
-    build = Build()
-    for perk in ALL_PERKS:
-        build.acquire(perk)  # must not raise KeyError for any effect_key
+def test_wall_breaker_refuses_to_break_the_border_wall():
+    run = _corridor_run()
+    run.grid = [
+        [1, 1, 1],
+        [1, 0, 1],
+        [1, 1, 1],
+    ]
+    run.player = (1, 1)
+    run.loadout.charges["wall_breaker"] = 5
+    run.move((-1, 0), use_wall_breaker=True)
+    assert run.grid[1][0] == 1  # border wall never broken
+    assert run.player == (1, 1)  # never moved
+    assert run.loadout.charges["wall_breaker"] == 5  # border check precedes the charge check
+
+
+LASER_ROOM_GRID = [
+    [1, 1, 1, 1, 1],
+    [1, 0, 0, 0, 1],
+    [1, 0, 0, 0, 1],
+    [1, 0, 0, 0, 1],
+    [1, 1, 1, 1, 1],
+]
+
+
+def _laser_room_run() -> LabyrinthRun:
+    run = _corridor_run()
+    run.grid = [row[:] for row in LASER_ROOM_GRID]
+    run.player = (2, 2)  # centre of the 3x3 open room
+    run.goal = None
+    return run
+
+
+def test_activate_laser_destroys_enemies_on_a_cardinal_ray_but_not_off_it():
+    run = _laser_room_run()
+    on_ray = Enemy((2, 1))       # directly above the player -- hit
+    off_ray = Enemy((1, 1))      # corner, not on any of the 4 rays -- survives
+    run.enemies = [on_ray, off_ray]
+    run.loadout.charges["laser"] = 1
+    run.activate_laser()
+    assert run.enemies == [off_ray]
+    assert run.loadout.charges["laser"] == 0
+
+
+def test_activate_laser_without_a_charge_is_a_no_op():
+    run = _laser_room_run()
+    enemy = Enemy((2, 1))
+    run.enemies = [enemy]
+    run.activate_laser()
+    assert run.enemies == [enemy]
+
+
+def test_activate_stopwatch_pauses_time_and_blocks_movement_then_resyncs():
+    """Mirrors test_choosing_a_perk_does_not_retroactively_charge_the_break_duration -- same resync fix, applied to the Stopwatch pause."""
+    run = _corridor_run()
+    run.loadout.charges["stopwatch"] = 1
+    run.activate_stopwatch()
+    assert run.stopwatch_until is not None
+    assert run.loadout.charges["stopwatch"] == 0
+
+    pos_before = run.player
+    run.move((1, 0))
+    assert run.player == pos_before  # movement blocked while paused
+
+    before_time = run.time.amount
+    run.update()  # still paused -- no tick, no resync yet
+    assert run.time.amount == pytest.approx(before_time)
+    assert run.stopwatch_until is not None
+
+    run.stopwatch_until = time.monotonic() - 0.01  # force elapsed
+    run.time._last_tick -= 30.0  # simulate 30s of real time spent paused
+    run.update()  # the first frame after the pause ends
+    assert run.stopwatch_until is None
+    assert run.time.amount == pytest.approx(before_time, abs=0.05)  # resynced, pause not charged
+
+
+def test_activate_stopwatch_without_a_charge_is_a_no_op():
+    run = _corridor_run()
+    run.activate_stopwatch()
+    assert run.stopwatch_until is None
+
+
+def test_activate_squeaky_toy_sets_a_timestamp_and_needs_no_charge():
+    run = _corridor_run()
+    assert run.last_squeak_at is None
+    run.activate_squeaky_toy()
+    assert run.last_squeak_at is not None
+    assert run.loadout.charges.get("squeaky_toy", 0) == 0  # unlimited -- never consumes a charge
+
+
+def test_activate_squeaky_toy_is_a_no_op_once_failed():
+    run = _corridor_run()
+    run.time.amount = 0.0
+    run.update()
+    assert run.failed is True
+    run.activate_squeaky_toy()
+    assert run.last_squeak_at is None

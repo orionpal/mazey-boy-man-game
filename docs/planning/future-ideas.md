@@ -13,24 +13,21 @@ e.g. a movement stance (today's only mode) vs. an action stance. This is
 the main lever for giving the player more to do than just move, without
 adding more permanently-bound keys.
 
-## 2. Active perks
+## 2. Active perks -- DONE, see docs/progression.md
 
-All current starter perks (`progression/perks.py`) are passive multipliers
-applied automatically on pickup/contact. An active perk would instead be
-triggered deliberately by the player (a keypress, or an action while in a
-stance from #1) — e.g. a short-range attack, a temporary shield, a
-teleport. Needs a decision on resource cost/cooldown model before it can
-share the same `Perk`/`Build` machinery passive perks use today.
+Shipped as the Q/W/E/R item system (`progression/shop/items.py`): Wall
+Breaker, Laser, Stopwatch, Squeaky Toy, each triggered deliberately by the
+player rather than passive, with their own charge-based resource model
+(`Loadout`) sitting alongside passive `Perk`/`Build`. See "Perks & items:
+the shop" in `docs/progression.md`.
 
-## 3. Limited wall-breaking
+## 3. Limited wall-breaking -- DONE, see docs/progression.md
 
-Let the player destroy a capped number of wall segments per run (or per
-maze), opening a shortcut through a dead end or a long detour. Needs:
-where the charges come from (a perk? a pickup, like pellets?), whether
-broken walls persist for the rest of that maze only or the run, and how it
-interacts with `player.slide()`'s stop-at-junction rule (breaking a wall
-can turn a 2-neighbour corridor cell into a 3-neighbour junction on the
-fly, mid-slide).
+Shipped as the Wall Breaker item (Q slot): 1 charge per pick, breaks one
+non-border wall per activation, persists for the rest of the run (not
+reset until death). Resolved the stop-at-junction interaction by reusing
+`player.slide_path()`'s existing stop rule with a `break_wall` callback
+hook, rather than inventing separate logic.
 
 ## 4. Maze generation changes to make wall-breaking mandatory
 

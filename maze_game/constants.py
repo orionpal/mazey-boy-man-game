@@ -71,10 +71,16 @@ BOSS_BASE_HP     = 5
 BOSS_HP_STEP     = 3          # extra HP per boss encounter (encounter 0, 1, 2, ...)
 BOSS_BASE_DAMAGE = 1          # damage per idle-phase hit, before the strength perk multiplier
 
-# Perk magnitudes (multiplicative -- stacking compounds, see progression/perks.py).
+# Perk magnitudes (multiplicative -- stacking compounds, see progression/shop/perks.py).
 PELLET_FREQUENCY_PERK_MAGNITUDE = 1.2
 PELLET_VALUE_PERK_MAGNITUDE     = 1.3
 STRENGTH_PERK_MAGNITUDE         = 1.5
+
+# Items (progression/shop/items.py): Q/W/E/R active abilities, each gated by
+# a charge count in Loadout (except Squeaky Toy, which is unlimited).
+# Wall Breaker and Laser have no other numeric knobs -- their effect is a
+# single wall-open / all-enemies-in-4-directions action, not a magnitude.
+STOPWATCH_PAUSE_SECONDS = 5.0  # seconds paused per Stopwatch charge used
 
 # ── Colours  (R, G, B) ────────────────────────────────────────────────────
 C_BG        = (15,  15,  25)

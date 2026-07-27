@@ -3,18 +3,21 @@ renderer.py
 -----------
 All pygame drawing code for the labyrinth progression mode: the maze,
 pellets/enemies/boss, HUD (time resource + maze/group progress), the left
-"build" sidebar (acquired perks, hover for a description), and the perk-card
-screen that replaces the maze area during a group break. Layout owns the
-rect geometry so main.py's click hit-testing (perk cards) uses the same
-rects draw() paints with, mirroring freeplay/renderer.py's convention.
+sidebar (acquired perks, and the 4 fixed Q/W/E/R item slots -- always drawn,
+filled or not), and the shop-card screen that replaces the maze area during
+a group break. Layout owns the rect geometry so main.py's click hit-testing
+(shop cards) uses the same rects draw() paints with, mirroring
+freeplay/renderer.py's convention.
 
 The window is a fixed size regardless of maze dimensions: the maze renders
 inside a static MAZE_AREA_SIZE viewport, with per-cell pixel size shrinking
 to fit as the maze grows (9x9 up to 41x41 over the run) rather than the
-window itself growing. Keeps the window (and the perk-card/build-sidebar
-layout, which don't scale with maze size at all) visually stable across
-the whole run.
+window itself growing. Keeps the window (and the shop-card/sidebar layout,
+which don't scale with maze size at all) visually stable across the whole
+run.
 """
+
+import time
 
 import pygame
 
@@ -24,11 +27,13 @@ from maze_game.constants import (
     C_PANEL_BG, C_PANEL_LINE, C_BUTTON, C_BUTTON_HOVER,
     C_PELLET, C_ENEMY, C_BOSS_IDLE, C_BOSS_ACTIVE,
 )
-from maze_game.progression.perks import ALL_PERKS
+from maze_game.progression.shop.perks import ALL_PERKS
+from maze_game.progression.shop.items import ALL_ITEMS, UNLIMITED_ITEM_IDS
 from maze_game.progression.run import LabyrinthRun
 
 MAZE_AREA_SIZE = 640  # fixed pixel viewport the maze renders within, at any dimension
 LOW_TIME_WARNING_SECONDS = 5.0
+SQUEAK_FLASH_SECONDS = 1.0
 
 CARD_MARGIN = 24
 CARD_GAP = 16
@@ -37,6 +42,9 @@ CARD_LINE_HEIGHT = 18
 
 BUILD_SQUARE_SIZE = 36
 BUILD_SQUARE_GAP = 12
+ITEMS_TITLE_Y = 180
+ITEMS_SUBTITLE_Y = 224
+ITEM_SQUARES_Y = 274
 TOOLTIP_PADDING = 8
 TOOLTIP_MAX_WIDTH = 260
 
@@ -81,10 +89,13 @@ class Layout:
         ]
 
         bx = self.left.x + 16
-        by = 110
         self.build_squares = [
-            pygame.Rect(bx + i * (BUILD_SQUARE_SIZE + BUILD_SQUARE_GAP), by, BUILD_SQUARE_SIZE, BUILD_SQUARE_SIZE)
+            pygame.Rect(bx + i * (BUILD_SQUARE_SIZE + BUILD_SQUARE_GAP), 110, BUILD_SQUARE_SIZE, BUILD_SQUARE_SIZE)
             for i in range(len(ALL_PERKS))
+        ]
+        self.item_squares = [
+            pygame.Rect(bx + i * (BUILD_SQUARE_SIZE + BUILD_SQUARE_GAP), ITEM_SQUARES_Y, BUILD_SQUARE_SIZE, BUILD_SQUARE_SIZE)
+            for i in range(len(ALL_ITEMS))
         ]
 
 
@@ -113,7 +124,7 @@ class Renderer:
         self.surface.fill(C_BG)
 
         if run.on_break:
-            self._draw_perk_cards(run, layout, mouse_pos)
+            self._draw_shop_cards(run, layout, mouse_pos)
         else:
             self._draw_maze(run.grid, layout)
             self._draw_pellets(run.pellets, layout)
@@ -123,9 +134,11 @@ class Renderer:
             else:
                 self._draw_goal(run.goal, layout)
             self._draw_player(run.player, layout)
+            self._draw_squeak(run, layout)
 
         self._draw_hud(run, layout)
         self._draw_build_sidebar(run.build, layout, mouse_pos)
+        self._draw_items_sidebar(run.loadout, layout, mouse_pos)
 
         if run.failed:
             self._draw_overlay(
@@ -190,6 +203,15 @@ class Renderer:
         hp_label = self.font_small.render(f"HP {max(0, boss.hp):g}", True, C_TEXT)
         self.surface.blit(hp_label, (ox + x * cell - hp_label.get_width() // 2 + cell // 2, oy + y * cell - 18))
 
+    def _draw_squeak(self, run: LabyrinthRun, layout: Layout) -> None:
+        if run.last_squeak_at is None or time.monotonic() - run.last_squeak_at > SQUEAK_FLASH_SECONDS:
+            return
+        ox, oy = layout.maze_origin
+        cell = layout.cell
+        px, py = run.player
+        label = self.font_big.render("Squeak!", True, C_FLASH)
+        self.surface.blit(label, (ox + px * cell + cell // 2 - label.get_width() // 2, oy + py * cell - cell))
+
     # ── HUD ──────────────────────────────────────────────────────────────
 
     def _draw_hud(self, run: LabyrinthRun, layout: Layout) -> None:
@@ -206,7 +228,7 @@ class Renderer:
         )
         self.surface.blit(progress, (layout.hud.x + 10, layout.hud.y + 36))
 
-    # ── Build sidebar ────────────────────────────────────────────────────
+    # ── Build sidebar (passive perks) ─────────────────────────────────────
 
     def _draw_build_sidebar(self, build, layout: Layout, mouse_pos) -> None:
         pygame.draw.rect(self.surface, C_PANEL_BG, layout.left)
@@ -227,14 +249,45 @@ class Renderer:
                 badge = self.font_small.render(str(count), True, C_TEXT)
                 self.surface.blit(badge, (rect.right - badge.get_width() - 4, rect.bottom - badge.get_height() - 2))
             if acquired and rect.collidepoint(mouse_pos):
-                hovered = (perk, count)
+                hovered = (perk.name, perk.description, count)
 
         if hovered is not None:
-            self._draw_tooltip(hovered[0], hovered[1], mouse_pos)
+            self._draw_tooltip(*hovered, mouse_pos)
 
-    def _draw_tooltip(self, perk, count, mouse_pos) -> None:
-        name_line = f"{perk.name} (x{count})"
-        desc_lines = _wrap_text(self.font_small, perk.description, TOOLTIP_MAX_WIDTH - 2 * TOOLTIP_PADDING)
+    # ── Items sidebar (Q/W/E/R active abilities) ──────────────────────────
+
+    def _draw_items_sidebar(self, loadout, layout: Layout, mouse_pos) -> None:
+        title = self.font_big.render("ITEMS", True, C_TEXT)
+        self.surface.blit(title, (layout.left.x + 16, ITEMS_TITLE_Y))
+        section = self.font_small.render("Q/W/E/R to use", True, C_DIM)
+        self.surface.blit(section, (layout.left.x + 16, ITEMS_SUBTITLE_Y))
+
+        hovered = None
+        for item, rect in zip(ALL_ITEMS, layout.item_squares):
+            count = loadout.picks.get(item.id, 0)
+            acquired = count > 0
+            colour = C_BUTTON_HOVER if (acquired and rect.collidepoint(mouse_pos)) else (C_BUTTON if acquired else C_PANEL_LINE)
+            pygame.draw.rect(self.surface, colour, rect, border_radius=4)
+
+            letter = self.font_small.render(item.slot_key, True, C_TEXT if acquired else C_DIM)
+            self.surface.blit(letter, (rect.x + 4, rect.y + 4))
+
+            if acquired and item.id not in UNLIMITED_ITEM_IDS:
+                charges = loadout.charges.get(item.id, 0)
+                badge = self.font_small.render(str(charges), True, C_TEXT)
+                self.surface.blit(badge, (rect.right - badge.get_width() - 4, rect.bottom - badge.get_height() - 2))
+
+            if acquired and rect.collidepoint(mouse_pos):
+                charge_label = "unlimited" if item.id in UNLIMITED_ITEM_IDS else f"x{loadout.charges.get(item.id, 0)} charges"
+                hovered = (f"{item.name} ({item.slot_key})", f"{item.description} [{charge_label}]", None)
+
+        if hovered is not None:
+            name_line, desc_line, _ = hovered
+            self._draw_tooltip(name_line, desc_line, None, mouse_pos)
+
+    def _draw_tooltip(self, name: str, description: str, count: int | None, mouse_pos) -> None:
+        name_line = f"{name} (x{count})" if count is not None else name
+        desc_lines = _wrap_text(self.font_small, description, TOOLTIP_MAX_WIDTH - 2 * TOOLTIP_PADDING)
         lines = [name_line] + desc_lines
 
         w = max(self.font_small.size(line)[0] for line in lines) + 2 * TOOLTIP_PADDING
@@ -253,31 +306,31 @@ class Renderer:
             surf = self.font_small.render(line, True, C_DIM)
             self.surface.blit(surf, (x + TOOLTIP_PADDING, y + TOOLTIP_PADDING + (i + 1) * CARD_LINE_HEIGHT))
 
-    # ── Perk cards (group break) ─────────────────────────────────────────
+    # ── Shop cards (group break) ─────────────────────────────────────────
 
-    def _draw_perk_cards(self, run: LabyrinthRun, layout: Layout, mouse_pos) -> None:
+    def _draw_shop_cards(self, run: LabyrinthRun, layout: Layout, mouse_pos) -> None:
         hint = self.font_small.render(
-            f"Group {run.group_number}/{run.total_groups} complete -- pick a perk "
+            f"Group {run.group_number}/{run.total_groups} complete -- pick a card "
             "(arrows + space, click, or 1/2/3)",
             True, C_DIM,
         )
         self.surface.blit(hint, (layout.left.right + 16, 0))
 
-        for i, (perk, rect) in enumerate(zip(run.perk_choices or [], layout.cards)):
-            selected = rect.collidepoint(mouse_pos) or i == run.perk_cursor
+        for i, (card, rect) in enumerate(zip(run.shop_choices or [], layout.cards)):
+            selected = rect.collidepoint(mouse_pos) or i == run.shop_cursor
             pygame.draw.rect(self.surface, C_BUTTON_HOVER if selected else C_BUTTON, rect, border_radius=6)
-            pygame.draw.rect(self.surface, C_FLASH if i == run.perk_cursor else C_PANEL_LINE, rect, width=2, border_radius=6)
+            pygame.draw.rect(self.surface, C_FLASH if i == run.shop_cursor else C_PANEL_LINE, rect, width=2, border_radius=6)
 
             text_w = rect.width - 2 * CARD_PADDING
 
             index_label = self.font_small.render(f"[{i + 1}]", True, C_DIM)
             self.surface.blit(index_label, (rect.x + CARD_PADDING, rect.y + CARD_PADDING))
 
-            name = self.font_big.render(perk.name, True, C_TEXT)
+            name = self.font_big.render(card.name, True, C_TEXT)
             self.surface.blit(name, (rect.x + CARD_PADDING, rect.y + CARD_PADDING + 28))
 
             desc_y = rect.y + CARD_PADDING + 28 + 34
-            for line in _wrap_text(self.font_small, perk.description, text_w):
+            for line in _wrap_text(self.font_small, card.description, text_w):
                 desc = self.font_small.render(line, True, C_DIM)
                 self.surface.blit(desc, (rect.x + CARD_PADDING, desc_y))
                 desc_y += CARD_LINE_HEIGHT

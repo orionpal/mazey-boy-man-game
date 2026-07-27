@@ -8,8 +8,9 @@ to it, enemies/the boss subtract from it, clearing a maze fast enough adds
 a small bonus, and running out ends the whole run back at maze 1
 (rogue-like: no retry in place, matching the project's existing "full
 reset, not a retry" framing). Every LABYRINTH_GROUP_SIZE-th maze pauses
-for a perk-card choice instead of a bare "continue" prompt; every
-BOSS_INTERVAL-th maze replaces the goal with a boss fight.
+for a shop-card choice (a passive perk or an active item) instead of a
+bare "continue" prompt; every BOSS_INTERVAL-th maze replaces the goal with
+a boss fight.
 
 Deliberately independent of pygame -- pure state machine, testable without a
 display, same pattern as Game/history.py.
@@ -21,14 +22,16 @@ from maze_game.constants import (
     LABYRINTH_TOTAL_MAZES, LABYRINTH_GROUP_SIZE, LABYRINTH_START_TIME,
     MIN_DIMENSION, MAX_DIMENSION, DIMENSION_STEP,
     BOSS_BASE_HP, BOSS_HP_STEP, BOSS_INTERVAL, ENEMY_UNLOCK_MAZE,
-    SPEED_BONUS_TIME, SPEED_BONUS_SECONDS_PER_CELL,
+    SPEED_BONUS_TIME, SPEED_BONUS_SECONDS_PER_CELL, STOPWATCH_PAUSE_SECONDS,
 )
 from maze_game.maze import generate_maze, farthest_reachable_cell, shortest_path
 from maze_game.player import slide_path
 from maze_game.progression.entities import resolve_contacts
 from maze_game.progression.entities.hazards import spawn_pellets, spawn_enemies
 from maze_game.progression.entities.boss import Boss, is_boss_maze
-from maze_game.progression.perks import Build, Perk, offer_perks
+from maze_game.progression.shop import offer_shop_cards
+from maze_game.progression.shop.perks import Build, Perk
+from maze_game.progression.shop.items import Loadout
 
 START_POS: tuple[int, int] = (1, 1)
 
@@ -42,6 +45,9 @@ def dimensions_for_maze(maze_index: int) -> tuple[int, int]:
     group_index = (maze_index - 1) // LABYRINTH_GROUP_SIZE  # 0-based
     size = min(MIN_DIMENSION + group_index * DIMENSION_STEP, MAX_DIMENSION)
     return size, size
+
+
+DIRECTIONS = [(0, -1), (0, 1), (-1, 0), (1, 0)]
 
 
 class TimeResource:
@@ -64,10 +70,11 @@ class TimeResource:
     def resync(self) -> None:
         """
         Reset the tick reference point to now. Call after any stretch where
-        tick() wasn't invoked (e.g. a perk-choice break) before ticking
-        resumes -- otherwise the next tick() computes its delta against a
-        stale timestamp from before the pause, charging the *entire* paused
-        stretch as elapsed time in one lump the instant play resumes.
+        tick() wasn't invoked (a shop-choice break, or a Stopwatch pause)
+        before ticking resumes -- otherwise the next tick() computes its
+        delta against a stale timestamp from before the pause, charging the
+        *entire* paused stretch as elapsed time in one lump the instant
+        play resumes.
         """
         self._last_tick = time.monotonic()
 
@@ -86,7 +93,7 @@ class LabyrinthRun:
     """
     Owns the full progression state machine: current maze, the persistent
     time resource, this maze's pellets/enemies/boss, the player's perk
-    build, group breaks, and pass/fail.
+    build and item loadout, group breaks, and pass/fail.
     """
 
     def __init__(self) -> None:
@@ -96,14 +103,22 @@ class LabyrinthRun:
         self.completed_run = False
         self.time = TimeResource(LABYRINTH_START_TIME)
         self.build = Build()
-        self.perk_choices: list[Perk] | None = None
-        self.perk_cursor = 0
+        self.loadout = Loadout()
+        self.shop_choices: list | None = None
+        self.shop_cursor = 0
+        self.stopwatch_until: float | None = None
+        self.last_squeak_at: float | None = None
         self._begin_maze()
 
     # ── Public API ────────────────────────────────────────────────────────
 
     def update(self) -> None:
         """Advance the timer and check win/timeout. Call once per frame."""
+        if self.stopwatch_until is not None:
+            if time.monotonic() >= self.stopwatch_until:
+                self.stopwatch_until = None
+                self.time.resync()  # same fix as the shop-break pause -- don't charge the pause itself
+            return  # fully paused either way: no tick, no movement, no win-check
         if self.on_break or self.failed or self.completed_run or self.finished:
             return
         self.time.tick()
@@ -116,16 +131,24 @@ class LabyrinthRun:
             self.finished = True
             self._advance()
 
-    def move(self, direction: tuple[int, int], junction_stop_count: int | None = 1) -> None:
+    def move(self, direction: tuple[int, int], junction_stop_count: int | None = 1, use_wall_breaker: bool = False) -> None:
         """
         junction_stop_count follows player.slide_path(): 1 (default) is a
         normal single-press move; None is the "hold spacebar" combo (run to
-        the next wall, ignoring intersections); N>1 is the "hold a number
-        key" combo (blow through the first N-1 intersections, stop at the Nth).
+        the next wall, ignoring intersections); N>1 blows through the first
+        N-1 intersections reached. use_wall_breaker forces None (Wall
+        Breaker always behaves "as if holding spacebar") and additionally
+        lets the slide break through one non-border wall if a charge is
+        available.
         """
-        if self.on_break or self.failed or self.completed_run or self.finished:
+        if self._is_gated():
             return
-        path = slide_path(self.grid, self.player, direction, junction_stop_count=junction_stop_count)
+        break_wall = self._try_break_wall if use_wall_breaker else None
+        path = slide_path(
+            self.grid, self.player, direction,
+            junction_stop_count=None if use_wall_breaker else junction_stop_count,
+            break_wall=break_wall,
+        )
         if not path:
             return
         if self.boss is not None:
@@ -133,19 +156,44 @@ class LabyrinthRun:
         self.player = path[-1]
         resolve_contacts(self, path)
 
-    def move_perk_cursor(self, delta: int) -> None:
-        """Move the keyboard-selected perk card left/right (wraps); confirm with choose_perk(perk_cursor)."""
-        if not self.on_break or self.perk_choices is None:
+    def activate_laser(self) -> None:
+        """Fire in all 4 directions from the player's position, destroying any enemy hit (1 charge)."""
+        if self._is_gated() or not self.loadout.consume_charge("laser"):
             return
-        self.perk_cursor = (self.perk_cursor + delta) % len(self.perk_choices)
+        hit_cells: set[tuple[int, int]] = set()
+        for direction in DIRECTIONS:
+            hit_cells.update(slide_path(self.grid, self.player, direction, junction_stop_count=None))
+        self.enemies = [e for e in self.enemies if e.pos not in hit_cells]
 
-    def choose_perk(self, index: int) -> None:
-        """Apply the chosen perk card and immediately start the next maze -- the pick IS the resume action."""
-        if not self.on_break or self.perk_choices is None:
+    def activate_stopwatch(self) -> None:
+        """Pause the clock and block movement for STOPWATCH_PAUSE_SECONDS (1 charge)."""
+        if self._is_gated() or not self.loadout.consume_charge("stopwatch"):
             return
-        self.build.acquire(self.perk_choices[index])
+        self.stopwatch_until = time.monotonic() + STOPWATCH_PAUSE_SECONDS
+
+    def activate_squeaky_toy(self) -> None:
+        """Does nothing except leave a timestamp the renderer can flash a "Squeak!" acknowledgment from."""
+        if self._is_gated():
+            return
+        self.last_squeak_at = time.monotonic()
+
+    def move_shop_cursor(self, delta: int) -> None:
+        """Move the keyboard-selected shop card left/right (wraps); confirm with choose_shop_card(shop_cursor)."""
+        if not self.on_break or self.shop_choices is None:
+            return
+        self.shop_cursor = (self.shop_cursor + delta) % len(self.shop_choices)
+
+    def choose_shop_card(self, index: int) -> None:
+        """Apply the chosen card (a perk or an item) and immediately start the next maze -- the pick IS the resume action."""
+        if not self.on_break or self.shop_choices is None:
+            return
+        card = self.shop_choices[index]
+        if isinstance(card, Perk):
+            self.build.acquire(card)
+        else:
+            self.loadout.acquire(card)
         self.on_break = False
-        self.perk_choices = None
+        self.shop_choices = None
         self.time.resync()  # the break paused the clock; don't charge its duration on the next tick()
         self.maze_index += 1
         self._begin_maze()
@@ -156,10 +204,13 @@ class LabyrinthRun:
         self.on_break = False
         self.failed = False
         self.completed_run = False
-        self.perk_choices = None
-        self.perk_cursor = 0
+        self.shop_choices = None
+        self.shop_cursor = 0
+        self.stopwatch_until = None
+        self.last_squeak_at = None
         self.time = TimeResource(LABYRINTH_START_TIME)
         self.build = Build()
+        self.loadout = Loadout()
         self._begin_maze()
 
     @property
@@ -173,8 +224,22 @@ class LabyrinthRun:
 
     # ── Private helpers ───────────────────────────────────────────────────
 
+    def _is_gated(self) -> bool:
+        return bool(
+            self.on_break or self.failed or self.completed_run or self.finished
+            or self.stopwatch_until is not None
+        )
+
     def _maze_cleared(self) -> bool:
         return self.boss.defeated if self.boss is not None else self.player == self.goal
+
+    def _try_break_wall(self, nx: int, ny: int) -> bool:
+        if nx in (0, self.cols - 1) or ny in (0, self.rows - 1):
+            return False  # never break the border
+        if not self.loadout.consume_charge("wall_breaker"):
+            return False
+        self.grid[ny][nx] = 0
+        return True
 
     def _begin_maze(self) -> None:
         cols, rows = dimensions_for_maze(self.maze_index)
@@ -207,8 +272,8 @@ class LabyrinthRun:
             self.completed_run = True
         elif self.maze_index % LABYRINTH_GROUP_SIZE == 0:
             self.on_break = True
-            self.perk_choices = offer_perks()
-            self.perk_cursor = 0
+            self.shop_choices = offer_shop_cards()
+            self.shop_cursor = 0
         else:
             self.maze_index += 1
             self._begin_maze()  # seamless -- no pause within a group

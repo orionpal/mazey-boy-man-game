@@ -4,8 +4,9 @@ main.py
 Entry point: the labyrinth progression mode. 100 mazes, gradually
 increasing in size, with one persistent time resource carried across the
 whole run (topped up by pellets, drained by enemies/the boss). Groups of 5
-mazes stitch together seamlessly; a perk-card choice follows each group.
-Running out of time ends the whole run back at maze 1.
+mazes stitch together seamlessly; a shop-card choice (a passive perk or an
+active Q/W/E/R item) follows each group. Running out of time ends the whole
+run back at maze 1.
 
 See docs/progression.md for the design decisions behind the starting
 numbers (dimensions ramp, time economy, fail behaviour) -- this is a first
@@ -32,35 +33,16 @@ DIRECTION_MAP: dict[int, tuple[int, int]] = {
     pygame.K_RIGHT: ( 1,  0),
 }
 
-PERK_CHOICE_KEYS: dict[int, int] = {
+SHOP_CHOICE_KEYS: dict[int, int] = {
     pygame.K_1: 0,
     pygame.K_2: 1,
     pygame.K_3: 2,
 }
 
-# Movement combos, checked against pygame.key.get_pressed() at the moment an
-# arrow key is pressed (not the arrow key's own event) -- lets an arrow key
-# be held down "through" a modifier rather than needing a specific order.
-NUMBER_KEYS: dict[int, int] = {
-    pygame.K_1: 1, pygame.K_2: 2, pygame.K_3: 3,
-    pygame.K_4: 4, pygame.K_5: 5, pygame.K_6: 6,
-    pygame.K_7: 7, pygame.K_8: 8, pygame.K_9: 9,
-}
-
 
 def _junction_stop_count(keys_held) -> int | None:
-    """
-    Hold SPACE + an arrow key: run to the next wall, ignoring intersections.
-    Hold a number key (1-9) + an arrow key: blow through the first N-1
-    intersections reached and stop at the Nth. Neither held: a normal
-    single-press move, stopping at the first intersection.
-    """
-    if keys_held[pygame.K_SPACE]:
-        return None
-    for key, n in NUMBER_KEYS.items():
-        if keys_held[key]:
-            return n
-    return 1
+    """Hold SPACE + an arrow key: run to the next wall, ignoring intersections. Otherwise, a normal single-press move."""
+    return None if keys_held[pygame.K_SPACE] else 1
 
 
 def sync_window_size(window: Window, run: LabyrinthRun) -> pygame.Surface:
@@ -93,20 +75,30 @@ def main() -> None:
                     run.restart()
                 elif run.on_break:
                     if event.key in (pygame.K_LEFT, pygame.K_UP):
-                        run.move_perk_cursor(-1)
+                        run.move_shop_cursor(-1)
                     elif event.key in (pygame.K_RIGHT, pygame.K_DOWN):
-                        run.move_perk_cursor(1)
+                        run.move_shop_cursor(1)
                     elif event.key == pygame.K_SPACE:
-                        run.choose_perk(run.perk_cursor)
-                    elif event.key in PERK_CHOICE_KEYS:
-                        run.choose_perk(PERK_CHOICE_KEYS[event.key])
+                        run.choose_shop_card(run.shop_cursor)
+                    elif event.key in SHOP_CHOICE_KEYS:
+                        run.choose_shop_card(SHOP_CHOICE_KEYS[event.key])
+                elif event.key == pygame.K_w:
+                    run.activate_laser()
+                elif event.key == pygame.K_e:
+                    run.activate_stopwatch()
+                elif event.key == pygame.K_r:
+                    run.activate_squeaky_toy()
                 elif event.key in DIRECTION_MAP:
-                    run.move(DIRECTION_MAP[event.key], _junction_stop_count(pygame.key.get_pressed()))
+                    keys_held = pygame.key.get_pressed()
+                    if keys_held[pygame.K_q]:
+                        run.move(DIRECTION_MAP[event.key], use_wall_breaker=True)
+                    else:
+                        run.move(DIRECTION_MAP[event.key], _junction_stop_count(keys_held))
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 and run.on_break:
                 layout = Layout(run.cols, run.rows)
                 for index, card in enumerate(layout.cards):
                     if card.collidepoint(event.pos):
-                        run.choose_perk(index)
+                        run.choose_shop_card(index)
                         break
 
         run.update()

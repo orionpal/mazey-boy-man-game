@@ -1,12 +1,13 @@
 """
 perks.py
 --------
-Perk cards offered every LABYRINTH_GROUP_SIZE-th maze, and the Build that
-accumulates them. Stacking is deliberately multiplicative/compounding --
+Passive perks (one of the two card types `shop/__init__.py::offer_shop_cards()`
+draws from -- see `items.py` for the active-item counterpart) and the Build
+that accumulates them. Stacking is deliberately multiplicative/compounding --
 picking the same perk again multiplies its multiplier by `magnitude` again
--- since there are only 3 placeholder perks and ~19 perk-choice breaks
-across a run, repeat picks are the default case, not an edge case, and this
-needed a pinned-down rule rather than being left implicit.
+-- since there are only 3 placeholder perks and repeat picks are common
+across a run, not an edge case, and this needed a pinned-down rule rather
+than being left implicit.
 """
 
 from __future__ import annotations
@@ -79,8 +80,3 @@ ALL_PERKS: list[Perk] = [
 ]
 
 PERKS_BY_ID: dict[str, Perk] = {p.id: p for p in ALL_PERKS}
-
-
-def offer_perks() -> list[Perk]:
-    """All 3 placeholder perks are offered every time -- no filtering needed until there are more than 3."""
-    return list(ALL_PERKS)

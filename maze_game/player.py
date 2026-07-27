@@ -9,6 +9,8 @@ neighbours, meaning a choice is available).  This gives the game its
 distinctive feel without requiring frame-by-frame movement.
 """
 
+from typing import Callable
+
 
 def _open_neighbour_count(
     grid: list[list[int]], cx: int, cy: int
@@ -31,6 +33,7 @@ def slide_path(
     direction: tuple[int, int],
     *,
     junction_stop_count: int | None = 1,
+    break_wall: Callable[[int, int], bool] | None = None,
 ) -> list[tuple[int, int]]:
     """
     Slide the player from `pos` in `direction`, returning every cell entered
@@ -43,18 +46,24 @@ def slide_path(
     through, regardless of its own neighbour count. Empty if the immediate
     next cell is already a wall/out of bounds (a no-op slide).
 
-    Always stops if the next cell would be a wall or out of bounds (a
-    "forced turn" is never skippable, since there's nothing to keep going
-    straight into). Otherwise stops after passing `junction_stop_count`
-    intersections (≥ 3 open neighbours):
+    Stops after passing `junction_stop_count` intersections (≥ 3 open
+    neighbours):
       - The default, 1, stops at the very first intersection reached --
         the normal single-press move.
       - N > 1 blows straight through the first N-1 intersections reached
         (continuing in the same `direction`, same as holding the key down
-        through them) and stops at the Nth -- the "hold a number key" combo,
-        for covering a known run of intersections in one press.
+        through them) and stops at the Nth.
       - None never stops at an intersection at all, only at a wall -- the
         "hold spacebar" combo, for running a corridor out to its end.
+
+    Normally also stops the instant the next cell would be a wall or out of
+    bounds. If `break_wall` is given, it's offered the chance to override an
+    in-bounds wall stop: called as `break_wall(nx, ny)`, and if it returns
+    True (having mutated `grid[ny][nx]` to open, which is this hook's
+    responsibility, not this function's -- `slide_path` stays maze/charge-
+    agnostic, just "ask, and if yes, treat this cell as open now"), the
+    slide continues straight through it instead of stopping. Out-of-bounds
+    is never offered to `break_wall` -- there's no cell there to open.
     """
     cols = len(grid[0])
     rows = len(grid)
@@ -66,9 +75,13 @@ def slide_path(
     while True:
         nx, ny = cx + dx, cy + dy
 
-        # Stop if the next cell is a wall or out of bounds.
-        if not (0 <= nx < cols and 0 <= ny < rows) or grid[ny][nx] == 1:
+        if not (0 <= nx < cols and 0 <= ny < rows):
             break
+
+        if grid[ny][nx] == 1:
+            if break_wall is None or not break_wall(nx, ny):
+                break
+            # break_wall() has opened (nx, ny); fall through and move into it.
 
         cx, cy = nx, ny
         path.append((cx, cy))

@@ -13,7 +13,7 @@ from maze_game.constants import (
 )
 from maze_game.progression.entities.hazards import Pellet, Enemy, ENEMY_TYPES, spawn_pellets, spawn_enemies
 from maze_game.progression.entities.boss import Boss, is_boss_maze
-from maze_game.progression.perks import Build
+from maze_game.progression.shop.perks import Build
 
 # A small open room, no walls except the border -- every interior cell is
 # a valid candidate for spawning.

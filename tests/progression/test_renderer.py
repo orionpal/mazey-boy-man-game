@@ -8,7 +8,8 @@ metrics, no display needed.
 import pygame
 
 from maze_game.progression.renderer import Layout, MAZE_AREA_SIZE, _wrap_text
-from maze_game.progression.perks import ALL_PERKS
+from maze_game.progression.shop.perks import ALL_PERKS
+from maze_game.progression.shop.items import ALL_ITEMS
 from maze_game.constants import SIDEBAR_W, HUD_HEIGHT
 
 
@@ -82,6 +83,30 @@ def test_build_squares_are_within_the_left_sidebar():
     layout = Layout(cols=21, rows=21)
     for square in layout.build_squares:
         assert layout.left.collidepoint(square.topleft)
+
+
+def test_item_squares_has_one_slot_per_item():
+    layout = Layout(cols=21, rows=21)
+    assert len(layout.item_squares) == len(ALL_ITEMS) == 4  # fixed Q/W/E/R, always drawn
+
+
+def test_item_squares_are_within_the_left_sidebar():
+    layout = Layout(cols=21, rows=21)
+    for square in layout.item_squares:
+        assert layout.left.collidepoint(square.topleft)
+
+
+def test_item_squares_do_not_overlap_build_squares():
+    layout = Layout(cols=21, rows=21)
+    for build_square in layout.build_squares:
+        for item_square in layout.item_squares:
+            assert not build_square.colliderect(item_square)
+
+
+def test_item_square_geometry_is_independent_of_maze_dimensions():
+    small = Layout(cols=9, rows=9)
+    large = Layout(cols=41, rows=41)
+    assert small.item_squares == large.item_squares
 
 
 # ── _wrap_text ────────────────────────────────────────────────────────────

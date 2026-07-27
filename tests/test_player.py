@@ -215,6 +215,62 @@ def test_junction_stop_count_larger_than_junctions_present_runs_to_the_wall():
     )
 
 
+# ── slide_path(break_wall=...) -- wall-breaker combo ──────────────────────
+# A short corridor with two interior walls in a row (at x=2 and x=4) and a
+# border wall at x=6, used to test the break_wall override hook.
+
+BREAKABLE_WALL_GRID = [
+    [1, 1, 1, 1, 1, 1, 1],
+    [1, 0, 1, 0, 1, 0, 1],
+    [1, 1, 1, 1, 1, 1, 1],
+]
+
+
+def test_break_wall_none_behaves_like_a_normal_wall_stop():
+    assert slide_path(BREAKABLE_WALL_GRID, (1, 1), (1, 0)) == []  # (2,1) is a wall, no-op
+
+
+def test_break_wall_returning_true_opens_the_wall_and_continues():
+    """An always-True break_wall has no concept of "border" -- that policy belongs to the caller
+    (see test_break_wall_can_refuse_partway_through for how a caller enforces it); left unchecked,
+    it just keeps breaking through every wall until it runs out of grid entirely."""
+    grid = [row[:] for row in BREAKABLE_WALL_GRID]
+    path = slide_path(grid, (1, 1), (1, 0), junction_stop_count=None, break_wall=lambda x, y: (grid[y].__setitem__(x, 0), True)[1])
+    assert path == [(2, 1), (3, 1), (4, 1), (5, 1), (6, 1)]  # breaks through x=2, x=4, and even the x=6 border
+    assert grid[1][2] == 0 and grid[1][4] == 0 and grid[1][6] == 0  # actually mutated
+
+
+def test_break_wall_returning_false_behaves_like_no_break_wall_at_all():
+    path = slide_path(BREAKABLE_WALL_GRID, (1, 1), (1, 0), junction_stop_count=None, break_wall=lambda x, y: False)
+    assert path == []
+
+
+def test_break_wall_can_refuse_partway_through():
+    """First wall (x=2) is broken, second (x=4) is refused (e.g. out of charges) -- stops there, x=4 never opened."""
+    grid = [row[:] for row in BREAKABLE_WALL_GRID]
+    calls = []
+
+    def break_wall(x, y):
+        calls.append((x, y))
+        if len(calls) == 1:
+            grid[y][x] = 0
+            return True
+        return False
+
+    path = slide_path(grid, (1, 1), (1, 0), junction_stop_count=None, break_wall=break_wall)
+    assert path == [(2, 1), (3, 1)]
+    assert calls == [(2, 1), (4, 1)]
+    assert grid[1][4] == 1  # never opened
+
+
+def test_break_wall_is_never_called_for_out_of_bounds():
+    grid = [[0, 0, 0]]  # 1x3, fully open, no walls at all
+    calls = []
+    path = slide_path(grid, (2, 0), (1, 0), break_wall=lambda x, y: calls.append((x, y)) or True)
+    assert path == []  # (3,0) is out of bounds, not a wall -- nothing to offer break_wall
+    assert calls == []
+
+
 def test_round_trip_from_a_resolved_stop_returns_to_the_same_stop():
     """
     From an already-resolved stopping point, sliding backward and then
