@@ -40,3 +40,6 @@ a way to guarantee the vault is worth the wall-break cost (e.g. always
 contains a large pellet cache or a guaranteed perk). Only makes sense once
 #3 exists and has numbers attached to "how many breaks does a player
 typically have banked by maze N."
+
+## 5. Trap doors, puzzle elements, collectors, portals, false wall
+
