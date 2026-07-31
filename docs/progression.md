@@ -318,6 +318,43 @@ place, or only lose the current group) is a small change in
 punishing in practice. Flagging this as the single decision here most
 likely to need adjusting.
 
+What *doesn't* reset on failure: gold and owned meta-progression upgrades
+(see "The Base" below) — the whole point of a persistent currency layered
+on top of a rogue-like's full-reset one is that death isn't a total loss.
+
+## The Base: meta-progression between runs
+
+Gold (`GoldPellet`, `docs/assets.md`) used to be collect-and-display only.
+`progression/meta/` gives it a purpose: the Base is a screen the player
+visits between runs (`progression/app.py::run_progression_mode()` — always
+precedes a run, and R after a fail/complete screen now routes back into it
+instead of restarting in place) where gold buys permanent passive
+upgrades. Two ship today: **Prospector's Eye** (+10% pellet time/level) and
+**Thick Skin** (-10% enemy damage/level), each repurchasable at an
+increasing gold cost (`cost_base + cost_step * level`).
+
+**Deliberately reuses `shop/perks.py`'s stacking machinery rather than
+inventing a parallel one.** A meta upgrade (`MetaUpgrade`) has the same
+`effect_key`/`magnitude` shape as an in-run `Perk` — `MetaProgress.seed_build()`
+builds a fresh `Build` and applies each owned upgrade's effect through the
+*exact* `EFFECTS` dict `Build.acquire()` already uses, once per owned
+level. `LabyrinthRun.__init__`/`restart()` call this instead of a bare
+`Build()`, so owned upgrades apply before the run even starts and compound
+underneath whatever gets picked in-run — Prospector's Eye and Rich Vein
+(the in-run pellet-value perk) stack multiplicatively through the same
+`pellet_value_multiplier` field. `Build` gained `enemy_resistance_multiplier`
+for Thick Skin's effect (`Enemy.on_contact` now multiplies its penalty by
+it) — no in-run `Perk` uses that `effect_key` yet, but it lives alongside
+`Build`'s other fields for consistency, same as `pellet_value`/
+`pellet_frequency` already do.
+
+**Persistence**: gold stays owned by `hazards.py`'s existing
+`load_gold_total()`/`save_gold_total()` (`gold.json`) — `MetaProgress`
+reads/writes it via those same functions rather than duplicating gold
+persistence. Owned upgrade levels get their own sibling file,
+`meta_upgrades.json`, loaded fresh every time the Base is shown so it
+always reflects whatever the just-finished run left behind.
+
 ## Seeded runs
 
 `LabyrinthRun(seed=...)` — every RNG-consuming call the run makes
