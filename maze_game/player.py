@@ -35,6 +35,7 @@ def slide_path(
     junction_stop_count: int | None = 1,
     break_wall: Callable[[int, int], bool] | None = None,
     teleport: Callable[[int, int], tuple[int, int] | None] | None = None,
+    door_locked: Callable[[int, int], bool] | None = None,
 ) -> list[tuple[int, int]]:
     """
     Slide the player from `pos` in `direction`, returning every cell entered
@@ -74,6 +75,16 @@ def slide_path(
     guard against bouncing back and forth through a pair, and matches the
     existing "you always land exactly on a stopping cell, then choose your
     next direction" feel already used for junctions.
+
+    If `door_locked` is given, it's checked against a candidate next cell
+    that's grid-*open* (mutually exclusive with the `break_wall` branch --
+    a locked door is never offered to Wall Breaker): called as
+    `door_locked(nx, ny)`, and if it returns True, the slide stops there,
+    exactly like an un-openable wall. This lets a cell be grid-open (so
+    every BFS-based helper -- shortest_path, farthest_reachable_cell, etc.
+    -- treats it as ordinarily passable) while still being impassable to
+    real movement until whatever `door_locked` is checking against changes
+    (see progression/augments/doors.py).
     """
     cols = len(grid[0])
     rows = len(grid)
@@ -92,6 +103,8 @@ def slide_path(
             if break_wall is None or not break_wall(nx, ny):
                 break
             # break_wall() has opened (nx, ny); fall through and move into it.
+        elif door_locked is not None and door_locked(nx, ny):
+            break
 
         cx, cy = nx, ny
         path.append((cx, cy))

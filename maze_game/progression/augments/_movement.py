@@ -74,7 +74,7 @@ def pendant_subtree_map(grid, root):
     return order, subtree
 
 
-def real_move_reachable(grid, start, *, teleport=None):
+def real_move_reachable(grid, start, *, teleport=None, door_locked=None):
     """
     BFS over the *real* movement-state graph: from each position, the only
     next positions are wherever a real player.slide_path() call (with
@@ -96,7 +96,7 @@ def real_move_reachable(grid, start, *, teleport=None):
     while frontier:
         pos = frontier.pop()
         for direction in _DIRECTIONS:
-            moved = slide_path(grid, pos, direction, teleport=teleport)
+            moved = slide_path(grid, pos, direction, teleport=teleport, door_locked=door_locked)
             if not moved:
                 continue
             new_pos = moved[-1]

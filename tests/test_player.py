@@ -271,6 +271,77 @@ def test_break_wall_is_never_called_for_out_of_bounds():
     assert calls == []
 
 
+# ── slide_path(door_locked=...) -- locked-door gate ────────────────────────
+# A short corridor, entirely grid-open (no real walls) -- door_locked is a
+# purely behavioral gate, so this grid alone would otherwise let the slide
+# run all the way to the end.
+
+OPEN_CORRIDOR_GRID = [
+    [1, 1, 1, 1, 1, 1, 1],
+    [1, 0, 0, 0, 0, 0, 1],
+    [1, 1, 1, 1, 1, 1, 1],
+]
+
+
+def test_door_locked_none_is_a_no_op():
+    path = slide_path(OPEN_CORRIDOR_GRID, (1, 1), (1, 0), junction_stop_count=None)
+    assert path == [(2, 1), (3, 1), (4, 1), (5, 1)]  # runs to the border wall, untouched by any gate
+
+
+def test_door_locked_returning_true_stops_the_slide_like_a_wall():
+    path = slide_path(
+        OPEN_CORRIDOR_GRID, (1, 1), (1, 0), junction_stop_count=None,
+        door_locked=lambda x, y: (x, y) == (3, 1),
+    )
+    assert path == [(2, 1)]  # stops one cell short of the locked door, same as a real wall would
+
+
+def test_door_locked_returning_false_lets_the_slide_pass_through():
+    path = slide_path(
+        OPEN_CORRIDOR_GRID, (1, 1), (1, 0), junction_stop_count=None,
+        door_locked=lambda x, y: False,
+    )
+    assert path == [(2, 1), (3, 1), (4, 1), (5, 1)]  # unlocked -- behaves exactly like door_locked=None
+
+
+def test_door_locked_is_never_offered_a_wall_cell():
+    """A locked door is a deliberate non-interaction with real walls -- door_locked is only checked on grid-open cells."""
+    calls = []
+    path = slide_path(
+        BREAKABLE_WALL_GRID, (1, 1), (1, 0), junction_stop_count=None,
+        door_locked=lambda x, y: calls.append((x, y)) or False,
+    )
+    assert path == []  # (2,1) is a real wall -- stops immediately, door_locked never consulted
+    assert calls == []
+
+
+def test_door_locked_is_never_offered_to_break_wall():
+    """The reverse composition: a locked (grid-open) cell is never routed through break_wall either."""
+    calls = []
+    path = slide_path(
+        OPEN_CORRIDOR_GRID, (1, 1), (1, 0), junction_stop_count=None,
+        break_wall=lambda x, y: calls.append((x, y)) or True,
+        door_locked=lambda x, y: (x, y) == (3, 1),
+    )
+    assert path == [(2, 1)]
+    assert calls == []  # break_wall is only ever consulted for real (grid==1) walls
+
+
+def test_door_locked_does_not_block_a_teleport_landing_on_its_own_cell():
+    """
+    A teleport's destination is never re-checked against door_locked (same
+    as it's never re-checked against a real wall) -- landing there is a
+    warp, not an approach, so the gate that blocks *walking up to* (3,1)
+    doesn't block a teleport that drops the player directly onto it.
+    """
+    path = slide_path(
+        OPEN_CORRIDOR_GRID, (1, 1), (1, 0), junction_stop_count=None,
+        teleport=lambda x, y: (3, 1) if (x, y) == (2, 1) else None,
+        door_locked=lambda x, y: (x, y) == (3, 1),
+    )
+    assert path == [(2, 1), (3, 1)]
+
+
 def test_round_trip_from_a_resolved_stop_returns_to_the_same_stop():
     """
     From an already-resolved stopping point, sliding backward and then
