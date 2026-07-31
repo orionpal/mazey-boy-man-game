@@ -16,8 +16,15 @@ from maze_game.constants import SIDEBAR_W, HUD_HEIGHT
 def test_window_size_is_static_regardless_of_maze_dimensions():
     small = Layout(cols=9, rows=9)
     large = Layout(cols=41, rows=41)
-    assert small.window_w == large.window_w == SIDEBAR_W + MAZE_AREA_SIZE
+    assert small.window_w == large.window_w == SIDEBAR_W + MAZE_AREA_SIZE + SIDEBAR_W
     assert small.window_h == large.window_h == MAZE_AREA_SIZE + HUD_HEIGHT
+
+
+def test_right_legend_sidebar_spans_the_full_window_height():
+    layout = Layout(cols=21, rows=21)
+    assert layout.right.height == layout.window_h
+    assert layout.right.width == SIDEBAR_W
+    assert layout.right.x == SIDEBAR_W + MAZE_AREA_SIZE
 
 
 def test_cell_size_shrinks_as_maze_dimensions_grow():

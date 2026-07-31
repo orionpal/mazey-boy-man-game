@@ -27,9 +27,10 @@ import pygame
 
 from maze_game.constants import (
     SIDEBAR_W, HUD_HEIGHT, LABYRINTH_TOTAL_MAZES, MAX_ACTIVE_AUGMENTS,
-    C_BG, C_WALL, C_FLOOR, C_PLAYER, C_GOAL, C_TEXT, C_DIM, C_FLASH, C_HUD_BG,
+    C_BG, C_WALL, C_FLOOR, C_PLAYER, C_GOAL, C_TEXT, C_DIM, C_CARD_DESC, C_FLASH, C_HUD_BG,
     C_PANEL_BG, C_PANEL_LINE, C_BUTTON, C_BUTTON_HOVER,
     C_PELLET, C_GOLD, C_ENEMY, C_TELEPORT_PAIRS, C_DOOR_LOCKED, C_DOOR_UNLOCKED, C_DOOR_KEY_PAIRS,
+    C_SPEED_BONUS,
     POPUP_DURATION_SECONDS, POPUP_RISE_PIXELS,
 )
 from maze_game.media import sprites
@@ -58,6 +59,9 @@ AUGMENT_SQUARES_Y = 424
 TOOLTIP_PADDING = 8
 TOOLTIP_MAX_WIDTH = 260
 
+LEGEND_SWATCH_SIZE = 18
+LEGEND_ROW_HEIGHT = 34
+
 
 def _wrap_text(font: pygame.font.Font, text: str, max_width: int) -> list[str]:
     """Greedy word-wrap: split `text` into lines no wider than `max_width` pixels."""
@@ -84,11 +88,16 @@ class Layout:
         self.maze_w = cols * self.cell
         self.maze_h = rows * self.cell
         self.window_h = MAZE_AREA_SIZE + HUD_HEIGHT
-        self.window_w = SIDEBAR_W + MAZE_AREA_SIZE
+        self.window_w = SIDEBAR_W + MAZE_AREA_SIZE + SIDEBAR_W
 
         self.left = pygame.Rect(0, 0, SIDEBAR_W, self.window_h)
         self.maze_origin = (SIDEBAR_W, 0)
         self.hud = pygame.Rect(SIDEBAR_W, MAZE_AREA_SIZE, MAZE_AREA_SIZE, HUD_HEIGHT)
+        # Legend sidebar -- always visible (not just on break screens),
+        # static content, no click targets, so it doesn't interact with
+        # break-card hit-testing (self.cards below, entirely within the
+        # maze area) at all.
+        self.right = pygame.Rect(SIDEBAR_W + MAZE_AREA_SIZE, 0, SIDEBAR_W, self.window_h)
 
         card_area_w = MAZE_AREA_SIZE - 2 * CARD_MARGIN - 2 * CARD_GAP
         card_w = card_area_w // 3
@@ -160,16 +169,17 @@ class Renderer:
         self._draw_build_sidebar(run.build, layout, mouse_pos)
         self._draw_items_sidebar(run.loadout, layout, mouse_pos)
         self._draw_augment_sidebar(run.augment_build, layout, mouse_pos)
+        self._draw_legend(layout)
 
         if run.failed:
             self._draw_overlay(
                 f"Time's up at maze {run.maze_index}/{LABYRINTH_TOTAL_MAZES}",
-                "R = restart from maze 1     ESC = quit",
+                "R = Base (spend gold)     ESC = quit",
             )
         elif run.completed_run:
             self._draw_overlay(
                 "All 100 mazes complete!",
-                "R = play again     ESC = quit",
+                "R = Base (spend gold)     ESC = quit",
             )
 
     # ── Maze / entities ──────────────────────────────────────────────────
@@ -416,6 +426,48 @@ class Renderer:
         if hovered is not None:
             self._draw_tooltip(*hovered, mouse_pos)
 
+    # ── Legend sidebar ──────────────────────────────────────────────────
+
+    def _draw_legend(self, layout: Layout) -> None:
+        """Static reference for every colour-coded entity currently in play -- always visible, no click targets."""
+        pygame.draw.rect(self.surface, C_PANEL_BG, layout.right)
+        pygame.draw.line(self.surface, C_PANEL_LINE, (layout.right.x, 0), (layout.right.x, layout.right.height), 2)
+
+        title = self.font_big.render("LEGEND", True, C_TEXT)
+        self.surface.blit(title, (layout.right.x + 16, 16))
+
+        entries = [
+            (C_PLAYER, "circle", "Player"),
+            (C_GOAL, "circle", "Goal"),
+            (C_PELLET, "circle", "Time Pellet"),
+            (C_GOLD, "circle", "Gold Pellet"),
+            (C_ENEMY, "square", "Enemy"),
+            (C_DOOR_LOCKED, "square", "Locked Door"),
+            (C_DOOR_UNLOCKED, "square", "Unlocked Door"),
+            (C_SPEED_BONUS, "square", "Speed Bonus"),
+        ]
+
+        x = layout.right.x + 16
+        y = 56
+        swatch = LEGEND_SWATCH_SIZE
+        for colour, shape, label in entries:
+            if shape == "circle":
+                pygame.draw.circle(self.surface, colour, (x + swatch // 2, y + swatch // 2), swatch // 2)
+            else:
+                pygame.draw.rect(self.surface, colour, pygame.Rect(x, y, swatch, swatch))
+            self.surface.blit(self.font_small.render(label, True, C_TEXT), (x + swatch + 10, y + 1))
+            y += LEGEND_ROW_HEIGHT
+
+        y += 6
+        pygame.draw.rect(self.surface, C_TELEPORT_PAIRS[0], pygame.Rect(x, y, swatch, swatch), width=3)
+        self.surface.blit(self.font_small.render("Teleporter", True, C_TEXT), (x + swatch + 10, y + 1))
+        self.surface.blit(self.font_small.render("(linked pads match)", True, C_DIM), (x, y + 24))
+        y += LEGEND_ROW_HEIGHT + 20
+
+        pygame.draw.circle(self.surface, C_DOOR_KEY_PAIRS[0], (x + swatch // 2, y + swatch // 2), swatch // 2)
+        self.surface.blit(self.font_small.render("Key", True, C_TEXT), (x + swatch + 10, y + 1))
+        self.surface.blit(self.font_small.render("(matches its own door)", True, C_DIM), (x, y + 24))
+
     def _draw_tooltip(self, name: str, description: str, count: int | None, mouse_pos) -> None:
         name_line = f"{name} (x{count})" if count is not None else name
         desc_lines = _wrap_text(self.font_small, description, TOOLTIP_MAX_WIDTH - 2 * TOOLTIP_PADDING)
@@ -434,7 +486,7 @@ class Renderer:
         name_surf = self.font_small.render(name_line, True, C_TEXT)
         self.surface.blit(name_surf, (x + TOOLTIP_PADDING, y + TOOLTIP_PADDING))
         for i, line in enumerate(desc_lines):
-            surf = self.font_small.render(line, True, C_DIM)
+            surf = self.font_small.render(line, True, C_CARD_DESC)
             self.surface.blit(surf, (x + TOOLTIP_PADDING, y + TOOLTIP_PADDING + (i + 1) * CARD_LINE_HEIGHT))
 
     # ── Break cards (power-up or maze-modifier break) ─────────────────────
@@ -472,7 +524,7 @@ class Renderer:
 
             desc_y = rect.y + CARD_PADDING + 28 + 34
             for line in _wrap_text(self.font_small, description, text_w):
-                desc = self.font_small.render(line, True, C_DIM)
+                desc = self.font_small.render(line, True, C_CARD_DESC)
                 self.surface.blit(desc, (rect.x + CARD_PADDING, desc_y))
                 desc_y += CARD_LINE_HEIGHT
 
