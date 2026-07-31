@@ -44,7 +44,7 @@ AUGMENT_INTERVAL = 10
 # LABYRINTH_TOTAL_MAZES-th (final) maze, gets a one-off dimension "spike" --
 # noticeably bigger than the normal ramp would give it, reverting to the
 # regular ramp on the very next maze (see run.py::dimensions_for_maze()).
-# Otherwise a totally ordinary maze: real goal, normal pellet/enemy/gold
+# Otherwise a totally ordinary maze: real goal, normal pellet/hazard/gold
 # spawning. MILESTONE_INTERVAL must land on a group boundary (a power-up
 # break already exists there) -- see the assertion next to its use in
 # run.py. MILESTONE_DIMENSION_BOOST must stay even (so odd + boost stays
@@ -64,7 +64,7 @@ MAX_ACTIVE_AUGMENTS = 4
 
 # Time is one persistent resource carried across the whole run (rogue-like),
 # not a per-maze budget: it ticks down continuously, pellets add to it,
-# enemies subtract from it, and it's only reset on death (restart()).
+# hazards subtract from it, and it's only reset on death (restart()).
 LABYRINTH_START_TIME = 15.0   # seconds the run starts with
 
 # Speed bonus: clearing a maze quickly adds a little time back. "Fast
@@ -85,28 +85,28 @@ PELLET_TIME_VALUE = 1.0       # seconds gained per pellet (before perk multiplie
 PELLET_DENSITY    = 0.6       # pellet count = density * sqrt(open cell count)
 PELLET_MIN_COUNT  = 2
 
-# Enemies: persistent hazards (not consumed on contact), unlocked partway
+# Hazards: persistent hazards (not consumed on contact), unlocked partway
 # through the run.
-ENEMY_UNLOCK_MAZE  = 11       # enemies start appearing from this maze index onward
-ENEMY_TIME_PENALTY = 3.0      # seconds lost on contact
-ENEMY_DENSITY      = 0.5      # enemy count = density * sqrt(open cell count)
-ENEMY_MAX_COUNT    = 6
+HAZARD_UNLOCK_MAZE  = 11       # hazards start appearing from this maze index onward
+HAZARD_TIME_PENALTY = 3.0      # seconds lost on contact
+HAZARD_DENSITY      = 0.5      # hazard count = density * sqrt(open cell count)
+HAZARD_MAX_COUNT    = 6
 
-# Ramp enemy density up gradually starting at ENEMY_UNLOCK_MAZE, rather than
-# spawning at full density (~4-5 enemies) the instant the mechanic is
-# introduced -- ENEMY_RAMP_START_MULTIPLIER is the density fraction on the
-# unlock maze itself (~1 enemy), reaching full ENEMY_DENSITY (1.0x)
-# ENEMY_RAMP_MAZES mazes later. See hazards.py::enemy_density_ramp().
-ENEMY_RAMP_MAZES            = 10
-ENEMY_RAMP_START_MULTIPLIER = 0.25
+# Ramp hazard density up gradually starting at HAZARD_UNLOCK_MAZE, rather than
+# spawning at full density (~4-5 hazards) the instant the mechanic is
+# introduced -- HAZARD_RAMP_START_MULTIPLIER is the density fraction on the
+# unlock maze itself (~1 hazard), reaching full HAZARD_DENSITY (1.0x)
+# HAZARD_RAMP_MAZES mazes later. See hazards.py::hazard_density_ramp().
+HAZARD_RAMP_MAZES            = 10
+HAZARD_RAMP_START_MULTIPLIER = 0.25
 
 # Perk magnitudes (additive -- each pick adds one more charge/bonus unit,
 # see progression/shop/perks.py).
-ENEMY_SHIELD_CHARGES_PER_LEVEL = 1  # Bulwark: ignored enemy contacts per maze, per pick
+HAZARD_SHIELD_CHARGES_PER_LEVEL = 1  # Bulwark: ignored hazard contacts per maze, per pick
 GOLD_RUSH_BONUS_PER_LEVEL      = 1  # Speedrunner: bonus gold on an under-par clear, per pick
 
 # Feedback popups: a brief floating "+Xs"/"-Xs" label wherever a pellet,
-# enemy, or maze-clear speed bonus changes the time resource, so the effect
+# hazard, or maze-clear speed bonus changes the time resource, so the effect
 # is legible in the moment instead of only visible via the HUD ticking.
 POPUP_DURATION_SECONDS = 1.0
 POPUP_RISE_PIXELS      = 24   # total upward drift over the popup's lifetime
@@ -131,7 +131,7 @@ GOLD_SPAWN_CHANCE = 0.3
 # upgrade's level accumulates indefinitely across every future run rather
 # than being capped by how many break screens one run has.
 META_PELLET_VALUE_MAGNITUDE     = 1.1   # +10% pellet time per level
-META_ENEMY_RESISTANCE_MAGNITUDE = 0.9   # -10% enemy damage per level
+META_HAZARD_RESISTANCE_MAGNITUDE = 0.9   # -10% hazard damage per level
 META_UPGRADE_COST_BASE = 5
 META_UPGRADE_COST_STEP = 4
 
@@ -139,7 +139,7 @@ META_UPGRADE_COST_STEP = 4
 # augment. Pair count and how many of those pairs are load-bearing (the
 # goal is unreachable without using them) both scale with the augment's
 # level (its pick count in AugmentBuild -- see progression/augments/), same
-# density-formula shape as pellets/enemies above.
+# density-formula shape as pellets/hazards above.
 TELEPORT_PAIR_COUNT_BASE        = 3   # "a handful" of pairs at level 1
 TELEPORT_PAIR_COUNT_STEP        = 1   # extra pairs per level above 1
 TELEPORT_PAIR_COUNT_MAX         = 6
@@ -166,18 +166,18 @@ DOOR_FAR_SIDE_MAX_SIZE      = 10
 DOOR_PLACEMENT_MAX_ATTEMPTS = 10  # retries per gated region before giving up on it (graceful degradation, never a crash/hang)
 
 # ── Colours  (R, G, B) ────────────────────────────────────────────────────
-# Identity colours (player/goal/pellet/gold/enemy/door/speed-bonus) are
+# Identity colours (player/goal/pellet/gold/hazard/door/speed-bonus) are
 # deliberately spread across distinct hues so entity *families* stay
-# distinguishable at a glance: red = danger (enemy, locked door), green =
+# distinguishable at a glance: red = danger (hazard, locked door), green =
 # player-exclusive, yellow/orange = resources (pellet, gold), magenta =
-# the goal (previously red, colliding with enemy/locked-door), teal =
+# the goal (previously red, colliding with hazard/locked-door), teal =
 # unlocked/safe (previously green, colliding with the player). First-pass
 # values, tunable like everything else here -- not a final art pass.
 C_BG        = (15,  15,  25)
 C_WALL      = (40,  80, 140)
 C_FLOOR     = (20,  20,  35)
 C_PLAYER    = (80, 220, 120)
-C_GOAL      = (230, 90, 200)   # magenta -- was (220,80,80), colliding with C_ENEMY/C_DOOR_LOCKED
+C_GOAL      = (230, 90, 200)   # magenta -- was (220,80,80), colliding with C_HAZARD/C_DOOR_LOCKED
 C_TEXT      = (220, 220, 220)
 C_DIM       = (100, 100, 120)
 C_CARD_DESC = (190, 195, 210)  # card/tooltip description text -- brighter than C_DIM, dimmer than C_TEXT, legible against C_BUTTON's blue
@@ -189,11 +189,11 @@ C_BUTTON    = (35,  60, 100)
 C_BUTTON_HOVER = (55, 90, 140)
 C_PELLET    = (240, 220,  80)
 C_GOLD      = (255, 150,  30)  # pushed further from C_PELLET's pale yellow than before
-C_ENEMY     = (220, 60,   60)
+C_HAZARD     = (220, 60,   60)
 C_SPEED_BONUS = (100, 220, 255)  # distinct from C_PELLET, so a maze-clear time bonus reads as its own thing
-C_DOOR_LOCKED   = (170, 70,  40)   # brick -- was (140,40,40), colliding with C_ENEMY/C_GOAL
+C_DOOR_LOCKED   = (170, 70,  40)   # brick -- was (140,40,40), colliding with C_HAZARD/C_GOAL
 C_DOOR_UNLOCKED = (60, 190, 170)   # teal -- was (90,180,90), colliding with C_PLAYER
-C_SHIELD        = (190, 210, 230)  # pale blue/silver -- Bulwark's "Shielded!" popup, distinct from C_ENEMY's red
+C_SHIELD        = (190, 210, 230)  # pale blue/silver -- Bulwark's "Shielded!" popup, distinct from C_HAZARD's red
 
 # Teleporter pairs: each pair drawn in its own colour (cycled by
 # pair.color_index if there are more pairs than colours), so linked cells

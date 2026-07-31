@@ -1,7 +1,7 @@
 """
 Tests for maze_game.progression.run -- dimension ramp, the persistent
 TimeResource, the LabyrinthRun state machine (sequencing, shop-choice
-breaks, timeout failure, restart), and pellet/enemy contact via move().
+breaks, timeout failure, restart), and pellet/hazard contact via move().
 Perk/Build is tested in isolation under tests/progression/shop/.
 """
 
@@ -13,10 +13,10 @@ from maze_game.constants import (
     MIN_DIMENSION, MAX_DIMENSION, DIMENSION_STEP,
     MILESTONE_INTERVAL, MILESTONE_DIMENSION_BOOST, MILESTONE_MAX_DIMENSION,
     LABYRINTH_GROUP_SIZE, LABYRINTH_TOTAL_MAZES, LABYRINTH_START_TIME,
-    ENEMY_TIME_PENALTY, SPEED_BONUS_TIME, POPUP_DURATION_SECONDS,
+    HAZARD_TIME_PENALTY, SPEED_BONUS_TIME, POPUP_DURATION_SECONDS,
 )
 from maze_game.progression.run import dimensions_for_maze, is_milestone_maze, TimeResource, LabyrinthRun
-from maze_game.progression.entities.hazards import Pellet, GoldPellet, Enemy, load_gold_total
+from maze_game.progression.entities.hazards import Pellet, GoldPellet, Hazard, load_gold_total
 from maze_game.progression.shop.perks import ALL_PERKS, Perk
 from maze_game.progression.augments.teleporters import TeleportersAugment
 from maze_game.progression.augments.doors import DoorKeyPair, Key
@@ -182,7 +182,7 @@ def test_shield_charges_start_at_zero_with_no_bulwark_picked(run):
 
 def test_shield_charges_refill_to_the_build_amount_on_a_new_maze():
     run = LabyrinthRun()
-    bulwark = next(p for p in ALL_PERKS if p.effect_key == "enemy_shield")
+    bulwark = next(p for p in ALL_PERKS if p.effect_key == "hazard_shield")
     run.build.acquire(bulwark)
     run.build.acquire(bulwark)
     run.shield_charges_remaining = 0  # simulate having spent both charges
@@ -198,11 +198,11 @@ def test_update_ticks_the_time_resource(run):
     assert run.time.amount < before
 
 
-def test_pellets_and_enemies_never_spawn_on_start_or_goal(run):
+def test_pellets_and_hazards_never_spawn_on_start_or_goal(run):
     assert run.player not in [p.pos for p in run.pellets]
     assert run.goal not in [p.pos for p in run.pellets]
-    assert run.player not in [e.pos for e in run.enemies]
-    assert run.goal not in [e.pos for e in run.enemies]
+    assert run.player not in [e.pos for e in run.hazards]
+    assert run.goal not in [e.pos for e in run.hazards]
     assert run.player not in [g.pos for g in run.gold_pellets]
     assert run.goal not in [g.pos for g in run.gold_pellets]
 
@@ -216,8 +216,8 @@ def test_gold_pellets_never_overlap_pellets():
         assert pellet_positions.isdisjoint(gold_positions)
 
 
-def test_enemies_are_empty_before_the_unlock_maze(run):
-    assert run.enemies == []
+def test_hazards_are_empty_before_the_unlock_maze(run):
+    assert run.hazards == []
 
 
 def test_completing_a_non_group_boundary_maze_advances_seamlessly(run):
@@ -400,14 +400,14 @@ def test_owned_meta_upgrades_seed_the_starting_build(tmp_path):
 def test_restart_reseeds_the_build_from_the_same_owned_meta_upgrades(tmp_path):
     from maze_game.progression.meta import ALL_META_UPGRADES, save_meta_upgrade_levels
 
-    upgrade = next(u for u in ALL_META_UPGRADES if u.id == "enemy_resistance")
+    upgrade = next(u for u in ALL_META_UPGRADES if u.id == "hazard_resistance")
     upgrades_path = tmp_path / "meta_upgrades.json"
     save_meta_upgrade_levels({upgrade.id: 1}, upgrades_path)
 
     run = LabyrinthRun(gold_path=tmp_path / "gold.json", meta_upgrades_path=upgrades_path)
     run.build.acquire(ALL_PERKS[0])  # in-run pick, should reset
     run.restart()
-    assert run.build.enemy_resistance_multiplier == pytest.approx(upgrade.magnitude)  # meta upgrade persists
+    assert run.build.hazard_resistance_multiplier == pytest.approx(upgrade.magnitude)  # meta upgrade persists
     assert run.build.picks == {}  # in-run pick did not
 
 
@@ -551,7 +551,7 @@ def test_same_seed_produces_identical_maze_and_entities():
     b = LabyrinthRun(seed=999)
     assert a.grid == b.grid
     assert [p.pos for p in a.pellets] == [p.pos for p in b.pellets]
-    assert [e.pos for e in a.enemies] == [e.pos for e in b.enemies]
+    assert [e.pos for e in a.hazards] == [e.pos for e in b.hazards]
     assert a.goal == b.goal
 
 
@@ -661,7 +661,7 @@ def _corridor_run() -> LabyrinthRun:
     run.goal = (3, 1)
     run.pellets = []
     run.gold_pellets = []
-    run.enemies = []
+    run.hazards = []
     return run
 
 
@@ -694,23 +694,23 @@ def test_move_collecting_a_pellet_adds_a_popup_at_its_position():
     assert run.popups[0].text == f"+{4.0 * run.build.pellet_value_multiplier:.1f}s"
 
 
-def test_move_takes_enemy_damage_along_the_slide_path_and_enemy_persists():
+def test_move_takes_hazard_damage_along_the_slide_path_and_hazard_persists():
     run = _corridor_run()
-    enemy = Enemy((2, 1))
-    run.enemies = [enemy]
+    hazard = Hazard((2, 1))
+    run.hazards = [hazard]
     before = run.time.amount
     run.move((1, 0))
-    assert run.time.amount == pytest.approx(max(0.0, before - ENEMY_TIME_PENALTY))
-    assert run.enemies == [enemy]  # persistent hazard, not consumed
+    assert run.time.amount == pytest.approx(max(0.0, before - HAZARD_TIME_PENALTY))
+    assert run.hazards == [hazard]  # persistent hazard, not consumed
 
 
-def test_move_hitting_an_enemy_adds_a_popup_at_its_position():
+def test_move_hitting_an_hazard_adds_a_popup_at_its_position():
     run = _corridor_run()
-    run.enemies = [Enemy((2, 1))]
+    run.hazards = [Hazard((2, 1))]
     run.move((1, 0))
     assert len(run.popups) == 1
     assert run.popups[0].pos == (2, 1)
-    assert run.popups[0].text == f"-{ENEMY_TIME_PENALTY:.1f}s"
+    assert run.popups[0].text == f"-{HAZARD_TIME_PENALTY:.1f}s"
 
 
 # ── Sound events (run.events) ────────────────────────────────────────────
@@ -729,11 +729,11 @@ def test_move_collecting_a_pellet_appends_move_and_pellet_events():
     assert run.events == ["move", "pellet"]
 
 
-def test_move_hitting_an_enemy_appends_move_and_enemy_hit_events():
+def test_move_hitting_an_hazard_appends_move_and_hazard_hit_events():
     run = _corridor_run()
-    run.enemies = [Enemy((2, 1))]
+    run.hazards = [Hazard((2, 1))]
     run.move((1, 0))
-    assert run.events == ["move", "enemy_hit"]
+    assert run.events == ["move", "hazard_hit"]
 
 
 def test_move_that_does_not_move_the_player_appends_no_event():
@@ -756,7 +756,7 @@ def _teleport_run() -> LabyrinthRun:
     run.player = (1, 1)
     run.goal = (3, 1)
     run.pellets = []
-    run.enemies = []
+    run.hazards = []
     run._teleport_map = {(2, 1): (3, 1)}
     return run
 
@@ -781,7 +781,7 @@ def _door_run() -> LabyrinthRun:
     run.player = (1, 1)
     run.goal = (3, 1)
     run.pellets = []
-    run.enemies = []
+    run.hazards = []
     pair = DoorKeyPair(door=(3, 1), key=(2, 1), mandatory=True, color_index=0)
     run.doors = [pair]
     run._locked_doors = {(3, 1)}
@@ -857,7 +857,7 @@ def _junction_corridor_run() -> LabyrinthRun:
     run.player = (1, 1)
     run.goal = (4, 1)
     run.pellets = []
-    run.enemies = []
+    run.hazards = []
     return run
 
 

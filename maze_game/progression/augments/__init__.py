@@ -64,7 +64,7 @@ class AugmentContext:
     augments in the pipeline must treat these as already-possibly-mutated,
     not the raw generate_maze() output. `reserved` accumulates cells any
     augment has claimed (teleporter pads, sealed-pocket boundaries, ...) so
-    later augments and entity spawning (pellets/enemies) can avoid them.
+    later augments and entity spawning (pellets/hazards) can avoid them.
     """
 
     grid: list[list[int]]

@@ -1,5 +1,5 @@
 """
-Tests for maze_game.progression.entities -- Pellet/GoldPellet/Enemy
+Tests for maze_game.progression.entities -- Pellet/GoldPellet/Hazard
 spawning and contact effects.
 """
 
@@ -9,12 +9,12 @@ import random
 import pytest
 
 from maze_game.constants import (
-    PELLET_TIME_VALUE, PELLET_MIN_COUNT, ENEMY_TIME_PENALTY,
-    ENEMY_UNLOCK_MAZE, ENEMY_RAMP_MAZES, ENEMY_RAMP_START_MULTIPLIER,
-    ENEMY_DENSITY, ENEMY_MAX_COUNT, C_PELLET, C_GOLD, C_ENEMY, C_SHIELD,
+    PELLET_TIME_VALUE, PELLET_MIN_COUNT, HAZARD_TIME_PENALTY,
+    HAZARD_UNLOCK_MAZE, HAZARD_RAMP_MAZES, HAZARD_RAMP_START_MULTIPLIER,
+    HAZARD_DENSITY, HAZARD_MAX_COUNT, C_PELLET, C_GOLD, C_HAZARD, C_SHIELD,
 )
 from maze_game.progression.entities.hazards import (
-    Pellet, GoldPellet, Enemy, ENEMY_TYPES, spawn_pellets, spawn_enemies, enemy_density_ramp,
+    Pellet, GoldPellet, Hazard, HAZARD_TYPES, spawn_pellets, spawn_hazards, hazard_density_ramp,
     spawn_gold_pellets, load_gold_total, save_gold_total,
 )
 from maze_game.progression.shop.perks import Build
@@ -152,46 +152,46 @@ def test_save_and_load_gold_total_round_trips(tmp_path):
     assert load_gold_total(path) == 42
 
 
-# ── Enemy ─────────────────────────────────────────────────────────────────
+# ── Hazard ─────────────────────────────────────────────────────────────────
 
 
-def test_enemy_on_contact_spends_its_penalty():
+def test_hazard_on_contact_spends_its_penalty():
     run = _FakeRun()
-    enemy = Enemy((1, 1))
-    enemy.on_contact(run)
-    assert run.time.amount == pytest.approx(10.0 - ENEMY_TIME_PENALTY)
+    hazard = Hazard((1, 1))
+    hazard.on_contact(run)
+    assert run.time.amount == pytest.approx(10.0 - HAZARD_TIME_PENALTY)
 
 
-def test_enemy_on_contact_adds_a_popup_at_its_position():
+def test_hazard_on_contact_adds_a_popup_at_its_position():
     run = _FakeRun()
-    enemy = Enemy((2, 3))
-    enemy.on_contact(run)
+    hazard = Hazard((2, 3))
+    hazard.on_contact(run)
     assert len(run.popups) == 1
     pos, text, color = run.popups[0]
     assert pos == (2, 3)
-    assert text == f"-{ENEMY_TIME_PENALTY:.1f}s"
-    assert color == C_ENEMY
+    assert text == f"-{HAZARD_TIME_PENALTY:.1f}s"
+    assert color == C_HAZARD
 
 
-def test_enemy_on_contact_scales_the_penalty_by_enemy_resistance():
+def test_hazard_on_contact_scales_the_penalty_by_hazard_resistance():
     run = _FakeRun()
-    run.build.enemy_resistance_multiplier = 0.5
-    enemy = Enemy((1, 1))
-    enemy.on_contact(run)
-    assert run.time.amount == pytest.approx(10.0 - ENEMY_TIME_PENALTY * 0.5)
+    run.build.hazard_resistance_multiplier = 0.5
+    hazard = Hazard((1, 1))
+    hazard.on_contact(run)
+    assert run.time.amount == pytest.approx(10.0 - HAZARD_TIME_PENALTY * 0.5)
 
 
-def test_enemy_on_contact_appends_the_enemy_hit_sound_event():
+def test_hazard_on_contact_appends_the_hazard_hit_sound_event():
     run = _FakeRun()
-    Enemy((1, 1)).on_contact(run)
-    assert run.events == ["enemy_hit"]
+    Hazard((1, 1)).on_contact(run)
+    assert run.events == ["hazard_hit"]
 
 
-def test_enemy_on_contact_consumes_a_shield_charge_and_blocks_the_penalty():
+def test_hazard_on_contact_consumes_a_shield_charge_and_blocks_the_penalty():
     run = _FakeRun()
     run.shield_charges_remaining = 1
-    enemy = Enemy((2, 3))
-    enemy.on_contact(run)
+    hazard = Hazard((2, 3))
+    hazard.on_contact(run)
     assert run.time.amount == pytest.approx(10.0)  # fully blocked, no penalty
     assert run.shield_charges_remaining == 0
     assert run.events == ["shield_block"]
@@ -201,21 +201,21 @@ def test_enemy_on_contact_consumes_a_shield_charge_and_blocks_the_penalty():
     assert color == C_SHIELD
 
 
-def test_enemy_on_contact_only_blocks_up_to_the_remaining_charges():
+def test_hazard_on_contact_only_blocks_up_to_the_remaining_charges():
     run = _FakeRun()
     run.shield_charges_remaining = 1
-    enemy = Enemy((1, 1))
-    enemy.on_contact(run)  # consumes the only charge
-    enemy.on_contact(run)  # no charges left -- normal penalty applies
-    assert run.time.amount == pytest.approx(10.0 - ENEMY_TIME_PENALTY)
-    assert run.events == ["shield_block", "enemy_hit"]
+    hazard = Hazard((1, 1))
+    hazard.on_contact(run)  # consumes the only charge
+    hazard.on_contact(run)  # no charges left -- normal penalty applies
+    assert run.time.amount == pytest.approx(10.0 - HAZARD_TIME_PENALTY)
+    assert run.events == ["shield_block", "hazard_hit"]
 
 
-def test_enemy_types_registry_contains_the_base_type():
-    assert Enemy in ENEMY_TYPES
+def test_hazard_types_registry_contains_the_base_type():
+    assert Hazard in HAZARD_TYPES
 
 
-# ── spawn_pellets / spawn_enemies ─────────────────────────────────────────
+# ── spawn_pellets / spawn_hazards ─────────────────────────────────────────
 
 
 def test_spawn_pellets_excludes_given_cells():
@@ -248,22 +248,22 @@ def test_spawn_pellets_uses_the_configured_time_value():
     assert all(p.value == PELLET_TIME_VALUE for p in pellets)
 
 
-def test_spawn_enemies_excludes_given_cells():
+def test_spawn_hazards_excludes_given_cells():
     random.seed(5)
     exclude = {(1, 1), (5, 5)}
-    enemies = spawn_enemies(OPEN_ROOM, exclude)
-    assert all(e.pos not in exclude for e in enemies)
+    hazards = spawn_hazards(OPEN_ROOM, exclude)
+    assert all(e.pos not in exclude for e in hazards)
 
 
-def test_spawn_pellets_and_spawn_enemies_can_be_composed_without_overlap():
+def test_spawn_pellets_and_spawn_hazards_can_be_composed_without_overlap():
     random.seed(6)
     exclude = {(1, 1), (5, 5)}
     pellets = spawn_pellets(OPEN_ROOM, exclude)
-    exclude_for_enemies = exclude | {p.pos for p in pellets}
-    enemies = spawn_enemies(OPEN_ROOM, exclude_for_enemies)
+    exclude_for_hazards = exclude | {p.pos for p in pellets}
+    hazards = spawn_hazards(OPEN_ROOM, exclude_for_hazards)
     pellet_positions = {p.pos for p in pellets}
-    enemy_positions = {e.pos for e in enemies}
-    assert pellet_positions.isdisjoint(enemy_positions)
+    hazard_positions = {e.pos for e in hazards}
+    assert pellet_positions.isdisjoint(hazard_positions)
 
 def test_spawn_pellets_with_explicit_rng_is_deterministic():
     a = spawn_pellets(OPEN_ROOM, exclude=set(), rng=random.Random(11))
@@ -271,42 +271,42 @@ def test_spawn_pellets_with_explicit_rng_is_deterministic():
     assert [p.pos for p in a] == [p.pos for p in b]
 
 
-def test_spawn_enemies_with_explicit_rng_is_deterministic():
-    a = spawn_enemies(OPEN_ROOM, exclude=set(), rng=random.Random(12))
-    b = spawn_enemies(OPEN_ROOM, exclude=set(), rng=random.Random(12))
+def test_spawn_hazards_with_explicit_rng_is_deterministic():
+    a = spawn_hazards(OPEN_ROOM, exclude=set(), rng=random.Random(12))
+    b = spawn_hazards(OPEN_ROOM, exclude=set(), rng=random.Random(12))
     assert [e.pos for e in a] == [e.pos for e in b]
 
 
-def test_spawn_enemies_density_multiplier_scales_the_count():
+def test_spawn_hazards_density_multiplier_scales_the_count():
     random.seed(13)
-    full = spawn_enemies(OPEN_ROOM, exclude=set(), density_multiplier=1.0)
+    full = spawn_hazards(OPEN_ROOM, exclude=set(), density_multiplier=1.0)
     random.seed(13)
-    reduced = spawn_enemies(OPEN_ROOM, exclude=set(), density_multiplier=0.25)
+    reduced = spawn_hazards(OPEN_ROOM, exclude=set(), density_multiplier=0.25)
     assert len(reduced) <= len(full)
 
 
-# ── Enemy density ramp ──────────────────────────────────────────────────
+# ── Hazard density ramp ──────────────────────────────────────────────────
 
 
-def test_enemy_density_ramp_starts_at_the_configured_fraction_on_unlock():
-    assert enemy_density_ramp(ENEMY_UNLOCK_MAZE) == pytest.approx(ENEMY_RAMP_START_MULTIPLIER)
+def test_hazard_density_ramp_starts_at_the_configured_fraction_on_unlock():
+    assert hazard_density_ramp(HAZARD_UNLOCK_MAZE) == pytest.approx(HAZARD_RAMP_START_MULTIPLIER)
 
 
-def test_enemy_density_ramp_reaches_full_density_after_ramp_mazes():
-    assert enemy_density_ramp(ENEMY_UNLOCK_MAZE + ENEMY_RAMP_MAZES) == pytest.approx(1.0)
-    assert enemy_density_ramp(ENEMY_UNLOCK_MAZE + ENEMY_RAMP_MAZES + 50) == pytest.approx(1.0)  # never exceeds 1.0
+def test_hazard_density_ramp_reaches_full_density_after_ramp_mazes():
+    assert hazard_density_ramp(HAZARD_UNLOCK_MAZE + HAZARD_RAMP_MAZES) == pytest.approx(1.0)
+    assert hazard_density_ramp(HAZARD_UNLOCK_MAZE + HAZARD_RAMP_MAZES + 50) == pytest.approx(1.0)  # never exceeds 1.0
 
 
-def test_enemy_density_ramp_increases_monotonically():
-    values = [enemy_density_ramp(ENEMY_UNLOCK_MAZE + i) for i in range(ENEMY_RAMP_MAZES + 1)]
+def test_hazard_density_ramp_increases_monotonically():
+    values = [hazard_density_ramp(HAZARD_UNLOCK_MAZE + i) for i in range(HAZARD_RAMP_MAZES + 1)]
     assert values == sorted(values)
 
 
-def test_first_enemy_maze_spawns_noticeably_fewer_enemies_than_full_density():
-    """The actual behaviour the ramp exists for: maze 11 should spawn far fewer enemies than the pre-ramp formula would."""
+def test_first_hazard_maze_spawns_noticeably_fewer_hazards_than_full_density():
+    """The actual behaviour the ramp exists for: maze 11 should spawn far fewer hazards than the pre-ramp formula would."""
     random.seed(14)
-    ramped = spawn_enemies(OPEN_ROOM, exclude=set(), density_multiplier=enemy_density_ramp(ENEMY_UNLOCK_MAZE))
+    ramped = spawn_hazards(OPEN_ROOM, exclude=set(), density_multiplier=hazard_density_ramp(HAZARD_UNLOCK_MAZE))
     random.seed(14)
-    unramped = spawn_enemies(OPEN_ROOM, exclude=set(), density_multiplier=1.0)
+    unramped = spawn_hazards(OPEN_ROOM, exclude=set(), density_multiplier=1.0)
     assert len(ramped) < len(unramped)
 

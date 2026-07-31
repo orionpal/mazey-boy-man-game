@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from maze_game.constants import (
-    META_PELLET_VALUE_MAGNITUDE, META_ENEMY_RESISTANCE_MAGNITUDE,
+    META_PELLET_VALUE_MAGNITUDE, META_HAZARD_RESISTANCE_MAGNITUDE,
     META_UPGRADE_COST_BASE, META_UPGRADE_COST_STEP,
 )
 from maze_game.progression.entities.hazards import DEFAULT_GOLD_PATH, load_gold_total, save_gold_total
@@ -51,9 +51,9 @@ ALL_META_UPGRADES: list[MetaUpgrade] = [
         cost_base=META_UPGRADE_COST_BASE, cost_step=META_UPGRADE_COST_STEP,
     ),
     MetaUpgrade(
-        id="enemy_resistance", name="Thick Skin",
-        description="-10% time lost to enemy contact, permanently.",
-        effect_key="enemy_resistance", magnitude=META_ENEMY_RESISTANCE_MAGNITUDE,
+        id="hazard_resistance", name="Thick Skin",
+        description="-10% time lost to hazard contact, permanently.",
+        effect_key="hazard_resistance", magnitude=META_HAZARD_RESISTANCE_MAGNITUDE,
         cost_base=META_UPGRADE_COST_BASE, cost_step=META_UPGRADE_COST_STEP,
     ),
 ]

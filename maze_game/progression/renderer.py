@@ -2,7 +2,7 @@
 renderer.py
 -----------
 All pygame drawing code for the labyrinth progression mode: the maze,
-pellets/enemies/teleporter pads/doors and keys, HUD (time resource +
+pellets/hazards/teleporter pads/doors and keys, HUD (time resource +
 maze/group progress + seed), the left sidebar (acquired perks, and up to
 MAX_ACTIVE_AUGMENTS maze-modifier slots -- perks draw their entire static
 catalog filled-or-not, augments draw only as many slots as can ever be
@@ -29,7 +29,7 @@ from maze_game.constants import (
     SIDEBAR_W, HUD_HEIGHT, LABYRINTH_TOTAL_MAZES, MAX_ACTIVE_AUGMENTS,
     C_BG, C_WALL, C_FLOOR, C_PLAYER, C_GOAL, C_TEXT, C_DIM, C_CARD_DESC, C_FLASH, C_HUD_BG,
     C_PANEL_BG, C_PANEL_LINE, C_BUTTON, C_BUTTON_HOVER,
-    C_PELLET, C_GOLD, C_ENEMY, C_TELEPORT_PAIRS, C_DOOR_LOCKED, C_DOOR_UNLOCKED, C_DOOR_KEY_PAIRS,
+    C_PELLET, C_GOLD, C_HAZARD, C_TELEPORT_PAIRS, C_DOOR_LOCKED, C_DOOR_UNLOCKED, C_DOOR_KEY_PAIRS,
     C_SPEED_BONUS,
     POPUP_DURATION_SECONDS, POPUP_RISE_PIXELS,
 )
@@ -149,7 +149,7 @@ class Renderer:
             self._draw_maze(run.grid, layout)
             self._draw_pellets(run.pellets, layout)
             self._draw_gold_pellets(run.gold_pellets, layout)
-            self._draw_enemies(run.enemies, layout)
+            self._draw_hazards(run.hazards, layout)
             self._draw_teleporters(run.teleporters, layout)
             self._draw_doors_and_keys(run, layout)
             self._draw_goal(run.goal, layout)
@@ -227,18 +227,18 @@ class Renderer:
             r = max(1, cell // 5)
             pygame.draw.circle(self.surface, C_GOLD, (ox + x * cell + cell // 2, oy + y * cell + cell // 2), r)
 
-    def _draw_enemies(self, enemies, layout: Layout) -> None:
+    def _draw_hazards(self, hazards, layout: Layout) -> None:
         ox, oy = layout.maze_origin
         cell = layout.cell
         pad = max(1, cell // 5)
-        icon = sprites.get("enemy", cell)
-        for enemy in enemies:
-            x, y = enemy.pos
+        icon = sprites.get("hazard", cell)
+        for hazard in hazards:
+            x, y = hazard.pos
             if icon is not None:
                 self.surface.blit(icon, (ox + x * cell, oy + y * cell))
                 continue
             pygame.draw.rect(
-                self.surface, C_ENEMY,
+                self.surface, C_HAZARD,
                 pygame.Rect(ox + x * cell + pad, oy + y * cell + pad, cell - 2 * pad, cell - 2 * pad),
             )
 
@@ -284,7 +284,7 @@ class Renderer:
             pygame.draw.circle(self.surface, colour, (ox + x * cell + cell // 2, oy + y * cell + cell // 2), r)
 
     def _draw_popups(self, run: LabyrinthRun, layout: Layout) -> None:
-        """Floating "+Xs"/"-Xs" labels for pellet/enemy/speed-bonus time changes -- rises and fades out over its lifetime."""
+        """Floating "+Xs"/"-Xs" labels for pellet/hazard/speed-bonus time changes -- rises and fades out over its lifetime."""
         ox, oy = layout.maze_origin
         cell = layout.cell
         now = time.monotonic()
@@ -391,7 +391,7 @@ class Renderer:
             (C_GOAL, "circle", "Goal"),
             (C_PELLET, "circle", "Time Pellet"),
             (C_GOLD, "circle", "Gold Pellet"),
-            (C_ENEMY, "square", "Enemy"),
+            (C_HAZARD, "square", "Hazard"),
             (C_DOOR_LOCKED, "square", "Locked Door"),
             (C_DOOR_UNLOCKED, "square", "Unlocked Door"),
             (C_SPEED_BONUS, "square", "Speed Bonus"),

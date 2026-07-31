@@ -59,9 +59,9 @@ Sound events (`assets/sounds/{event}.wav` or `.ogg`):
 | `teleport` | a slide ends by stepping through a teleporter pad |
 | `pellet` | a time pellet is collected |
 | `gold` | a gold pellet is collected |
-| `enemy_hit` | contact with an enemy |
+| `hazard_hit` | contact with a hazard |
 | `key` | a key is collected, unlocking its door |
-| `shield_block` | Bulwark blocks an enemy contact with a shield charge |
+| `shield_block` | Bulwark blocks a hazard contact with a shield charge |
 | `maze_complete` | a maze is cleared (goal reached) |
 | `speed_bonus` | the speed bonus is awarded (alongside `maze_complete`) |
 | `fail` | the run fails (time depleted) |
@@ -77,7 +77,7 @@ Icon names (`assets/icons/{name}.png`):
 | `goal` | the goal marker (both modes) |
 | `pellet` | a time pellet |
 | `gold` | a gold pellet |
-| `enemy` | an enemy |
+| `hazard` | a hazard |
 | `door_locked` | a locked door |
 | `door_unlocked` | a door whose key has been collected |
 | `key` | a still-uncollected key |

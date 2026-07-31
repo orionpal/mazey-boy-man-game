@@ -3,9 +3,9 @@ hazards.py
 ----------
 Pellets (one-time time top-ups), gold pellets (one-time additions to the
 persistent gold total -- see GoldPellet/load_gold_total/save_gold_total),
-and enemies (persistent time-cost hazards) placed in a maze at generation
-time. New enemy *types* are added by subclassing Enemy and appending to
-ENEMY_TYPES -- spawn_enemies() samples from that registry, so no other code
+and hazards (persistent time-cost obstacles) placed in a maze at generation
+time. New hazard *types* are added by subclassing Hazard and appending to
+HAZARD_TYPES -- spawn_hazards() samples from that registry, so no other code
 needs to change.
 """
 
@@ -20,8 +20,8 @@ from typing import TYPE_CHECKING
 from maze_game.constants import (
     PELLET_TIME_VALUE, PELLET_DENSITY, PELLET_MIN_COUNT,
     GOLD_PELLET_VALUE, GOLD_SPAWN_CHANCE, C_GOLD,
-    ENEMY_TIME_PENALTY, ENEMY_DENSITY, ENEMY_MAX_COUNT,
-    ENEMY_UNLOCK_MAZE, ENEMY_RAMP_MAZES, ENEMY_RAMP_START_MULTIPLIER,
+    HAZARD_TIME_PENALTY, HAZARD_DENSITY, HAZARD_MAX_COUNT,
+    HAZARD_UNLOCK_MAZE, HAZARD_RAMP_MAZES, HAZARD_RAMP_START_MULTIPLIER,
     C_PELLET, C_SHIELD,
 )
 from maze_game.progression.entities import MazeEntity, apply_time_penalty
@@ -63,8 +63,8 @@ class GoldPellet(MazeEntity):
         save_gold_total(run.gold, run.gold_path)
 
 
-class Enemy(MazeEntity):
-    penalty: float = ENEMY_TIME_PENALTY
+class Hazard(MazeEntity):
+    penalty: float = HAZARD_TIME_PENALTY
 
     def on_contact(self, run: "LabyrinthRun") -> None:
         if run.shield_charges_remaining > 0:
@@ -72,10 +72,10 @@ class Enemy(MazeEntity):
             run.add_popup(self.pos, "Shielded!", C_SHIELD)
             run.events.append("shield_block")
             return
-        apply_time_penalty(run, self.penalty * run.build.enemy_resistance_multiplier, self.pos)
+        apply_time_penalty(run, self.penalty * run.build.hazard_resistance_multiplier, self.pos)
 
 
-ENEMY_TYPES: list[type[Enemy]] = [Enemy]
+HAZARD_TYPES: list[type[Hazard]] = [Hazard]
 
 
 def _open_cells(grid: list[list[int]]) -> list[tuple[int, int]]:
@@ -88,17 +88,17 @@ def _entity_count(candidate_count: int, density: float, minimum: int, maximum: i
     return min(count, maximum) if maximum is not None else count
 
 
-def enemy_density_ramp(maze_index: int) -> float:
+def hazard_density_ramp(maze_index: int) -> float:
     """
-    Density multiplier for spawn_enemies(), starting at
-    ENEMY_RAMP_START_MULTIPLIER on the maze enemies first unlock (~1 enemy,
+    Density multiplier for spawn_hazards(), starting at
+    HAZARD_RAMP_START_MULTIPLIER on the maze hazards first unlock (~1 hazard,
     rather than the ~4-5 full density spawns immediately) and reaching full
-    density (1.0x) ENEMY_RAMP_MAZES mazes later. Callers are expected to
-    only call this for maze_index >= ENEMY_UNLOCK_MAZE.
+    density (1.0x) HAZARD_RAMP_MAZES mazes later. Callers are expected to
+    only call this for maze_index >= HAZARD_UNLOCK_MAZE.
     """
-    mazes_since_unlock = maze_index - ENEMY_UNLOCK_MAZE
-    progress = min(1.0, mazes_since_unlock / ENEMY_RAMP_MAZES)
-    return ENEMY_RAMP_START_MULTIPLIER + (1.0 - ENEMY_RAMP_START_MULTIPLIER) * progress
+    mazes_since_unlock = maze_index - HAZARD_UNLOCK_MAZE
+    progress = min(1.0, mazes_since_unlock / HAZARD_RAMP_MAZES)
+    return HAZARD_RAMP_START_MULTIPLIER + (1.0 - HAZARD_RAMP_START_MULTIPLIER) * progress
 
 
 def spawn_pellets(
@@ -147,16 +147,16 @@ def save_gold_total(amount: int, path: Path = DEFAULT_GOLD_PATH) -> None:
     path.write_text(json.dumps({"gold": amount}))
 
 
-def spawn_enemies(
+def spawn_hazards(
     grid: list[list[int]],
     exclude: set[tuple[int, int]],
     density_multiplier: float = 1.0,
     rng: random.Random | None = None,
-) -> list[Enemy]:
+) -> list[Hazard]:
     rng = rng if rng is not None else random
     candidates = [c for c in _open_cells(grid) if c not in exclude]
     count = min(
-        _entity_count(len(candidates), ENEMY_DENSITY * density_multiplier, minimum=0, maximum=ENEMY_MAX_COUNT),
+        _entity_count(len(candidates), HAZARD_DENSITY * density_multiplier, minimum=0, maximum=HAZARD_MAX_COUNT),
         len(candidates),
     )
-    return [rng.choice(ENEMY_TYPES)(pos) for pos in rng.sample(candidates, count)]
+    return [rng.choice(HAZARD_TYPES)(pos) for pos in rng.sample(candidates, count)]

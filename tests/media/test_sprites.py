@@ -47,10 +47,10 @@ def test_get_caches_the_loaded_icon(tmp_path, monkeypatch):
 
 def test_clear_cache_forces_a_fresh_lookup(tmp_path, monkeypatch):
     monkeypatch.setattr(sprites, "ICONS_DIR", tmp_path)
-    assert sprites.get("enemy", 20) is None
+    assert sprites.get("hazard", 20) is None
 
-    _write_tiny_png(tmp_path / "enemy.png")
-    assert sprites.get("enemy", 20) is None  # still cached as missing
+    _write_tiny_png(tmp_path / "hazard.png")
+    assert sprites.get("hazard", 20) is None  # still cached as missing
 
     sprites.clear_cache()
-    assert sprites.get("enemy", 20) is not None  # fresh lookup finds the new file
+    assert sprites.get("hazard", 20) is not None  # fresh lookup finds the new file

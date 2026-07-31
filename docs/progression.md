@@ -5,7 +5,7 @@ bigger, with two break cadences layered on top of each other -- a passive
 perk choice every 5 mazes, and a maze-modifier (augment) choice every 10
 mazes. A rogue-like resource layer sits underneath: time is one persistent
 budget carried across the *whole* run, topped up by pellets and drained by
-enemies. Implemented in `maze_game/progression/` (`run.py`'s
+hazards. Implemented in `maze_game/progression/` (`run.py`'s
 `LabyrinthRun`, `shop/` for perks, `augments/` for maze modifiers,
 `entities/`), playable via `main.py` (this is now the default entry point
 — see the "Renamed" note at the bottom). Everything below is a **first
@@ -36,7 +36,7 @@ maze indices (`run.py::is_milestone_maze()`, same cadence the boss used)
 get a one-off dimension *spike* instead: noticeably bigger than the normal
 ramp would give that specific maze index, reverting to the regular ramp
 on the very next maze. Otherwise it's a totally ordinary maze -- a real
-goal, normal pellet/enemy/gold spawning, no special win condition.
+goal, normal pellet/hazard/gold spawning, no special win condition.
 
 `dimensions_for_maze()` computes the normal ramp size first, then on a
 milestone maze adds `MILESTONE_DIMENSION_BOOST` (16) on top, capped
@@ -45,7 +45,7 @@ separately at `MILESTONE_MAX_DIMENSION` (61, higher than the normal run's
 have nowhere left to jump to on the later milestones (90, 100), which
 already sit at `MAX_DIMENSION` under the normal ramp alone. Nothing else
 needed to change for this: the par-time BFS, the fixed-viewport renderer,
-and the pellet/enemy/gold density formulas already all scale purely from
+and the pellet/hazard/gold density formulas already all scale purely from
 `cols`/`rows`, so a milestone maze naturally gets a proportionally longer
 time budget and more hazards along with its bigger footprint.
 
@@ -93,55 +93,55 @@ than a handful of big top-ups, and to thin out the early, small mazes
 specifically, which the sqrt-scaled count formula was flooding with
 pellets relative to their size.)
 
-### Enemies: persistent hazards, unlocked partway through
+### Hazards: persistent, unlocked partway through
 
-Starting at `ENEMY_UNLOCK_MAZE` (11), `spawn_enemies()` places a handful of
+Starting at `HAZARD_UNLOCK_MAZE` (11), `spawn_hazards()` places a handful of
 stationary hazards the same way pellets are placed (sqrt-scaled,
 excluding start/goal/pellet cells too — the two never overlap). Contact
-costs `ENEMY_TIME_PENALTY` (3.0s). Unlike pellets, enemies aren't removed
+costs `HAZARD_TIME_PENALTY` (3.0s). Unlike pellets, hazards aren't removed
 on contact — backtracking over the same one costs again.
 
 Note this is now *larger* than a single pellet's value (1.0s) -- with
-pellets cut to a small frequent trickle, one enemy hit costs several
+pellets cut to a small frequent trickle, one hazard hit costs several
 pellets' worth of progress. Worth revisiting if that feels too punishing
 in practice; the two were originally tuned in the opposite relationship
-(enemy penalty deliberately below pellet value) back when a pellet was
+(hazard penalty deliberately below pellet value) back when a pellet was
 worth 4.0s.
 
-Extensibility was an explicit goal here: `Enemy` is a base class
-(`pos`, `penalty`, `on_contact()`) plus a module-level `ENEMY_TYPES`
-registry list that `spawn_enemies()` samples from. A new enemy type later
+Extensibility was an explicit goal here: `Hazard` is a base class
+(`pos`, `penalty`, `on_contact()`) plus a module-level `HAZARD_TYPES`
+registry list that `spawn_hazards()` samples from. A new hazard type later
 is one subclass + one line appended to the registry — nothing else in the
 spawn/contact/rendering pipeline needs to change.
 
-**Ramped in, not full density from the first maze**: `spawn_enemies()`'s
-sqrt-scaled formula alone put ~4-5 enemies on the very first enemy maze --
+**Ramped in, not full density from the first maze**: `spawn_hazards()`'s
+sqrt-scaled formula alone put ~4-5 hazards on the very first hazard maze --
 a spike right as the mechanic is introduced, not a gradual "here's a new
-threat" moment. `hazards.py::enemy_density_ramp(maze_index)` scales the
-density down to `ENEMY_RAMP_START_MULTIPLIER` (0.25, ~1 enemy) on
-`ENEMY_UNLOCK_MAZE` itself, climbing linearly back to full density over
-`ENEMY_RAMP_MAZES` (10) mazes. Passed into `spawn_enemies()` as
-`density_multiplier` rather than changing `ENEMY_DENSITY` itself, so the
+threat" moment. `hazards.py::hazard_density_ramp(maze_index)` scales the
+density down to `HAZARD_RAMP_START_MULTIPLIER` (0.25, ~1 hazard) on
+`HAZARD_UNLOCK_MAZE` itself, climbing linearly back to full density over
+`HAZARD_RAMP_MAZES` (10) mazes. Passed into `spawn_hazards()` as
+`density_multiplier` rather than changing `HAZARD_DENSITY` itself, so the
 steady-state curve (already tuned) is untouched -- only the introduction is
 softened.
 
 ### Feedback popups: "+Xs"/"-Xs" wherever the clock actually changes
 
-A pellet, an enemy, and a maze-clear speed bonus all move the shared time
+A pellet, a hazard, and a maze-clear speed bonus all move the shared time
 resource, but previously the only feedback was the HUD number itself
 ticking -- easy to miss mid-slide, and not obviously *tied* to the pellet/
-enemy the player just passed through. `LabyrinthRun.add_popup(pos, text,
+hazard the player just passed through. `LabyrinthRun.add_popup(pos, text,
 color)` (called from `Pellet.on_contact`, the shared `apply_time_penalty()`
 helper, and the speed-bonus branch of `update()`) queues a `Popup(pos,
 text, color, created_at)`; `renderer.py::_draw_popups()` renders each one
 at its cell, drifting upward (`POPUP_RISE_PIXELS`) over its lifetime
 (`POPUP_DURATION_SECONDS`, 1.0s) before it's pruned. Colour matches the
-thing that caused it (`C_PELLET`/`C_ENEMY`), except the speed bonus, which
+thing that caused it (`C_PELLET`/`C_HAZARD`), except the speed bonus, which
 gets its own `C_SPEED_BONUS` so a maze-clear bonus reads as something
 extra rather than "a big pellet."
 
 `apply_time_penalty()` takes a required `pos` parameter for this (the
-enemy's current position) -- `Enemy.on_contact` already had a `self.pos`
+hazard's current position) -- `Hazard.on_contact` already had a `self.pos`
 to pass.
 
 ### Perks: the shop, chosen every group
@@ -159,10 +159,10 @@ exactly two perks, and stacking is explicitly **additive** (picking the
 same perk again adds another charge/bonus unit, not a multiplier) since
 both grant a count, not a rate:
 
-- **Bulwark** (`enemy_shield`): each maze, ignore the first N enemy
+- **Bulwark** (`hazard_shield`): each maze, ignore the first N hazard
   contacts, where N is the perk's level (total times picked).
   `LabyrinthRun._begin_maze()` refills `shield_charges_remaining` to
-  `Build.enemy_shield_charges_per_maze` every maze; `Enemy.on_contact()`
+  `Build.hazard_shield_charges_per_maze` every maze; `Hazard.on_contact()`
   consumes a charge and fully blocks the hit (a "Shielded!" popup, the
   `shield_block` sound event) before falling back to the normal
   time-penalty path once charges run out.
@@ -196,7 +196,7 @@ a frame).
 Measured empirically (30 trials per size, actual `generate_maze` output),
 back when time limits were per-maze-estimated rather than a shared pool —
 kept here since it's still the reference for how traversal difficulty
-scales with size, which the pellet/enemy density formulas above lean on:
+scales with size, which the pellet/hazard density formulas above lean on:
 
 | size | avg shortest-path cells | avg key presses (turns) |
 |---|---|---|
@@ -261,7 +261,7 @@ is still tested; it's just no longer bound to a key.)
 This is just `player.slide_path()`'s existing wall-vs-junction stop rule
 generalized to "stop after the Nth junction" instead of hardcoded at the
 1st (`None` behaves as "never"). `LabyrinthRun.move()` passes the count
-straight through, so pellet/enemy contact resolution (which already
+straight through, so pellet/hazard contact resolution (which already
 checks every cell in the returned path, not just the final stop) works
 identically for combo moves — a longer path is still just a longer path.
 
@@ -315,7 +315,7 @@ visits between runs (`progression/app.py::run_progression_mode()` — always
 precedes a run, and R after a fail/complete screen now routes back into it
 instead of restarting in place) where gold buys permanent passive
 upgrades. Two ship today: **Prospector's Eye** (+10% pellet time/level) and
-**Thick Skin** (-10% enemy damage/level), each repurchasable at an
+**Thick Skin** (-10% hazard damage/level), each repurchasable at an
 increasing gold cost (`cost_base + cost_step * level`).
 
 **Deliberately reuses `shop/perks.py`'s stacking machinery rather than
@@ -326,7 +326,7 @@ builds a fresh `Build` and applies each owned upgrade's effect through the
 level. `LabyrinthRun.__init__`/`restart()` call this instead of a bare
 `Build()`, so owned upgrades apply before the run even starts and compound
 underneath whatever gets picked in-run. `Build` gained
-`enemy_resistance_multiplier` for Thick Skin's effect (`Enemy.on_contact`
+`hazard_resistance_multiplier` for Thick Skin's effect (`Hazard.on_contact`
 now multiplies its penalty by it) — no in-run `Perk` uses that
 `effect_key`, but it lives alongside `Build`'s other fields for
 consistency. Same goes for `pellet_value_multiplier`/
@@ -345,7 +345,7 @@ always reflects whatever the just-finished run left behind.
 ## Seeded runs
 
 `LabyrinthRun(seed=...)` — every RNG-consuming call the run makes
-(`generate_maze`, `spawn_pellets`/`spawn_enemies`, `offer_shop_cards`,
+(`generate_maze`, `spawn_pellets`/`spawn_hazards`, `offer_shop_cards`,
 `offer_augment_cards`, and the augment pipeline's own placement logic) is
 threaded through one `self.rng = random.Random(self.seed)` instance rather
 than the bare global `random` module every one of those functions still

@@ -5,7 +5,7 @@ Single entry point: opens to a main menu choosing between two modes.
 
 - **Labyrinth Run**: the timed progression mode -- 100 mazes, gradually
   increasing in size, with one persistent time resource carried across the
-  whole run (topped up by pellets, drained by enemies). Always launched
+  whole run (topped up by pellets, drained by hazards). Always launched
   from the Base (progression/app.py::run_progression_mode()), where
   persistent gold buys permanent meta-progression upgrades between runs;
   R after a run ends returns there instead of restarting in place. See

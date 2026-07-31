@@ -76,13 +76,13 @@ def test_clear_cache_forces_a_fresh_lookup(tmp_path, monkeypatch):
     monkeypatch.setattr(sound, "SOUNDS_DIR", tmp_path)
     monkeypatch.setattr(sound, "_mixer_ready", None)
 
-    sound.play("enemy_hit")
-    assert sound._cache["enemy_hit"] is None
+    sound.play("hazard_hit")
+    assert sound._cache["hazard_hit"] is None
 
-    _write_tiny_wav(tmp_path / "enemy_hit.wav")
-    sound.play("enemy_hit")
-    assert sound._cache["enemy_hit"] is None  # still cached as missing
+    _write_tiny_wav(tmp_path / "hazard_hit.wav")
+    sound.play("hazard_hit")
+    assert sound._cache["hazard_hit"] is None  # still cached as missing
 
     sound.clear_cache()
-    sound.play("enemy_hit")
-    assert sound._cache["enemy_hit"] is not None  # fresh lookup finds the new file
+    sound.play("hazard_hit")
+    assert sound._cache["hazard_hit"] is not None  # fresh lookup finds the new file

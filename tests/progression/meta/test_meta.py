@@ -45,7 +45,7 @@ def test_load_meta_upgrade_levels_returns_empty_when_the_file_is_corrupt(tmp_pat
 
 def test_load_meta_upgrade_levels_skips_malformed_entries(tmp_path):
     path = tmp_path / "meta_upgrades.json"
-    path.write_text('{"pellet_bonus": 2, "enemy_resistance": "not a number"}')
+    path.write_text('{"pellet_bonus": 2, "hazard_resistance": "not a number"}')
     assert load_meta_upgrade_levels(path) == {"pellet_bonus": 2}
 
 
@@ -158,7 +158,7 @@ def test_seed_build_with_no_upgrades_owned_returns_a_plain_build(paths):
     progress = MetaProgress(*paths)
     build = progress.seed_build()
     assert build.pellet_value_multiplier == 1.0
-    assert build.enemy_resistance_multiplier == 1.0
+    assert build.hazard_resistance_multiplier == 1.0
 
 
 def test_seed_build_applies_owned_pellet_bonus_levels(paths):
@@ -171,14 +171,14 @@ def test_seed_build_applies_owned_pellet_bonus_levels(paths):
     assert build.pellet_value_multiplier == pytest.approx(upgrade.magnitude ** 2)
 
 
-def test_seed_build_applies_owned_enemy_resistance_levels(paths):
+def test_seed_build_applies_owned_hazard_resistance_levels(paths):
     gold_path, upgrades_path = paths
-    upgrade = next(u for u in ALL_META_UPGRADES if u.id == "enemy_resistance")
+    upgrade = next(u for u in ALL_META_UPGRADES if u.id == "hazard_resistance")
     progress = MetaProgress(gold_path, upgrades_path)
     progress.levels[upgrade.id] = 3
 
     build = progress.seed_build()
-    assert build.enemy_resistance_multiplier == pytest.approx(upgrade.magnitude ** 3)
+    assert build.hazard_resistance_multiplier == pytest.approx(upgrade.magnitude ** 3)
 
 
 def test_seed_build_returns_a_fresh_build_each_call(paths):

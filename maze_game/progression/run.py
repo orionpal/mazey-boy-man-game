@@ -4,7 +4,7 @@ run.py
 The labyrinth progression mode: a sequence of LABYRINTH_TOTAL_MAZES mazes,
 gradually increasing in size. Time is one persistent resource (TimeResource)
 carried across the whole run rather than a per-maze budget -- pellets add
-to it, enemies subtract from it, clearing a maze fast enough adds a small
+to it, hazards subtract from it, clearing a maze fast enough adds a small
 bonus, and running out ends the whole run back at maze 1 (rogue-like: no
 retry in place, matching the project's existing "full reset, not a retry"
 framing).
@@ -34,7 +34,7 @@ from maze_game.constants import (
     LABYRINTH_TOTAL_MAZES, LABYRINTH_GROUP_SIZE, LABYRINTH_START_TIME,
     MIN_DIMENSION, MAX_DIMENSION, DIMENSION_STEP,
     MILESTONE_INTERVAL, MILESTONE_DIMENSION_BOOST, MILESTONE_MAX_DIMENSION,
-    AUGMENT_INTERVAL, ENEMY_UNLOCK_MAZE,
+    AUGMENT_INTERVAL, HAZARD_UNLOCK_MAZE,
     SPEED_BONUS_TIME, SPEED_BONUS_SECONDS_PER_CELL,
     POPUP_DURATION_SECONDS, C_SPEED_BONUS, C_GOLD,
 )
@@ -42,7 +42,7 @@ from maze_game.maze import generate_maze, farthest_reachable_cell, shortest_path
 from maze_game.player import slide_path
 from maze_game.progression.entities import resolve_contacts
 from maze_game.progression.entities.hazards import (
-    spawn_pellets, spawn_enemies, enemy_density_ramp,
+    spawn_pellets, spawn_hazards, hazard_density_ramp,
     spawn_gold_pellets, load_gold_total, save_gold_total, DEFAULT_GOLD_PATH,
 )
 from maze_game.progression.shop import offer_shop_cards
@@ -55,7 +55,7 @@ START_POS: tuple[int, int] = (1, 1)
 
 @dataclass
 class Popup:
-    """A brief floating "+Xs"/"-Xs" label wherever a pellet, enemy, or speed bonus changes the time resource."""
+    """A brief floating "+Xs"/"-Xs" label wherever a pellet, hazard, or speed bonus changes the time resource."""
 
     pos: tuple[int, int]
     text: str
@@ -156,7 +156,7 @@ class TimeResource:
 class LabyrinthRun:
     """
     Owns the full progression state machine: current maze, the persistent
-    time resource, this maze's pellets/enemies, the player's perk build,
+    time resource, this maze's pellets/hazards, the player's perk build,
     group breaks, and pass/fail.
     """
 
@@ -384,19 +384,19 @@ class LabyrinthRun:
         exclude = exclude | {p.pos for p in self.pellets}
         self.gold_pellets = spawn_gold_pellets(self.grid, exclude, rng=self.rng)
         exclude = exclude | {p.pos for p in self.gold_pellets}
-        if self.maze_index >= ENEMY_UNLOCK_MAZE:
-            self.enemies = spawn_enemies(
-                self.grid, exclude, density_multiplier=enemy_density_ramp(self.maze_index), rng=self.rng,
+        if self.maze_index >= HAZARD_UNLOCK_MAZE:
+            self.hazards = spawn_hazards(
+                self.grid, exclude, density_multiplier=hazard_density_ramp(self.maze_index), rng=self.rng,
             )
         else:
-            self.enemies = []
+            self.hazards = []
 
         self._par_seconds = SPEED_BONUS_SECONDS_PER_CELL * len(
             shortest_path(self.grid, START_POS, self.goal, extra_edges=self._teleport_map)
         )
         self._maze_started_at = time.monotonic()
         self.finished = False
-        self.shield_charges_remaining = self.build.enemy_shield_charges_per_maze
+        self.shield_charges_remaining = self.build.hazard_shield_charges_per_maze
 
     def _advance(self) -> None:
         if self.maze_index >= LABYRINTH_TOTAL_MAZES:

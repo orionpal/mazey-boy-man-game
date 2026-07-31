@@ -12,7 +12,7 @@ One file per event, named `{event}.wav` or `{event}.ogg`:
 
 ```
 move.wav          teleport.wav       pellet.wav          gold.wav
-enemy_hit.wav      key.wav            shield_block.wav    maze_complete.wav
+hazard_hit.wav      key.wav            shield_block.wav    maze_complete.wav
 speed_bonus.wav    fail.wav           card_select.wav     menu_move.wav
 menu_select.wav
 ```
@@ -27,7 +27,7 @@ maze's current cell size):
 
 ```
 player.png   goal.png           pellet.png          gold.png
-enemy.png    door_locked.png    door_unlocked.png    key.png
+hazard.png    door_locked.png    door_unlocked.png    key.png
 ```
 
 Only add the ones you want to test — any entity without a matching icon
