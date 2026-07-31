@@ -286,6 +286,64 @@ def test_completing_the_final_maze_sets_completed_run_not_on_break():
     assert run.maze_index == LABYRINTH_TOTAL_MAZES
 
 
+# ── Seeded runs ───────────────────────────────────────────────────────────
+
+
+def test_explicit_seed_is_stored_verbatim():
+    run = LabyrinthRun(seed=12345)
+    assert run.seed == 12345
+
+
+def test_no_seed_still_assigns_some_int_seed():
+    run = LabyrinthRun()
+    assert isinstance(run.seed, int)
+
+
+def _scripted_playthrough(run, moves):
+    """Drive a run through group breaks, always picking card 0, until `moves` mazes have cleared."""
+    for _ in range(moves):
+        if run.boss is not None:
+            run.boss.hp = 0
+        else:
+            run.player = run.goal
+        run.update()
+        if run.on_break:
+            run.choose_shop_card(0)
+
+
+def test_same_seed_produces_identical_maze_and_entities():
+    a = LabyrinthRun(seed=999)
+    b = LabyrinthRun(seed=999)
+    assert a.grid == b.grid
+    assert [p.pos for p in a.pellets] == [p.pos for p in b.pellets]
+    assert [e.pos for e in a.enemies] == [e.pos for e in b.enemies]
+    assert a.goal == b.goal
+
+
+def test_same_seed_stays_identical_across_a_scripted_playthrough():
+    a = LabyrinthRun(seed=42)
+    b = LabyrinthRun(seed=42)
+    _scripted_playthrough(a, LABYRINTH_GROUP_SIZE * 2)
+    _scripted_playthrough(b, LABYRINTH_GROUP_SIZE * 2)
+    assert a.grid == b.grid
+    assert a.maze_index == b.maze_index
+    assert [p.pos for p in a.pellets] == [p.pos for p in b.pellets]
+
+
+def test_restart_without_same_seed_picks_a_new_seed():
+    run = LabyrinthRun(seed=7)
+    run.restart()
+    assert run.seed != 7
+
+
+def test_restart_with_same_seed_keeps_the_seed_and_reproduces_the_next_maze():
+    run = LabyrinthRun(seed=7)
+    grid_before = run.grid
+    run.restart(same_seed=True)
+    assert run.seed == 7
+    assert run.grid == grid_before
+
+
 def test_group_number_and_total_groups(run):
     assert run.group_number == 1
     assert run.total_groups == LABYRINTH_TOTAL_MAZES // LABYRINTH_GROUP_SIZE

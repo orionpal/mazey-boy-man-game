@@ -8,7 +8,10 @@ import statistics
 
 import pytest
 
-from maze_game.maze import generate_maze, farthest_reachable_cell, shortest_path, braid, _open_neighbour_count
+from maze_game.maze import (
+    generate_maze, farthest_reachable_cell, shortest_path, braid,
+    _open_neighbour_count, is_stoppable_cell, bfs_reachable,
+)
 from maze_game.player import slide
 
 SIZES = [5, 9, 21, 51]
@@ -24,25 +27,8 @@ def _open_cells(grid):
 
 
 def _reachable_from(grid, start):
-    """BFS reachability set from `start` (mirrors farthest_reachable_cell's traversal)."""
-    from collections import deque
-
-    cols, rows = len(grid[0]), len(grid)
-    seen = {start}
-    q = deque([start])
-    while q:
-        cx, cy = q.popleft()
-        for dx, dy in ((0, 1), (0, -1), (1, 0), (-1, 0)):
-            nx, ny = cx + dx, cy + dy
-            if (
-                0 <= nx < cols
-                and 0 <= ny < rows
-                and grid[ny][nx] == 0
-                and (nx, ny) not in seen
-            ):
-                seen.add((nx, ny))
-                q.append((nx, ny))
-    return seen
+    """BFS reachability set from `start`. Thin wrapper over the real public bfs_reachable()."""
+    return bfs_reachable(grid, start)
 
 
 @pytest.mark.parametrize("size", SIZES)
@@ -368,3 +354,66 @@ def test_braid_never_isolates_a_wall_pillar():
         for _ in range(30):
             grid = generate_maze(size, size, newest_prob=0.3, braid_prob=1.0)
             assert _isolated_wall_pillars(grid) == [], f"found an isolated pillar at size {size}"
+
+
+# ── Seeded RNG (instance-threaded rng kwarg) ─────────────────────────────
+
+
+def test_generate_maze_with_explicit_rng_is_deterministic():
+    a = generate_maze(21, 21, rng=random.Random(1234))
+    b = generate_maze(21, 21, rng=random.Random(1234))
+    assert a == b
+
+
+def test_generate_maze_with_explicit_rng_does_not_perturb_global_random_state():
+    random.seed(555)
+    state_before = random.getstate()
+    generate_maze(21, 21, rng=random.Random(1))
+    assert random.getstate() == state_before
+
+
+def test_braid_with_explicit_rng_is_deterministic():
+    base = generate_maze(21, 21, braid_prob=0.0)
+    a = braid(base, p=1.0, rng=random.Random(7))
+    b = braid(base, p=1.0, rng=random.Random(7))
+    assert a == b
+
+
+# ── is_stoppable_cell / bfs_reachable ─────────────────────────────────────
+
+
+def test_is_stoppable_cell_matches_farthest_reachable_cells_rule():
+    random.seed(2)
+    grid = generate_maze(21, 21)
+    for x, y in _open_cells(grid):
+        assert is_stoppable_cell(grid, x, y) == (_open_neighbour_count(grid, x, y) != 2)
+
+
+def test_bfs_reachable_matches_full_connectivity_on_a_perfect_maze():
+    random.seed(2)
+    grid = generate_maze(21, 21)
+    assert bfs_reachable(grid, (1, 1)) == set(_open_cells(grid))
+
+
+# ── shortest_path extra_edges ─────────────────────────────────────────────
+
+
+def test_shortest_path_uses_extra_edges_to_reach_an_otherwise_unreachable_cell():
+    # Two disconnected 1-cell rooms, only linked by an extra "teleporter" edge.
+    grid = [
+        [1, 1, 1, 1, 1],
+        [1, 0, 1, 0, 1],
+        [1, 1, 1, 1, 1],
+    ]
+    start, goal = (1, 1), (3, 1)
+    assert bfs_reachable(grid, start) == {start}  # confirm goal is NOT reachable via grid adjacency alone
+
+    path = shortest_path(grid, start, goal, extra_edges={start: goal})
+    assert path == [start, goal]
+
+
+def test_shortest_path_without_extra_edges_is_unchanged():
+    random.seed(4)
+    grid = generate_maze(21, 21)
+    goal = farthest_reachable_cell(grid, (1, 1))
+    assert shortest_path(grid, (1, 1), goal) == shortest_path(grid, (1, 1), goal, extra_edges=None)

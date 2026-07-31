@@ -42,6 +42,7 @@ def generate_maze(
     rows: int,
     newest_prob: float = DEFAULT_NEWEST_PROB,
     braid_prob: float = DEFAULT_BRAID_PROB,
+    rng: random.Random | None = None,
 ) -> list[list[int]]:
     """
     Return a 2-D grid where 1 = wall and 0 = open passage.
@@ -56,10 +57,17 @@ def generate_maze(
     maze" (a spanning tree, no loops). Braiding does not affect
     connectivity -- it only adds extra edges to an already-connected graph.
 
+    `rng` is an optional `random.Random` instance for reproducible/seeded
+    generation; defaults to the `random` module itself (which exposes the
+    same method surface as a `Random` instance), so every existing call site
+    keeps working unchanged via the global `random.seed()` pattern the tests
+    already rely on.
+
     Both `cols` and `rows` must be odd integers >= 3.
     """
     if cols % 2 == 0 or rows % 2 == 0:
         raise ValueError("cols and rows must both be odd.")
+    rng = rng if rng is not None else random
 
     grid = [[1] * cols for _ in range(rows)]
 
@@ -67,10 +75,10 @@ def generate_maze(
     grid[1][1] = 0
     active = [(1, 1)]
     while active:
-        idx = len(active) - 1 if random.random() < newest_prob else random.randrange(len(active))
+        idx = len(active) - 1 if rng.random() < newest_prob else rng.randrange(len(active))
         cx, cy = active[idx]
         directions = [(0, -2), (0, 2), (-2, 0), (2, 0)]
-        random.shuffle(directions)
+        rng.shuffle(directions)
         carved = False
         for dx, dy in directions:
             nx, ny = cx + dx, cy + dy
@@ -86,12 +94,12 @@ def generate_maze(
             active.pop(idx)
 
     if braid_prob > 0:
-        grid = braid(grid, braid_prob)
+        grid = braid(grid, braid_prob, rng=rng)
 
     return grid
 
 
-def braid(grid: list[list[int]], p: float) -> list[list[int]]:
+def braid(grid: list[list[int]], p: float, rng: random.Random | None = None) -> list[list[int]]:
     """
     Post-process pass: for each dead end (a passage cell with exactly one
     open neighbour), with probability `p`, knock down one more wall to a
@@ -100,18 +108,22 @@ def braid(grid: list[list[int]], p: float) -> list[list[int]]:
     tree), which only ever *adds* reachability, never removes it, so a
     fully-connected input stays fully connected.
 
+    `rng` is an optional `random.Random` instance for reproducible/seeded
+    generation; defaults to the `random` module (see `generate_maze`).
+
     Returns a new grid; does not mutate the input.
     """
+    rng = rng if rng is not None else random
     grid = [row[:] for row in grid]
     cols, rows = len(grid[0]), len(grid)
     cells = [(x, y) for y in range(1, rows, 2) for x in range(1, cols, 2)]
     dead_ends = [
         (x, y) for x, y in cells if grid[y][x] == 0 and _open_neighbour_count(grid, x, y) == 1
     ]
-    random.shuffle(dead_ends)
+    rng.shuffle(dead_ends)
 
     for x, y in dead_ends:
-        if random.random() > p:
+        if rng.random() > p:
             continue
         if _open_neighbour_count(grid, x, y) != 1:
             continue  # an earlier carve in this pass may have already opened this one up
@@ -130,7 +142,7 @@ def braid(grid: list[list[int]], p: float) -> list[list[int]]:
                 candidates.append((wx, wy))
 
         if candidates:
-            wx, wy = random.choice(candidates)
+            wx, wy = rng.choice(candidates)
             grid[wy][wx] = 0
 
     return grid
@@ -180,6 +192,44 @@ def _open_neighbour_count(grid: list[list[int]], cx: int, cy: int) -> int:
     )
 
 
+def is_stoppable_cell(grid: list[list[int]], x: int, y: int) -> bool:
+    """
+    True if `player.slide()` can actually stop on this cell -- a wall ahead
+    (dead end, 1 open neighbour) or a junction (3+ open neighbours). A plain
+    2-open-neighbour corridor/turn cell can never be landed on, since the
+    slide always continues straight through it. Extracted from
+    `farthest_reachable_cell`'s inline rule so other code (e.g. maze
+    augments placing goal/teleporter cells) doesn't reimplement -- and risk
+    drifting from -- this same, already-once-buggy rule.
+    """
+    return _open_neighbour_count(grid, x, y) != 2
+
+
+def bfs_reachable(grid: list[list[int]], start: tuple[int, int]) -> set[tuple[int, int]]:
+    """
+    Return every open cell reachable from `start` via 4-directional
+    adjacency. General-purpose connectivity primitive used by generation-time
+    correctness checks (e.g. verifying a maze augment's grid mutation hasn't
+    fragmented the main region).
+    """
+    cols, rows = len(grid[0]), len(grid)
+    seen = {start}
+    queue: deque[tuple[int, int]] = deque([start])
+    while queue:
+        cx, cy = queue.popleft()
+        for dx, dy in ((0, 1), (0, -1), (1, 0), (-1, 0)):
+            nx, ny = cx + dx, cy + dy
+            if (
+                0 <= nx < cols
+                and 0 <= ny < rows
+                and grid[ny][nx] == 0
+                and (nx, ny) not in seen
+            ):
+                seen.add((nx, ny))
+                queue.append((nx, ny))
+    return seen
+
+
 def farthest_reachable_cell(
     grid: list[list[int]], start: tuple[int, int]
 ) -> tuple[int, int]:
@@ -225,13 +275,23 @@ def farthest_reachable_cell(
 
 
 def shortest_path(
-    grid: list[list[int]], start: tuple[int, int], goal: tuple[int, int]
+    grid: list[list[int]],
+    start: tuple[int, int],
+    goal: tuple[int, int],
+    extra_edges: dict[tuple[int, int], tuple[int, int]] | None = None,
 ) -> list[tuple[int, int]]:
     """
     BFS shortest path from `start` to `goal`, inclusive of both ends.
     Used by the labyrinth progression mode to estimate a fair per-maze time
     limit from the actual generated maze rather than a size-only guess.
+
+    `extra_edges` adds non-grid traversable edges on top of ordinary
+    4-directional adjacency (e.g. a teleporter map: `{cell: linked_cell}`) --
+    needed once a maze augment can make the goal reachable only *through*
+    such an edge, since plain grid adjacency alone would never find a path
+    to it.
     """
+    extra_edges = extra_edges or {}
     cols, rows = len(grid[0]), len(grid)
     prev: dict[tuple[int, int], tuple[int, int] | None] = {start: None}
     queue: deque[tuple[int, int]] = deque([start])
@@ -240,8 +300,13 @@ def shortest_path(
         cx, cy = queue.popleft()
         if (cx, cy) == goal:
             break
-        for dx, dy in ((0, 1), (0, -1), (1, 0), (-1, 0)):
-            nx, ny = cx + dx, cy + dy
+        neighbours = [
+            (cx + dx, cy + dy) for dx, dy in ((0, 1), (0, -1), (1, 0), (-1, 0))
+        ]
+        linked = extra_edges.get((cx, cy))
+        if linked is not None:
+            neighbours.append(linked)
+        for nx, ny in neighbours:
             if (
                 0 <= nx < cols
                 and 0 <= ny < rows

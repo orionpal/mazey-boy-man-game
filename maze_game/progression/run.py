@@ -16,6 +16,7 @@ Deliberately independent of pygame -- pure state machine, testable without a
 display, same pattern as Game/history.py.
 """
 
+import random
 import time
 
 from maze_game.constants import (
@@ -34,6 +35,16 @@ from maze_game.progression.shop.perks import Build, Perk
 from maze_game.progression.shop.items import Loadout
 
 START_POS: tuple[int, int] = (1, 1)
+
+
+def _random_seed() -> int:
+    """
+    Pick a fresh run seed. Deliberately uses the bare global `random`, not a
+    `LabyrinthRun.rng` instance -- choosing *which* seed to start a run with
+    is inherently a one-off, non-reproducible decision, not part of the
+    reproducible sequence a seed is meant to pin down.
+    """
+    return random.randrange(2**32)
 
 
 def dimensions_for_maze(maze_index: int) -> tuple[int, int]:
@@ -96,7 +107,9 @@ class LabyrinthRun:
     build and item loadout, group breaks, and pass/fail.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, seed: int | None = None) -> None:
+        self.seed = seed if seed is not None else _random_seed()
+        self.rng = random.Random(self.seed)
         self.maze_index = 1
         self.on_break = False
         self.failed = False
@@ -198,8 +211,15 @@ class LabyrinthRun:
         self.maze_index += 1
         self._begin_maze()
 
-    def restart(self) -> None:
-        """Start the whole run over from maze 1 (e.g. after running out of time)."""
+    def restart(self, same_seed: bool = False) -> None:
+        """
+        Start the whole run over from maze 1 (e.g. after running out of
+        time). Picks a fresh seed by default -- a genuinely new run, not a
+        replay -- unless `same_seed` is requested (e.g. retrying the exact
+        same layout after a rough death).
+        """
+        self.seed = self.seed if same_seed else _random_seed()
+        self.rng = random.Random(self.seed)
         self.maze_index = 1
         self.on_break = False
         self.failed = False
@@ -244,7 +264,7 @@ class LabyrinthRun:
     def _begin_maze(self) -> None:
         cols, rows = dimensions_for_maze(self.maze_index)
         self.cols, self.rows = cols, rows
-        self.grid = generate_maze(cols, rows)
+        self.grid = generate_maze(cols, rows, rng=self.rng)
         self.player = START_POS
 
         if is_boss_maze(self.maze_index):
@@ -258,9 +278,9 @@ class LabyrinthRun:
             self.goal = farthest_reachable_cell(self.grid, START_POS)
             self.boss = None
             exclude = {START_POS, self.goal}
-            self.pellets = spawn_pellets(self.grid, exclude, self.build.pellet_frequency_multiplier)
+            self.pellets = spawn_pellets(self.grid, exclude, self.build.pellet_frequency_multiplier, rng=self.rng)
             exclude = exclude | {p.pos for p in self.pellets}
-            self.enemies = spawn_enemies(self.grid, exclude) if self.maze_index >= ENEMY_UNLOCK_MAZE else []
+            self.enemies = spawn_enemies(self.grid, exclude, rng=self.rng) if self.maze_index >= ENEMY_UNLOCK_MAZE else []
 
         target = self.boss.pos if self.boss is not None else self.goal
         self._par_seconds = SPEED_BONUS_SECONDS_PER_CELL * len(shortest_path(self.grid, START_POS, target))
@@ -272,7 +292,7 @@ class LabyrinthRun:
             self.completed_run = True
         elif self.maze_index % LABYRINTH_GROUP_SIZE == 0:
             self.on_break = True
-            self.shop_choices = offer_shop_cards()
+            self.shop_choices = offer_shop_cards(rng=self.rng)
             self.shop_cursor = 0
         else:
             self.maze_index += 1

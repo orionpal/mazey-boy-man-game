@@ -53,14 +53,21 @@ def _entity_count(candidate_count: int, density: float, minimum: int, maximum: i
 
 
 def spawn_pellets(
-    grid: list[list[int]], exclude: set[tuple[int, int]], frequency_multiplier: float = 1.0,
+    grid: list[list[int]],
+    exclude: set[tuple[int, int]],
+    frequency_multiplier: float = 1.0,
+    rng: random.Random | None = None,
 ) -> list[Pellet]:
+    rng = rng if rng is not None else random
     candidates = [c for c in _open_cells(grid) if c not in exclude]
     count = min(_entity_count(len(candidates), PELLET_DENSITY * frequency_multiplier, PELLET_MIN_COUNT), len(candidates))
-    return [Pellet(pos) for pos in random.sample(candidates, count)]
+    return [Pellet(pos) for pos in rng.sample(candidates, count)]
 
 
-def spawn_enemies(grid: list[list[int]], exclude: set[tuple[int, int]]) -> list[Enemy]:
+def spawn_enemies(
+    grid: list[list[int]], exclude: set[tuple[int, int]], rng: random.Random | None = None,
+) -> list[Enemy]:
+    rng = rng if rng is not None else random
     candidates = [c for c in _open_cells(grid) if c not in exclude]
     count = min(_entity_count(len(candidates), ENEMY_DENSITY, minimum=0, maximum=ENEMY_MAX_COUNT), len(candidates))
-    return [random.choice(ENEMY_TYPES)(pos) for pos in random.sample(candidates, count)]
+    return [rng.choice(ENEMY_TYPES)(pos) for pos in rng.sample(candidates, count)]

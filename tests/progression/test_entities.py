@@ -117,6 +117,17 @@ def test_spawn_pellets_and_spawn_enemies_can_be_composed_without_overlap():
     enemy_positions = {e.pos for e in enemies}
     assert pellet_positions.isdisjoint(enemy_positions)
 
+def test_spawn_pellets_with_explicit_rng_is_deterministic():
+    a = spawn_pellets(OPEN_ROOM, exclude=set(), rng=random.Random(11))
+    b = spawn_pellets(OPEN_ROOM, exclude=set(), rng=random.Random(11))
+    assert [p.pos for p in a] == [p.pos for p in b]
+
+
+def test_spawn_enemies_with_explicit_rng_is_deterministic():
+    a = spawn_enemies(OPEN_ROOM, exclude=set(), rng=random.Random(12))
+    b = spawn_enemies(OPEN_ROOM, exclude=set(), rng=random.Random(12))
+    assert [e.pos for e in a] == [e.pos for e in b]
+
 
 # ── Boss ──────────────────────────────────────────────────────────────────
 

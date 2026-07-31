@@ -14,6 +14,7 @@ from maze_game.progression.shop.items import Item, ALL_ITEMS
 SHOP_CARDS_OFFERED = 3
 
 
-def offer_shop_cards() -> list[Perk | Item]:
+def offer_shop_cards(rng: random.Random | None = None) -> list[Perk | Item]:
+    rng = rng if rng is not None else random
     pool = ALL_PERKS + ALL_ITEMS
-    return random.sample(pool, min(SHOP_CARDS_OFFERED, len(pool)))
+    return rng.sample(pool, min(SHOP_CARDS_OFFERED, len(pool)))
