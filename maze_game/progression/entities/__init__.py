@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from maze_game.constants import C_ENEMY
+
 if TYPE_CHECKING:
     from maze_game.progression.run import LabyrinthRun
 
@@ -27,9 +29,10 @@ class MazeEntity:
         raise NotImplementedError
 
 
-def apply_time_penalty(run: "LabyrinthRun", amount: float) -> None:
+def apply_time_penalty(run: "LabyrinthRun", amount: float, pos: tuple[int, int]) -> None:
     """Shared time-cost helper used by both Enemy.on_contact and an active-phase Boss hit."""
     run.time.spend(amount)
+    run.add_popup(pos, f"-{amount:.1f}s", C_ENEMY)
 
 
 def resolve_contacts(run: "LabyrinthRun", path: list[tuple[int, int]]) -> None:

@@ -17,6 +17,7 @@ from maze_game.constants import (
     PELLET_TIME_VALUE, PELLET_DENSITY, PELLET_MIN_COUNT,
     ENEMY_TIME_PENALTY, ENEMY_DENSITY, ENEMY_MAX_COUNT,
     ENEMY_UNLOCK_MAZE, ENEMY_RAMP_MAZES, ENEMY_RAMP_START_MULTIPLIER,
+    C_PELLET,
 )
 from maze_game.progression.entities import MazeEntity, apply_time_penalty
 
@@ -30,14 +31,16 @@ class Pellet(MazeEntity):
         self.value = value
 
     def on_contact(self, run: "LabyrinthRun") -> None:
-        run.time.add(self.value * run.build.pellet_value_multiplier)
+        amount = self.value * run.build.pellet_value_multiplier
+        run.time.add(amount)
+        run.add_popup(self.pos, f"+{amount:.1f}s", C_PELLET)
 
 
 class Enemy(MazeEntity):
     penalty: float = ENEMY_TIME_PENALTY
 
     def on_contact(self, run: "LabyrinthRun") -> None:
-        apply_time_penalty(run, self.penalty)
+        apply_time_penalty(run, self.penalty, self.pos)
 
 
 ENEMY_TYPES: list[type[Enemy]] = [Enemy]

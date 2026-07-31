@@ -29,6 +29,7 @@ from maze_game.constants import (
     C_BG, C_WALL, C_FLOOR, C_PLAYER, C_GOAL, C_TEXT, C_DIM, C_FLASH, C_HUD_BG,
     C_PANEL_BG, C_PANEL_LINE, C_BUTTON, C_BUTTON_HOVER,
     C_PELLET, C_ENEMY, C_BOSS_IDLE, C_BOSS_ACTIVE, C_TELEPORT_PAIRS,
+    POPUP_DURATION_SECONDS, POPUP_RISE_PIXELS,
 )
 from maze_game.progression.shop.perks import ALL_PERKS
 from maze_game.progression.shop.items import ALL_ITEMS, UNLIMITED_ITEM_IDS
@@ -152,6 +153,7 @@ class Renderer:
                 self._draw_goal(run.goal, layout)
             self._draw_player(run.player, layout)
             self._draw_squeak(run, layout)
+            self._draw_popups(run, layout)
 
         self._draw_hud(run, layout)
         self._draw_build_sidebar(run.build, layout, mouse_pos)
@@ -239,6 +241,23 @@ class Renderer:
         px, py = run.player
         label = self.font_big.render("Squeak!", True, C_FLASH)
         self.surface.blit(label, (ox + px * cell + cell // 2 - label.get_width() // 2, oy + py * cell - cell))
+
+    def _draw_popups(self, run: LabyrinthRun, layout: Layout) -> None:
+        """Floating "+Xs"/"-Xs" labels for pellet/enemy/speed-bonus time changes -- rises and fades out over its lifetime."""
+        ox, oy = layout.maze_origin
+        cell = layout.cell
+        now = time.monotonic()
+        for popup in run.popups:
+            age = now - popup.created_at
+            if age >= POPUP_DURATION_SECONDS:
+                continue
+            progress = age / POPUP_DURATION_SECONDS
+            rise = int(POPUP_RISE_PIXELS * progress)
+            x, y = popup.pos
+            label = self.font_small.render(popup.text, True, popup.color)
+            px = ox + x * cell + cell // 2 - label.get_width() // 2
+            py = oy + y * cell - cell // 2 - rise
+            self.surface.blit(label, (px, py))
 
     # ── HUD ──────────────────────────────────────────────────────────────
 

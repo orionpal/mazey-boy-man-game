@@ -106,6 +106,27 @@ density down to `ENEMY_RAMP_START_MULTIPLIER` (0.25, ~1 enemy) on
 steady-state curve (already tuned) is untouched -- only the introduction is
 softened.
 
+### Feedback popups: "+Xs"/"-Xs" wherever the clock actually changes
+
+A pellet, an enemy, and a maze-clear speed bonus all move the shared time
+resource, but previously the only feedback was the HUD number itself
+ticking -- easy to miss mid-slide, and not obviously *tied* to the pellet/
+enemy the player just passed through. `LabyrinthRun.add_popup(pos, text,
+color)` (called from `Pellet.on_contact`, the shared `apply_time_penalty()`
+helper, and the speed-bonus branch of `update()`) queues a `Popup(pos,
+text, color, created_at)`; `renderer.py::_draw_popups()` renders each one
+at its cell, drifting upward (`POPUP_RISE_PIXELS`) over its lifetime
+(`POPUP_DURATION_SECONDS`, 1.0s) before it's pruned. Colour matches the
+thing that caused it (`C_PELLET`/`C_ENEMY`), except the speed bonus, which
+gets its own `C_SPEED_BONUS` so a maze-clear bonus reads as something
+extra rather than "a big pellet."
+
+`apply_time_penalty()` gained a required `pos` parameter for this (the
+enemy's or, for an active-phase boss hit, the boss's current position) --
+both existing call sites (`Enemy.on_contact`, `Boss.on_contact`) already
+had a `self.pos` to pass, so the boss's active-phase hits get the same
+popup treatment for free, not just plain enemies.
+
 ### The boss: every 30th maze, plus the 100th (final) maze
 
 Every `BOSS_INTERVAL`-th maze (30, 60, 90 —

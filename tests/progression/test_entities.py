@@ -12,6 +12,7 @@ from maze_game.constants import (
     PELLET_TIME_VALUE, PELLET_MIN_COUNT, ENEMY_TIME_PENALTY,
     BOSS_INTERVAL, BOSS_BASE_DAMAGE, LABYRINTH_TOTAL_MAZES,
     ENEMY_UNLOCK_MAZE, ENEMY_RAMP_MAZES, ENEMY_RAMP_START_MULTIPLIER,
+    ENEMY_DENSITY, ENEMY_MAX_COUNT, C_PELLET, C_ENEMY,
 )
 from maze_game.progression.entities.hazards import (
     Pellet, Enemy, ENEMY_TYPES, spawn_pellets, spawn_enemies, enemy_density_ramp,
@@ -33,6 +34,10 @@ class _FakeRun:
     def __init__(self):
         self.time = _FakeTimeResource()
         self.build = Build()
+        self.popups = []
+
+    def add_popup(self, pos, text, color):
+        self.popups.append((pos, text, color))
 
 
 class _FakeTimeResource:
@@ -57,6 +62,18 @@ def test_pellet_on_contact_adds_time_scaled_by_build_multiplier():
     assert run.time.amount == pytest.approx(10.0 + 4.0 * 2.0)
 
 
+def test_pellet_on_contact_adds_a_popup_with_the_scaled_amount():
+    run = _FakeRun()
+    run.build.pellet_value_multiplier = 2.0
+    pellet = Pellet((1, 1), value=4.0)
+    pellet.on_contact(run)
+    assert len(run.popups) == 1
+    pos, text, color = run.popups[0]
+    assert pos == (1, 1)
+    assert text == "+8.0s"
+    assert color == C_PELLET
+
+
 # ── Enemy ─────────────────────────────────────────────────────────────────
 
 
@@ -65,6 +82,17 @@ def test_enemy_on_contact_spends_its_penalty():
     enemy = Enemy((1, 1))
     enemy.on_contact(run)
     assert run.time.amount == pytest.approx(10.0 - ENEMY_TIME_PENALTY)
+
+
+def test_enemy_on_contact_adds_a_popup_at_its_position():
+    run = _FakeRun()
+    enemy = Enemy((2, 3))
+    enemy.on_contact(run)
+    assert len(run.popups) == 1
+    pos, text, color = run.popups[0]
+    assert pos == (2, 3)
+    assert text == f"-{ENEMY_TIME_PENALTY:.1f}s"
+    assert color == C_ENEMY
 
 
 def test_enemy_types_registry_contains_the_base_type():

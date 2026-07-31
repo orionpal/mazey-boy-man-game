@@ -109,6 +109,12 @@ STRENGTH_PERK_MAGNITUDE         = 1.5
 # single wall-open / all-enemies-in-4-directions action, not a magnitude.
 STOPWATCH_PAUSE_SECONDS = 5.0  # seconds paused per Stopwatch charge used
 
+# Feedback popups: a brief floating "+Xs"/"-Xs" label wherever a pellet,
+# enemy, or maze-clear speed bonus changes the time resource, so the effect
+# is legible in the moment instead of only visible via the HUD ticking.
+POPUP_DURATION_SECONDS = 1.0
+POPUP_RISE_PIXELS      = 24   # total upward drift over the popup's lifetime
+
 # Teleporting squares (progression/augments/teleporters.py): the first maze
 # augment. Pair count and how many of those pairs are load-bearing (the
 # goal is unreachable without using them) both scale with the augment's
@@ -141,6 +147,7 @@ C_PELLET    = (230, 210,  70)
 C_ENEMY     = (200, 60,   60)
 C_BOSS_IDLE = (230, 90,  200)
 C_BOSS_ACTIVE = (120, 40, 110)
+C_SPEED_BONUS = (100, 220, 255)  # distinct from C_PELLET, so a maze-clear time bonus reads as its own thing
 
 # Teleporter pairs: each pair drawn in its own colour (cycled by
 # pair.color_index if there are more pairs than colours), so linked cells

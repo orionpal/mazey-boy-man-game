@@ -25,12 +25,14 @@ display, same pattern as Game/history.py.
 
 import random
 import time
+from dataclasses import dataclass
 
 from maze_game.constants import (
     LABYRINTH_TOTAL_MAZES, LABYRINTH_GROUP_SIZE, LABYRINTH_START_TIME,
     MIN_DIMENSION, MAX_DIMENSION, DIMENSION_STEP,
     BOSS_BASE_HP, BOSS_HP_STEP, BOSS_INTERVAL, AUGMENT_INTERVAL, ENEMY_UNLOCK_MAZE,
     SPEED_BONUS_TIME, SPEED_BONUS_SECONDS_PER_CELL, STOPWATCH_PAUSE_SECONDS,
+    POPUP_DURATION_SECONDS, C_SPEED_BONUS,
 )
 from maze_game.maze import generate_maze, farthest_reachable_cell, shortest_path
 from maze_game.player import slide_path
@@ -43,6 +45,16 @@ from maze_game.progression.shop.items import Loadout
 from maze_game.progression.augments import AugmentBuild, run_pipeline, offer_augment_cards
 
 START_POS: tuple[int, int] = (1, 1)
+
+
+@dataclass
+class Popup:
+    """A brief floating "+Xs"/"-Xs" label wherever a pellet, enemy, or speed bonus changes the time resource."""
+
+    pos: tuple[int, int]
+    text: str
+    color: tuple[int, int, int]
+    created_at: float
 
 # Breaks should always coincide with (or be subsumed by) the group cadence,
 # so a modifier or boss maze is never a total surprise with zero preceding
@@ -152,12 +164,19 @@ class LabyrinthRun:
         self.break_cursor = 0
         self.stopwatch_until: float | None = None
         self.last_squeak_at: float | None = None
+        self.popups: list[Popup] = []
         self._begin_maze()
 
     # ── Public API ────────────────────────────────────────────────────────
 
+    def add_popup(self, pos: tuple[int, int], text: str, color: tuple[int, int, int]) -> None:
+        """Queue a brief floating label at `pos` (a grid cell) -- see Popup/renderer._draw_popups."""
+        self.popups.append(Popup(pos, text, color, time.monotonic()))
+
     def update(self) -> None:
         """Advance the timer and check win/timeout. Call once per frame."""
+        now = time.monotonic()
+        self.popups = [p for p in self.popups if now - p.created_at < POPUP_DURATION_SECONDS]
         if self.stopwatch_until is not None:
             if time.monotonic() >= self.stopwatch_until:
                 self.stopwatch_until = None
@@ -172,6 +191,7 @@ class LabyrinthRun:
         if self._maze_cleared():
             if time.monotonic() - self._maze_started_at <= self._par_seconds:
                 self.time.add(SPEED_BONUS_TIME)
+                self.add_popup(self.player, f"+{SPEED_BONUS_TIME:.1f}s", C_SPEED_BONUS)
             self.finished = True
             self._advance()
 
@@ -276,6 +296,7 @@ class LabyrinthRun:
         self.break_cursor = 0
         self.stopwatch_until = None
         self.last_squeak_at = None
+        self.popups = []
         self.time = TimeResource(LABYRINTH_START_TIME)
         self.build = Build()
         self.loadout = Loadout()

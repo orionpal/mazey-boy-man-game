@@ -14,7 +14,7 @@ from maze_game.constants import (
     MIN_DIMENSION, MAX_DIMENSION, DIMENSION_STEP,
     LABYRINTH_GROUP_SIZE, LABYRINTH_TOTAL_MAZES, LABYRINTH_START_TIME,
     BOSS_INTERVAL, BOSS_BASE_HP, BOSS_HP_STEP, BOSS_BASE_DAMAGE,
-    ENEMY_TIME_PENALTY, SPEED_BONUS_TIME,
+    ENEMY_TIME_PENALTY, SPEED_BONUS_TIME, POPUP_DURATION_SECONDS,
 )
 from maze_game.progression.run import dimensions_for_maze, TimeResource, LabyrinthRun
 from maze_game.progression.entities.hazards import Pellet, Enemy
@@ -494,6 +494,13 @@ def test_completing_a_maze_quickly_awards_a_speed_bonus(run):
     assert run.time.amount == pytest.approx(before + SPEED_BONUS_TIME, abs=0.05)
 
 
+def test_completing_a_maze_quickly_adds_a_speed_bonus_popup(run):
+    goal = run.goal
+    run.player = goal
+    run.update()
+    assert any(p.text == f"+{SPEED_BONUS_TIME:.1f}s" and p.pos == goal for p in run.popups)
+
+
 def test_completing_a_maze_slowly_does_not_award_a_speed_bonus(run):
     run._maze_started_at -= (run._par_seconds + 5.0)
     before = run.time.amount
@@ -549,6 +556,15 @@ def test_move_collects_a_pellet_along_the_slide_path():
     assert run.time.amount == pytest.approx(before + 4.0 * run.build.pellet_value_multiplier)
 
 
+def test_move_collecting_a_pellet_adds_a_popup_at_its_position():
+    run = _corridor_run()
+    run.pellets = [Pellet((2, 1), value=4.0)]
+    run.move((1, 0))
+    assert len(run.popups) == 1
+    assert run.popups[0].pos == (2, 1)
+    assert run.popups[0].text == f"+{4.0 * run.build.pellet_value_multiplier:.1f}s"
+
+
 def test_move_takes_enemy_damage_along_the_slide_path_and_enemy_persists():
     run = _corridor_run()
     enemy = Enemy((2, 1))
@@ -557,6 +573,34 @@ def test_move_takes_enemy_damage_along_the_slide_path_and_enemy_persists():
     run.move((1, 0))
     assert run.time.amount == pytest.approx(max(0.0, before - ENEMY_TIME_PENALTY))
     assert run.enemies == [enemy]  # persistent hazard, not consumed
+
+
+def test_move_hitting_an_enemy_adds_a_popup_at_its_position():
+    run = _corridor_run()
+    run.enemies = [Enemy((2, 1))]
+    run.move((1, 0))
+    assert len(run.popups) == 1
+    assert run.popups[0].pos == (2, 1)
+    assert run.popups[0].text == f"-{ENEMY_TIME_PENALTY:.1f}s"
+
+
+# ── Popups ────────────────────────────────────────────────────────────────
+
+
+def test_popups_expire_after_popup_duration(run):
+    run.add_popup(run.player, "+1.0s", (0, 0, 0))
+    assert len(run.popups) == 1
+    run.popups[0].created_at -= POPUP_DURATION_SECONDS + 0.1  # simulate time passing
+    run.update()
+    assert run.popups == []
+
+
+def test_restart_clears_popups():
+    run = LabyrinthRun()
+    run.add_popup(run.player, "+1.0s", (0, 0, 0))
+    assert run.popups != []
+    run.restart()
+    assert run.popups == []
 
 
 # ── move() combo pass-through (junction_stop_count) ──────────────────────

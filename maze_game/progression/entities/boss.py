@@ -81,4 +81,4 @@ class Boss(MazeEntity):
         if self.phase == "idle":
             self.hp -= BOSS_BASE_DAMAGE * run.build.strength_multiplier
         else:
-            apply_time_penalty(run, ENEMY_TIME_PENALTY)
+            apply_time_penalty(run, ENEMY_TIME_PENALTY, self.pos)
