@@ -21,6 +21,7 @@ from maze_game.progression.entities.hazards import Pellet, GoldPellet, Enemy
 from maze_game.progression.shop.perks import ALL_PERKS, Perk
 from maze_game.progression.shop.items import ALL_ITEMS
 from maze_game.progression.augments.teleporters import TeleportersAugment
+from maze_game.progression.augments.doors import DoorKeyPair, Key
 
 # A trivial straight 3-cell corridor, (1,1)-(2,1)-(3,1), used to drive
 # move() deterministically instead of a randomly-generated maze.
@@ -708,6 +709,51 @@ def test_moving_through_a_teleporter_appends_the_teleport_event_not_move():
     run.move((1, 0))
     assert run.player == (3, 1)
     assert run.events == ["teleport"]
+
+
+DOOR_GRID = [
+    [1, 1, 1, 1, 1],
+    [1, 0, 0, 0, 1],
+    [1, 1, 1, 1, 1],
+]
+
+
+def _door_run() -> LabyrinthRun:
+    run = LabyrinthRun()
+    run.grid = [row[:] for row in DOOR_GRID]
+    run.player = (1, 1)
+    run.goal = (3, 1)
+    run.pellets = []
+    run.enemies = []
+    pair = DoorKeyPair(door=(3, 1), key=(2, 1), mandatory=True, color_index=0)
+    run.doors = [pair]
+    run._locked_doors = {(3, 1)}
+    run.keys = [Key((2, 1), door_cell=(3, 1))]
+    return run
+
+
+def test_moving_onto_a_key_unlocks_its_door_and_appends_the_key_event():
+    run = _door_run()
+    run.move((1, 0))
+    assert run.player == (2, 1)  # stopped one cell short of the still-locked door
+    assert run.events == ["move", "key"]
+    assert run.keys == []
+    assert (3, 1) not in run._locked_doors
+
+
+def test_moving_through_a_door_before_its_key_is_collected_stops_short():
+    run = _door_run()
+    run.player = (2, 1)  # skip straight to the door's doorstep, key not yet collected
+    run.move((1, 0))
+    assert run.player == (2, 1)  # locked door blocks the slide, same as a wall
+    assert run.events == []
+
+
+def test_door_stays_unlocked_for_the_rest_of_the_maze_once_its_key_is_collected():
+    run = _door_run()
+    run.move((1, 0))  # collects the key, unlocking the door
+    run.move((1, 0))  # now passes straight through
+    assert run.player == (3, 1)
 
 
 def test_restart_clears_events():

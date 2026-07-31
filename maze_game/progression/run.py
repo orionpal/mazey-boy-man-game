@@ -49,6 +49,7 @@ from maze_game.progression.shop import offer_shop_cards
 from maze_game.progression.shop.perks import Build, Perk
 from maze_game.progression.shop.items import Loadout
 from maze_game.progression.augments import AugmentBuild, run_pipeline, offer_augment_cards
+from maze_game.progression.augments.doors import Key
 
 START_POS: tuple[int, int] = (1, 1)
 
@@ -177,6 +178,9 @@ class LabyrinthRun:
         self.augment_build = AugmentBuild()
         self.teleporters: list = []
         self._teleport_map: dict[tuple[int, int], tuple[int, int]] = {}
+        self.doors: list = []
+        self.keys: list = []
+        self._locked_doors: set[tuple[int, int]] = set()
         self.shop_choices: list | None = None
         self.augment_choices: list | None = None
         self.break_cursor = 0
@@ -239,11 +243,13 @@ class LabyrinthRun:
             return
         break_wall = self._try_break_wall if use_wall_breaker else None
         teleport = (lambda nx, ny: self._teleport_map.get((nx, ny))) if self._teleport_map else None
+        door_locked = (lambda nx, ny: (nx, ny) in self._locked_doors) if self._locked_doors else None
         path = slide_path(
             self.grid, self.player, direction,
             junction_stop_count=None if use_wall_breaker else junction_stop_count,
             break_wall=break_wall,
             teleport=teleport,
+            door_locked=door_locked,
         )
         if not path:
             return
@@ -347,6 +353,9 @@ class LabyrinthRun:
         self.augment_build = AugmentBuild()
         self.teleporters = []
         self._teleport_map = {}
+        self.doors = []
+        self.keys = []
+        self._locked_doors = set()
         self._begin_maze()
 
     @property
@@ -405,6 +414,10 @@ class LabyrinthRun:
         for pair in self.teleporters:
             self._teleport_map[pair.a] = pair.b
             self._teleport_map[pair.b] = pair.a
+
+        self.doors = ctx.extra.get("doors", [])
+        self._locked_doors = {pair.door for pair in self.doors}
+        self.keys = [Key(pair.key, door_cell=pair.door) for pair in self.doors]
 
         self.goal = ctx.goal
         exclude = {START_POS, self.goal} | ctx.reserved

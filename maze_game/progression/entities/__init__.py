@@ -39,10 +39,10 @@ def apply_time_penalty(run: "LabyrinthRun", amount: float, pos: tuple[int, int])
 def resolve_contacts(run: "LabyrinthRun", path: list[tuple[int, int]]) -> None:
     """
     Check every cell the player's slide just passed through against
-    pellets, gold pellets, and enemies, applying effects in order. Pellets
-    and gold pellets are removed from their lists on collection (one-time
-    pickups); enemies are a persistent hazard that can be hit again on a
-    later, separate move.
+    pellets, gold pellets, keys, and enemies, applying effects in order.
+    Pellets, gold pellets, and keys are removed from their lists on
+    collection (one-time pickups); enemies are a persistent hazard that
+    can be hit again on a later, separate move.
     """
     for cell in path:
         remaining = []
@@ -60,6 +60,14 @@ def resolve_contacts(run: "LabyrinthRun", path: list[tuple[int, int]]) -> None:
             else:
                 remaining_gold.append(gold_pellet)
         run.gold_pellets = remaining_gold
+
+        remaining_keys = []
+        for key in run.keys:
+            if key.pos == cell:
+                key.on_contact(run)
+            else:
+                remaining_keys.append(key)
+        run.keys = remaining_keys
 
         for enemy in run.enemies:
             if enemy.pos == cell:
