@@ -36,14 +36,14 @@ from maze_game.constants import (
     MILESTONE_INTERVAL, MILESTONE_DIMENSION_BOOST, MILESTONE_MAX_DIMENSION,
     AUGMENT_INTERVAL, ENEMY_UNLOCK_MAZE,
     SPEED_BONUS_TIME, SPEED_BONUS_SECONDS_PER_CELL,
-    POPUP_DURATION_SECONDS, C_SPEED_BONUS,
+    POPUP_DURATION_SECONDS, C_SPEED_BONUS, C_GOLD,
 )
 from maze_game.maze import generate_maze, farthest_reachable_cell, shortest_path
 from maze_game.player import slide_path
 from maze_game.progression.entities import resolve_contacts
 from maze_game.progression.entities.hazards import (
     spawn_pellets, spawn_enemies, enemy_density_ramp,
-    spawn_gold_pellets, load_gold_total, DEFAULT_GOLD_PATH,
+    spawn_gold_pellets, load_gold_total, save_gold_total, DEFAULT_GOLD_PATH,
 )
 from maze_game.progression.shop import offer_shop_cards
 from maze_game.progression.augments import AugmentBuild, run_pipeline, offer_augment_cards
@@ -227,6 +227,11 @@ class LabyrinthRun:
                 self.time.add(SPEED_BONUS_TIME)
                 self.add_popup(self.player, f"+{SPEED_BONUS_TIME:.1f}s", C_SPEED_BONUS)
                 self.events.append("speed_bonus")
+                if self.build.gold_rush_bonus > 0:
+                    self.gold += self.build.gold_rush_bonus
+                    save_gold_total(self.gold, self.gold_path)
+                    self.add_popup(self.player, f"+{self.build.gold_rush_bonus}g", C_GOLD)
+                    self.events.append("gold")
             self.finished = True
             self.events.append("maze_complete")
             self._advance()

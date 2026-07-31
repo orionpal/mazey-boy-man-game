@@ -16,7 +16,7 @@ from maze_game.constants import (
     ENEMY_TIME_PENALTY, SPEED_BONUS_TIME, POPUP_DURATION_SECONDS,
 )
 from maze_game.progression.run import dimensions_for_maze, is_milestone_maze, TimeResource, LabyrinthRun
-from maze_game.progression.entities.hazards import Pellet, GoldPellet, Enemy
+from maze_game.progression.entities.hazards import Pellet, GoldPellet, Enemy, load_gold_total
 from maze_game.progression.shop.perks import ALL_PERKS, Perk
 from maze_game.progression.augments.teleporters import TeleportersAugment
 from maze_game.progression.augments.doors import DoorKeyPair, Key
@@ -611,6 +611,29 @@ def test_completing_a_maze_quickly_appends_speed_bonus_and_maze_complete_events(
     run.player = run.goal
     run.update()
     assert run.events == ["speed_bonus", "maze_complete"]
+
+
+def test_completing_a_maze_quickly_with_gold_rush_awards_bonus_gold(tmp_path):
+    gold_rush = next(p for p in ALL_PERKS if p.effect_key == "gold_rush")
+    run = LabyrinthRun(gold_path=tmp_path / "gold.json")
+    run.build.acquire(gold_rush)
+    run.build.acquire(gold_rush)
+    before_gold = run.gold
+    goal = run.goal
+    run.player = goal
+    run.update()
+    assert run.gold == before_gold + 2
+    assert load_gold_total(run.gold_path) == run.gold  # persisted immediately, like GoldPellet.on_contact()
+    assert run.events == ["speed_bonus", "gold", "maze_complete"]
+    assert any(p.text == "+2g" and p.pos == goal for p in run.popups)
+
+
+def test_completing_a_maze_quickly_without_gold_rush_does_not_touch_gold(run):
+    before_gold = run.gold
+    run.player = run.goal
+    run.update()
+    assert run.gold == before_gold
+    assert "gold" not in run.events
 
 
 def test_completing_a_maze_slowly_does_not_award_a_speed_bonus(run):
