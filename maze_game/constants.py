@@ -126,6 +126,20 @@ POPUP_RISE_PIXELS      = 24   # total upward drift over the popup's lifetime
 GOLD_PELLET_VALUE = 1
 GOLD_SPAWN_CHANCE = 0.3
 
+# Meta-progression (progression/meta/): permanent upgrades bought with gold
+# in the Base, between runs -- distinct from the per-run Perk shop, which
+# resets to nothing on death. Each upgrade is repurchasable at an
+# increasing gold cost (cost_base + cost_step * current_level), and its
+# effect stacks multiplicatively the same way in-run perks do (reusing
+# shop/perks.py's EFFECTS dict -- see MetaProgress.seed_build()). Magnitudes
+# are deliberately gentler than the equivalent in-run perk's, since a meta
+# upgrade's level accumulates indefinitely across every future run rather
+# than being capped by how many break screens one run has.
+META_PELLET_VALUE_MAGNITUDE     = 1.1   # +10% pellet time per level (vs. the in-run perk's +30%)
+META_ENEMY_RESISTANCE_MAGNITUDE = 0.9   # -10% enemy damage per level
+META_UPGRADE_COST_BASE = 5
+META_UPGRADE_COST_STEP = 4
+
 # Teleporting squares (progression/augments/teleporters.py): the first maze
 # augment. Pair count and how many of those pairs are load-bearing (the
 # goal is unreachable without using them) both scale with the augment's

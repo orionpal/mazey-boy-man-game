@@ -6,3 +6,4 @@ build/
 dist/
 run_history.json
 gold.json
+meta_upgrades.json

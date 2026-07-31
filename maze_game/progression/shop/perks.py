@@ -36,6 +36,10 @@ class Build:
         self.picks: dict[str, int] = {}
         self.pellet_frequency_multiplier = 1.0
         self.pellet_value_multiplier = 1.0
+        # No in-run Perk uses this effect_key yet -- it exists for
+        # progression/meta/'s "enemy resistance" upgrade, seeded onto a
+        # fresh Build before the run starts (see MetaProgress.seed_build()).
+        self.enemy_resistance_multiplier = 1.0
 
     def acquire(self, perk: Perk) -> None:
         self.picks[perk.id] = self.picks.get(perk.id, 0) + 1
@@ -50,9 +54,14 @@ def _apply_pellet_value(build: Build, magnitude: float) -> None:
     build.pellet_value_multiplier *= magnitude
 
 
+def _apply_enemy_resistance(build: Build, magnitude: float) -> None:
+    build.enemy_resistance_multiplier *= magnitude
+
+
 EFFECTS: dict[str, Callable[[Build, float], None]] = {
     "pellet_frequency": _apply_pellet_frequency,
     "pellet_value": _apply_pellet_value,
+    "enemy_resistance": _apply_enemy_resistance,
 }
 
 ALL_PERKS: list[Perk] = [
