@@ -12,10 +12,11 @@ import pytest
 
 from maze_game.constants import (
     MIN_DIMENSION, MAX_DIMENSION, DIMENSION_STEP,
+    MILESTONE_INTERVAL, MILESTONE_DIMENSION_BOOST, MILESTONE_MAX_DIMENSION,
     LABYRINTH_GROUP_SIZE, LABYRINTH_TOTAL_MAZES, LABYRINTH_START_TIME,
     ENEMY_TIME_PENALTY, SPEED_BONUS_TIME, POPUP_DURATION_SECONDS,
 )
-from maze_game.progression.run import dimensions_for_maze, TimeResource, LabyrinthRun
+from maze_game.progression.run import dimensions_for_maze, is_milestone_maze, TimeResource, LabyrinthRun
 from maze_game.progression.entities.hazards import Pellet, GoldPellet, Enemy
 from maze_game.progression.shop.perks import ALL_PERKS, Perk
 from maze_game.progression.shop.items import ALL_ITEMS
@@ -56,16 +57,73 @@ def test_dimensions_step_up_after_each_group():
     )
 
 
-def test_dimensions_are_monotonically_nondecreasing():
+def test_dimensions_are_monotonically_nondecreasing_apart_from_milestone_reverts():
+    """
+    Non-decreasing everywhere except the single-maze drop right after a
+    milestone spike (e.g. maze 30 spikes, maze 31 reverts to the normal
+    ramp) -- a deliberate one-off, not a bug.
+    """
     prev = dimensions_for_maze(1)
     for i in range(2, LABYRINTH_TOTAL_MAZES + 1):
         cur = dimensions_for_maze(i)
-        assert cur[0] >= prev[0] and cur[1] >= prev[1]
+        if not is_milestone_maze(i - 1):
+            assert cur[0] >= prev[0] and cur[1] >= prev[1]
         prev = cur
 
 
-def test_dimensions_cap_at_max_dimension():
-    assert dimensions_for_maze(LABYRINTH_TOTAL_MAZES) == (MAX_DIMENSION, MAX_DIMENSION)
+def test_dimensions_cap_at_max_dimension_on_non_milestone_mazes():
+    non_milestone_final = LABYRINTH_TOTAL_MAZES - 1  # 99 -- not a MILESTONE_INTERVAL multiple, not the final maze
+    assert not is_milestone_maze(non_milestone_final)
+    assert dimensions_for_maze(non_milestone_final) == (MAX_DIMENSION, MAX_DIMENSION)
+
+
+# ── Milestone mazes: a one-off dimension spike ────────────────────────────
+
+
+def test_is_milestone_maze_true_on_the_interval_and_the_final_maze():
+    assert is_milestone_maze(MILESTONE_INTERVAL) is True
+    assert is_milestone_maze(MILESTONE_INTERVAL * 2) is True
+    assert is_milestone_maze(LABYRINTH_TOTAL_MAZES) is True
+    assert is_milestone_maze(MILESTONE_INTERVAL - 1) is False
+    assert is_milestone_maze(MILESTONE_INTERVAL + 1) is False
+
+
+def test_a_milestone_maze_is_bigger_than_the_normal_ramp_would_give_it():
+    normal_group_index = (MILESTONE_INTERVAL - 1) // LABYRINTH_GROUP_SIZE
+    normal_size = min(MIN_DIMENSION + normal_group_index * DIMENSION_STEP, MAX_DIMENSION)
+    spiked_size, _ = dimensions_for_maze(MILESTONE_INTERVAL)
+    assert spiked_size > normal_size
+    assert spiked_size == min(normal_size + MILESTONE_DIMENSION_BOOST, MILESTONE_MAX_DIMENSION)
+
+
+def test_the_maze_right_after_a_milestone_reverts_to_the_normal_ramp():
+    reverted, _ = dimensions_for_maze(MILESTONE_INTERVAL + 1)
+    assert not is_milestone_maze(MILESTONE_INTERVAL + 1)
+    assert reverted < dimensions_for_maze(MILESTONE_INTERVAL)[0]
+
+
+def test_milestone_spike_never_exceeds_milestone_max_dimension():
+    for maze_index in range(1, LABYRINTH_TOTAL_MAZES + 1):
+        if is_milestone_maze(maze_index):
+            size, _ = dimensions_for_maze(maze_index)
+            assert size <= MILESTONE_MAX_DIMENSION
+
+
+def test_final_maze_dimensions_match_the_milestone_formula():
+    group_index = (LABYRINTH_TOTAL_MAZES - 1) // LABYRINTH_GROUP_SIZE
+    normal_size = min(MIN_DIMENSION + group_index * DIMENSION_STEP, MAX_DIMENSION)
+    expected = min(normal_size + MILESTONE_DIMENSION_BOOST, MILESTONE_MAX_DIMENSION)
+    assert dimensions_for_maze(LABYRINTH_TOTAL_MAZES) == (expected, expected)
+
+
+def test_milestone_maze_has_a_real_goal_and_spawns_normally():
+    run = LabyrinthRun()
+    run.maze_index = MILESTONE_INTERVAL
+    run._begin_maze()
+    assert run.goal is not None
+    assert (run.cols, run.rows) == dimensions_for_maze(MILESTONE_INTERVAL)
+    # A maze this size comfortably clears every density formula's minimum.
+    assert len(run.pellets) > 0
 
 
 # ── TimeResource ──────────────────────────────────────────────────────────

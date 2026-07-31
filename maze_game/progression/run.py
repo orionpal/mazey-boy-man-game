@@ -33,6 +33,7 @@ from pathlib import Path
 from maze_game.constants import (
     LABYRINTH_TOTAL_MAZES, LABYRINTH_GROUP_SIZE, LABYRINTH_START_TIME,
     MIN_DIMENSION, MAX_DIMENSION, DIMENSION_STEP,
+    MILESTONE_INTERVAL, MILESTONE_DIMENSION_BOOST, MILESTONE_MAX_DIMENSION,
     AUGMENT_INTERVAL, ENEMY_UNLOCK_MAZE,
     SPEED_BONUS_TIME, SPEED_BONUS_SECONDS_PER_CELL, STOPWATCH_PAUSE_SECONDS,
     POPUP_DURATION_SECONDS, C_SPEED_BONUS,
@@ -62,11 +63,13 @@ class Popup:
     created_at: float
 
 # Breaks should always coincide with (or be subsumed by) the group cadence,
-# so a modifier maze is never a total surprise with zero preceding screen --
-# a pacing-predictability invariant, not strictly required for correctness
-# (an unaligned interval would just show fewer break screens, not crash),
-# but worth failing loudly on if retuned inconsistently.
+# so a modifier or milestone maze is never a total surprise with zero
+# preceding screen -- a pacing-predictability invariant, not strictly
+# required for correctness (an unaligned interval would just show fewer
+# break screens, not crash), but worth failing loudly on if retuned
+# inconsistently.
 assert AUGMENT_INTERVAL % LABYRINTH_GROUP_SIZE == 0
+assert MILESTONE_INTERVAL % AUGMENT_INTERVAL == 0
 
 
 def _breaks_due_after(completed_index: int) -> list[str]:
@@ -89,14 +92,25 @@ def _random_seed() -> int:
     return random.randrange(2**32)
 
 
+def is_milestone_maze(maze_index: int) -> bool:
+    """Every MILESTONE_INTERVAL-th maze, and always the final maze -- see dimensions_for_maze()."""
+    return maze_index % MILESTONE_INTERVAL == 0 or maze_index == LABYRINTH_TOTAL_MAZES
+
+
 def dimensions_for_maze(maze_index: int) -> tuple[int, int]:
     """
     maze_index is 1-based (1..LABYRINTH_TOTAL_MAZES). Square mazes: starts
     at MIN_DIMENSION, +DIMENSION_STEP per completed group of
-    LABYRINTH_GROUP_SIZE, capped at MAX_DIMENSION.
+    LABYRINTH_GROUP_SIZE, capped at MAX_DIMENSION -- except on a milestone
+    maze (is_milestone_maze()), which gets a one-off MILESTONE_DIMENSION_BOOST
+    spike on top of that (capped separately at MILESTONE_MAX_DIMENSION,
+    since several milestones already sit at MAX_DIMENSION under the normal
+    ramp), reverting to the regular ramp on the very next maze.
     """
     group_index = (maze_index - 1) // LABYRINTH_GROUP_SIZE  # 0-based
     size = min(MIN_DIMENSION + group_index * DIMENSION_STEP, MAX_DIMENSION)
+    if is_milestone_maze(maze_index):
+        size = min(size + MILESTONE_DIMENSION_BOOST, MILESTONE_MAX_DIMENSION)
     return size, size
 
 

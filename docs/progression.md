@@ -28,6 +28,28 @@ plateau), the knobs are `MIN_DIMENSION`/`DIMENSION_STEP`/`MAX_DIMENSION` in
 `constants.py` — changing the step size directly trades off ramp length vs.
 plateau length.
 
+### Milestone mazes: a one-off dimension spike
+
+An earlier version of this mode replaced the goal with a boss fight every
+`MILESTONE_INTERVAL`-th maze (30, 60, 90), plus always the final maze --
+that's gone (see git history if curious), and in its place those same
+maze indices (`run.py::is_milestone_maze()`, same cadence the boss used)
+get a one-off dimension *spike* instead: noticeably bigger than the normal
+ramp would give that specific maze index, reverting to the regular ramp
+on the very next maze. Otherwise it's a totally ordinary maze -- a real
+goal, normal pellet/enemy/gold spawning, no special win condition.
+
+`dimensions_for_maze()` computes the normal ramp size first, then on a
+milestone maze adds `MILESTONE_DIMENSION_BOOST` (16) on top, capped
+separately at `MILESTONE_MAX_DIMENSION` (61, higher than the normal run's
+`MAX_DIMENSION`) -- a plain `min(normal_size + boost, MAX_DIMENSION)` would
+have nowhere left to jump to on the later milestones (90, 100), which
+already sit at `MAX_DIMENSION` under the normal ramp alone. Nothing else
+needed to change for this: the par-time BFS, the fixed-viewport renderer,
+and the pellet/enemy/gold density formulas already all scale purely from
+`cols`/`rows`, so a milestone maze naturally gets a proportionally longer
+time budget and more hazards along with its bigger footprint.
+
 ## Time: a persistent resource, not a per-maze limit
 
 Earlier versions of this mode estimated a fresh time *limit* for every

@@ -40,6 +40,21 @@ LABYRINTH_GROUP_SIZE  = 5     # mazes per group; a power-up (perk/item) break fo
 # -- see progression/run.py::_breaks_due_after().
 AUGMENT_INTERVAL = 10
 
+# Milestone mazes: every MILESTONE_INTERVAL-th maze, and always the
+# LABYRINTH_TOTAL_MAZES-th (final) maze, gets a one-off dimension "spike" --
+# noticeably bigger than the normal ramp would give it, reverting to the
+# regular ramp on the very next maze (see run.py::dimensions_for_maze()).
+# Otherwise a totally ordinary maze: real goal, normal pellet/enemy/gold
+# spawning. MILESTONE_INTERVAL must land on a group boundary (a power-up
+# break already exists there) -- see the assertion next to its use in
+# run.py. MILESTONE_DIMENSION_BOOST must stay even (so odd + boost stays
+# odd, matching DIMENSION_STEP's own parity requirement); several
+# milestones (90, 100) already sit at MAX_DIMENSION under the normal ramp,
+# so the spike needs its own higher ceiling to have anywhere to jump to.
+MILESTONE_INTERVAL       = 30
+MILESTONE_DIMENSION_BOOST = 16
+MILESTONE_MAX_DIMENSION   = 61
+
 # Maze augments (progression/augments/): generation-time modifiers (e.g.
 # teleporting squares) offered every AUGMENT_INTERVAL-th maze. Capped at
 # MAX_ACTIVE_AUGMENTS distinct augments active per run; once capped, further
