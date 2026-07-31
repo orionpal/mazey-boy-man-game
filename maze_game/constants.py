@@ -28,17 +28,26 @@ MAX_HISTORY_SHOWN = 12      # how many past runs the right sidebar lists
 # See docs/progression.md for how these were chosen -- all first-guess
 # starting values, meant to be retuned after playtesting.
 LABYRINTH_TOTAL_MAZES = 100
-LABYRINTH_GROUP_SIZE  = 5     # mazes per group; a perk-choice break follows each group
+LABYRINTH_GROUP_SIZE  = 5     # mazes per group; a power-up (perk/item) break follows each group
 # Dimensions ramp: MIN_DIMENSION at group 1, +DIMENSION_STEP per group after
 # that, capped at MAX_DIMENSION (reused from the free-play sidebar bounds
 # above, rather than inventing a separate ceiling).
 
+# Pacing cadence: a power-up every LABYRINTH_GROUP_SIZE mazes, a maze-modifier
+# (augment) choice every AUGMENT_INTERVAL mazes, a boss every BOSS_INTERVAL
+# mazes, and the LABYRINTH_TOTAL_MAZES-th (final) maze is always a boss too,
+# even though it isn't necessarily a BOSS_INTERVAL multiple -- see
+# is_boss_maze()/boss_encounter_index() in progression/entities/boss.py.
+# When a maze index is a multiple of more than one of these, the breaks
+# stack sequentially (power-up screen, then modifier screen) rather than one
+# replacing another -- see progression/run.py::_breaks_due_after().
+AUGMENT_INTERVAL = 10
+
 # Maze augments (progression/augments/): generation-time modifiers (e.g.
-# teleporting squares) offered every AUGMENT_INTERVAL-th maze -- see
-# constants further down for BOSS_INTERVAL/AUGMENT_INTERVAL cadence.
-# Capped at MAX_ACTIVE_AUGMENTS distinct augments active per run; once
-# capped, further picks level up an already-active augment instead (same
-# multiplicative-stacking shape as perks -- see progression/shop/perks.py).
+# teleporting squares) offered every AUGMENT_INTERVAL-th maze. Capped at
+# MAX_ACTIVE_AUGMENTS distinct augments active per run; once capped, further
+# picks level up an already-active augment instead (same multiplicative-
+# stacking shape as perks -- see progression/shop/perks.py).
 MAX_ACTIVE_AUGMENTS = 4
 
 # Time is one persistent resource carried across the whole run (rogue-like),
@@ -71,10 +80,12 @@ ENEMY_TIME_PENALTY = 3.0      # seconds lost on contact
 ENEMY_DENSITY      = 0.5      # enemy count = density * sqrt(open cell count)
 ENEMY_MAX_COUNT    = 6
 
-# Boss: every BOSS_INTERVAL-th maze replaces the goal with a boss fight.
-# BOSS_INTERVAL must land on a group boundary (a perk-choice break already
-# exists there) -- see the assertion next to its use in progression/run.py.
-BOSS_INTERVAL    = 20
+# Boss: every BOSS_INTERVAL-th maze replaces the goal with a boss fight, and
+# the LABYRINTH_TOTAL_MAZES-th (final) maze always is one too, whether or not
+# it happens to be a BOSS_INTERVAL multiple. BOSS_INTERVAL must land on a
+# group boundary (a power-up break already exists there) -- see the
+# assertion next to its use in progression/entities/boss.py.
+BOSS_INTERVAL    = 30
 BOSS_BASE_HP     = 5
 BOSS_HP_STEP     = 3          # extra HP per boss encounter (encounter 0, 1, 2, ...)
 BOSS_BASE_DAMAGE = 1          # damage per idle-phase hit, before the strength perk multiplier

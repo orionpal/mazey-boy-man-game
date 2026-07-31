@@ -9,10 +9,11 @@ import random
 import pytest
 
 from maze_game.constants import (
-    PELLET_TIME_VALUE, PELLET_MIN_COUNT, ENEMY_TIME_PENALTY, BOSS_INTERVAL, BOSS_BASE_DAMAGE,
+    PELLET_TIME_VALUE, PELLET_MIN_COUNT, ENEMY_TIME_PENALTY,
+    BOSS_INTERVAL, BOSS_BASE_DAMAGE, LABYRINTH_TOTAL_MAZES,
 )
 from maze_game.progression.entities.hazards import Pellet, Enemy, ENEMY_TYPES, spawn_pellets, spawn_enemies
-from maze_game.progression.entities.boss import Boss, is_boss_maze
+from maze_game.progression.entities.boss import Boss, is_boss_maze, boss_encounter_index
 from maze_game.progression.shop.perks import Build
 
 # A small open room, no walls except the border -- every interior cell is
@@ -137,6 +138,29 @@ def test_is_boss_maze_only_true_on_the_interval():
     assert is_boss_maze(BOSS_INTERVAL * 2) is True
     assert is_boss_maze(BOSS_INTERVAL - 1) is False
     assert is_boss_maze(1) is False
+
+
+def test_is_boss_maze_true_on_the_final_maze_even_off_interval():
+    """LABYRINTH_TOTAL_MAZES(100) isn't a BOSS_INTERVAL(30) multiple, but the final maze is always a boss maze too."""
+    assert LABYRINTH_TOTAL_MAZES % BOSS_INTERVAL != 0
+    assert is_boss_maze(LABYRINTH_TOTAL_MAZES) is True
+
+
+def test_boss_encounter_index_increments_per_interval():
+    assert boss_encounter_index(BOSS_INTERVAL) == 0
+    assert boss_encounter_index(BOSS_INTERVAL * 2) == 1
+    assert boss_encounter_index(BOSS_INTERVAL * 3) == 2
+
+
+def test_boss_encounter_index_final_maze_is_strictly_the_hardest():
+    """
+    The final maze is special-cased to be one step past interval math (which
+    would otherwise tie its HP with the prior regular encounter) -- keeps
+    "especially hard" true even though BOSS_INTERVAL=30 gives fewer total
+    encounters (4) than the old BOSS_INTERVAL=20 scheme (5) did.
+    """
+    last_regular_index = boss_encounter_index((LABYRINTH_TOTAL_MAZES // BOSS_INTERVAL) * BOSS_INTERVAL)
+    assert boss_encounter_index(LABYRINTH_TOTAL_MAZES) > last_regular_index
 
 
 def test_boss_starts_idle_at_move_count_zero():

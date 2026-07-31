@@ -13,7 +13,8 @@ import pytest
 from maze_game.constants import (
     MIN_DIMENSION, MAX_DIMENSION, DIMENSION_STEP,
     LABYRINTH_GROUP_SIZE, LABYRINTH_TOTAL_MAZES, LABYRINTH_START_TIME,
-    BOSS_INTERVAL, BOSS_BASE_DAMAGE, ENEMY_TIME_PENALTY, SPEED_BONUS_TIME,
+    BOSS_INTERVAL, BOSS_BASE_HP, BOSS_HP_STEP, BOSS_BASE_DAMAGE,
+    ENEMY_TIME_PENALTY, SPEED_BONUS_TIME,
 )
 from maze_game.progression.run import dimensions_for_maze, TimeResource, LabyrinthRun
 from maze_game.progression.entities.hazards import Pellet, Enemy
@@ -179,26 +180,26 @@ def test_choose_shop_card_is_a_no_op_when_not_on_break(run):
     assert run.build.picks == {}
 
 
-def test_shop_cursor_starts_at_zero_and_wraps_with_move_shop_cursor():
+def test_break_cursor_starts_at_zero_and_wraps_with_move_break_cursor():
     run = LabyrinthRun()
     for _ in range(LABYRINTH_GROUP_SIZE):
         run.player = run.goal
         run.update()
     assert run.on_break is True
-    assert run.shop_cursor == 0
+    assert run.break_cursor == 0
 
-    run.move_shop_cursor(-1)
-    assert run.shop_cursor == len(run.shop_choices) - 1  # wraps backward
-    run.move_shop_cursor(1)
-    assert run.shop_cursor == 0
-    run.move_shop_cursor(1)
-    assert run.shop_cursor == 1
+    run.move_break_cursor(-1)
+    assert run.break_cursor == len(run.shop_choices) - 1  # wraps backward
+    run.move_break_cursor(1)
+    assert run.break_cursor == 0
+    run.move_break_cursor(1)
+    assert run.break_cursor == 1
 
 
-def test_move_shop_cursor_is_a_no_op_when_not_on_break(run):
+def test_move_break_cursor_is_a_no_op_when_not_on_break(run):
     assert run.on_break is False
-    run.move_shop_cursor(1)
-    assert run.shop_cursor == 0
+    run.move_break_cursor(1)
+    assert run.break_cursor == 0
 
 
 def test_choosing_a_perk_does_not_retroactively_charge_the_break_duration():
@@ -279,11 +280,139 @@ def test_completing_the_final_maze_sets_completed_run_not_on_break():
         else:
             run.player = run.goal
         run.update()
-        if run.on_break and maze_num != LABYRINTH_TOTAL_MAZES:
-            run.choose_shop_card(0)
+        while run.on_break and maze_num != LABYRINTH_TOTAL_MAZES:
+            run.choose_break_card(0)  # may need to clear more than one stacked break (e.g. shop then augment)
     assert run.completed_run is True
     assert run.on_break is False
     assert run.maze_index == LABYRINTH_TOTAL_MAZES
+
+
+# ── New pacing: power-up / modifier / boss cadence ───────────────────────
+
+
+def test_maze_5_completion_shows_shop_break_only():
+    """5 is a group boundary but not an AUGMENT_INTERVAL(10) multiple -- shop only, no augment break."""
+    run = LabyrinthRun()
+    run.maze_index = 5
+    run._advance()
+    assert run.break_kind == "shop"
+    run.choose_break_card(0)
+    assert run.on_break is False
+    assert run.maze_index == 6
+
+
+def test_maze_10_completion_stacks_shop_then_augment():
+    """
+    10 is a multiple of both LABYRINTH_GROUP_SIZE(5) and AUGMENT_INTERVAL(10)
+    -- both breaks fire, shop first, augment second (order asserted by
+    _breaks_due_after), not one replacing the other.
+    """
+    run = LabyrinthRun()
+    run.maze_index = 10
+    run._advance()
+    assert run.break_kind == "shop"
+    run.choose_break_card(0)
+    assert run.break_kind == "augment"
+    assert run.augment_choices is not None
+    run.choose_break_card(0)
+    assert run.on_break is False
+    assert run.maze_index == 11
+
+
+def test_maze_29_to_30_transition_is_seamless_and_maze_30_is_a_boss_maze():
+    """29 isn't a group/augment boundary, so entering maze 30 (the first boss maze) has no break screen at all."""
+    run = LabyrinthRun()
+    run.maze_index = 29
+    run._advance()
+    assert run.on_break is False
+    assert run.maze_index == 30
+    assert run.boss is not None
+    assert run.goal is None
+
+
+def test_maze_30_completion_stacks_shop_then_augment_before_maze_31():
+    """
+    30 is a multiple of 5, 10, AND BOSS_INTERVAL(30) -- clearing the boss at
+    maze 30 still stacks the same shop-then-augment breaks as any other
+    double-boundary maze before maze 31 begins (31 itself isn't a boss maze).
+    """
+    run = LabyrinthRun()
+    run.maze_index = 30
+    run._advance()
+    assert run.break_kind == "shop"
+    run.choose_break_card(0)
+    assert run.break_kind == "augment"
+    run.choose_break_card(0)
+    assert run.on_break is False
+    assert run.maze_index == 31
+    assert run.boss is None
+
+
+def test_maze_99_to_100_transition_is_seamless_and_maze_100_is_the_hardest_boss():
+    """
+    99 isn't a boundary, so maze 100 (the special final boss) begins with no
+    preceding break, exactly like maze 30/60/90's transitions. Its HP is
+    deliberately the highest of the run (boss_encounter_index special-cases
+    the final maze) -- "especially hard" isn't accidentally undercut by
+    BOSS_INTERVAL=30 giving fewer total encounters than the old scheme.
+    """
+    run = LabyrinthRun()
+    run.maze_index = 99
+    run._advance()
+    assert run.on_break is False
+    assert run.maze_index == LABYRINTH_TOTAL_MAZES
+    assert run.boss is not None
+    assert run.boss.hp == BOSS_BASE_HP + BOSS_HP_STEP * 4  # boss_encounter_index(100) == 4, matches the old scheme's final HP
+    assert run.boss.hp > BOSS_BASE_HP + BOSS_HP_STEP * 2  # strictly harder than maze 90's encounter (index 2)
+
+
+def test_stacked_breaks_do_not_retroactively_charge_the_combined_break_duration():
+    """
+    Mirrors test_choosing_a_perk_does_not_retroactively_charge_the_break_duration,
+    but for two *stacked* breaks (maze 10: shop then augment) -- the clock
+    must not be resynced (and therefore not charged) between the two, only
+    once after the whole queue drains, or the same TimeResource staleness
+    bug docs/progression.md documents once would resurface for the combined
+    case specifically.
+    """
+    run = LabyrinthRun()
+    run.maze_index = 10
+    run._advance()
+    assert run.break_kind == "shop"
+
+    time_at_break_start = run.time.amount
+    run.time._last_tick -= 15.0  # simulate 15s spent on the shop screen
+    run.choose_break_card(0)
+    assert run.break_kind == "augment"
+    assert run.time.amount == pytest.approx(time_at_break_start)  # not resynced yet -- queue isn't drained
+
+    run.time._last_tick -= 15.0  # simulate another 15s spent on the modifier screen
+    run.choose_break_card(0)
+    assert run.on_break is False
+    assert run.time.amount == pytest.approx(time_at_break_start)  # resync alone changes nothing yet
+
+    run.update()  # first frame after both breaks resolve
+    assert run.time.amount == pytest.approx(time_at_break_start, abs=0.05)  # neither stretch was charged
+
+
+def test_repeated_augment_breaks_level_up_the_only_shipped_augment():
+    """
+    With ALL_AUGMENTS at its current length of 1 (teleporters), every
+    modifier break necessarily offers a single forced card -- expected
+    graceful degradation, not a bug. Driving all 9 augment breaks in a run
+    (mazes 10..90) should just keep leveling teleporters up.
+    """
+    run = LabyrinthRun()
+    for boundary in range(10, 100, 10):
+        run.maze_index = boundary
+        run._advance()
+        assert run.break_kind == "shop"
+        run.choose_break_card(0)
+        assert run.break_kind == "augment"
+        assert len(run.augment_choices) == 1
+        run.choose_break_card(0)
+        assert run.on_break is False
+    assert run.augment_build.level_of("teleporters") == 9
 
 
 # ── Seeded runs ───────────────────────────────────────────────────────────
@@ -300,15 +429,15 @@ def test_no_seed_still_assigns_some_int_seed():
 
 
 def _scripted_playthrough(run, moves):
-    """Drive a run through group breaks, always picking card 0, until `moves` mazes have cleared."""
+    """Drive a run through group/augment breaks, always picking card 0, until `moves` mazes have cleared."""
     for _ in range(moves):
         if run.boss is not None:
             run.boss.hp = 0
         else:
             run.player = run.goal
         run.update()
-        if run.on_break:
-            run.choose_shop_card(0)
+        while run.on_break:
+            run.choose_break_card(0)  # may need to clear more than one stacked break (e.g. shop then augment)
 
 
 def test_same_seed_produces_identical_maze_and_entities():

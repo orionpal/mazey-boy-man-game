@@ -7,10 +7,17 @@ carried across the whole run rather than a per-maze budget -- pellets add
 to it, enemies/the boss subtract from it, clearing a maze fast enough adds
 a small bonus, and running out ends the whole run back at maze 1
 (rogue-like: no retry in place, matching the project's existing "full
-reset, not a retry" framing). Every LABYRINTH_GROUP_SIZE-th maze pauses
-for a shop-card choice (a passive perk or an active item) instead of a
-bare "continue" prompt; every BOSS_INTERVAL-th maze replaces the goal with
-a boss fight.
+reset, not a retry" framing).
+
+Pacing: every LABYRINTH_GROUP_SIZE-th maze pauses for a "power-up" break (a
+passive perk or an active item, drawn from shop/); every AUGMENT_INTERVAL-th
+maze pauses for a "modifier" break (a maze augment choice, drawn from
+augments/); every BOSS_INTERVAL-th maze -- and always the
+LABYRINTH_TOTAL_MAZES-th (final) maze -- replaces the goal with a boss
+fight. When a maze index triggers more than one of these, the break screens
+stack sequentially (e.g. maze 30: power-up screen, then modifier screen,
+then that maze begins, as a boss maze) rather than one replacing another --
+see _breaks_due_after()/_resume_after_break().
 
 Deliberately independent of pygame -- pure state machine, testable without a
 display, same pattern as Game/history.py.
@@ -22,20 +29,38 @@ import time
 from maze_game.constants import (
     LABYRINTH_TOTAL_MAZES, LABYRINTH_GROUP_SIZE, LABYRINTH_START_TIME,
     MIN_DIMENSION, MAX_DIMENSION, DIMENSION_STEP,
-    BOSS_BASE_HP, BOSS_HP_STEP, BOSS_INTERVAL, ENEMY_UNLOCK_MAZE,
+    BOSS_BASE_HP, BOSS_HP_STEP, BOSS_INTERVAL, AUGMENT_INTERVAL, ENEMY_UNLOCK_MAZE,
     SPEED_BONUS_TIME, SPEED_BONUS_SECONDS_PER_CELL, STOPWATCH_PAUSE_SECONDS,
 )
 from maze_game.maze import generate_maze, farthest_reachable_cell, shortest_path
 from maze_game.player import slide_path
 from maze_game.progression.entities import resolve_contacts
 from maze_game.progression.entities.hazards import spawn_pellets, spawn_enemies
-from maze_game.progression.entities.boss import Boss, is_boss_maze
+from maze_game.progression.entities.boss import Boss, is_boss_maze, boss_encounter_index
 from maze_game.progression.shop import offer_shop_cards
 from maze_game.progression.shop.perks import Build, Perk
 from maze_game.progression.shop.items import Loadout
-from maze_game.progression.augments import AugmentBuild, run_pipeline
+from maze_game.progression.augments import AugmentBuild, run_pipeline, offer_augment_cards
 
 START_POS: tuple[int, int] = (1, 1)
+
+# Breaks should always coincide with (or be subsumed by) the group cadence,
+# so a modifier or boss maze is never a total surprise with zero preceding
+# screen -- pacing-predictability invariants, not strictly required for
+# correctness (an unaligned interval would just show fewer break screens,
+# not crash), but worth failing loudly on if retuned inconsistently.
+assert AUGMENT_INTERVAL % LABYRINTH_GROUP_SIZE == 0
+assert BOSS_INTERVAL % AUGMENT_INTERVAL == 0
+
+
+def _breaks_due_after(completed_index: int) -> list[str]:
+    """Which break screens (in order) should show after finishing `completed_index`, before the next maze begins."""
+    breaks = []
+    if completed_index % LABYRINTH_GROUP_SIZE == 0:
+        breaks.append("shop")
+    if completed_index % AUGMENT_INTERVAL == 0:
+        breaks.append("augment")
+    return breaks
 
 
 def _random_seed() -> int:
@@ -112,7 +137,8 @@ class LabyrinthRun:
         self.seed = seed if seed is not None else _random_seed()
         self.rng = random.Random(self.seed)
         self.maze_index = 1
-        self.on_break = False
+        self.break_kind: str | None = None
+        self._pending_breaks: list[str] = []
         self.failed = False
         self.completed_run = False
         self.time = TimeResource(LABYRINTH_START_TIME)
@@ -122,7 +148,8 @@ class LabyrinthRun:
         self.teleporters: list = []
         self._teleport_map: dict[tuple[int, int], tuple[int, int]] = {}
         self.shop_choices: list | None = None
-        self.shop_cursor = 0
+        self.augment_choices: list | None = None
+        self.break_cursor = 0
         self.stopwatch_until: float | None = None
         self.last_squeak_at: float | None = None
         self._begin_maze()
@@ -196,26 +223,39 @@ class LabyrinthRun:
             return
         self.last_squeak_at = time.monotonic()
 
-    def move_shop_cursor(self, delta: int) -> None:
-        """Move the keyboard-selected shop card left/right (wraps); confirm with choose_shop_card(shop_cursor)."""
-        if not self.on_break or self.shop_choices is None:
+    def move_break_cursor(self, delta: int) -> None:
+        """Move the keyboard-selected break card left/right (wraps), for whichever break (shop or augment) is currently active."""
+        choices = self._current_break_choices()
+        if choices is None:
             return
-        self.shop_cursor = (self.shop_cursor + delta) % len(self.shop_choices)
+        self.break_cursor = (self.break_cursor + delta) % len(choices)
+
+    def choose_break_card(self, index: int) -> None:
+        """Single entry point for confirming a break-card pick -- dispatches to whichever break is currently active."""
+        if self.break_kind == "shop":
+            self.choose_shop_card(index)
+        elif self.break_kind == "augment":
+            self.choose_augment_card(index)
 
     def choose_shop_card(self, index: int) -> None:
-        """Apply the chosen card (a perk or an item) and immediately start the next maze -- the pick IS the resume action."""
-        if not self.on_break or self.shop_choices is None:
+        """Apply the chosen card (a perk or an item), then resume (the next queued break, or the next maze)."""
+        if self.break_kind != "shop" or self.shop_choices is None:
             return
         card = self.shop_choices[index]
         if isinstance(card, Perk):
             self.build.acquire(card)
         else:
             self.loadout.acquire(card)
-        self.on_break = False
         self.shop_choices = None
-        self.time.resync()  # the break paused the clock; don't charge its duration on the next tick()
-        self.maze_index += 1
-        self._begin_maze()
+        self._resume_after_break()
+
+    def choose_augment_card(self, index: int) -> None:
+        """Apply the chosen maze modifier (augment), then resume (the next queued break, or the next maze)."""
+        if self.break_kind != "augment" or self.augment_choices is None:
+            return
+        self.augment_build.acquire(self.augment_choices[index])
+        self.augment_choices = None
+        self._resume_after_break()
 
     def restart(self, same_seed: bool = False) -> None:
         """
@@ -227,11 +267,13 @@ class LabyrinthRun:
         self.seed = self.seed if same_seed else _random_seed()
         self.rng = random.Random(self.seed)
         self.maze_index = 1
-        self.on_break = False
+        self.break_kind = None
+        self._pending_breaks = []
         self.failed = False
         self.completed_run = False
         self.shop_choices = None
-        self.shop_cursor = 0
+        self.augment_choices = None
+        self.break_cursor = 0
         self.stopwatch_until = None
         self.last_squeak_at = None
         self.time = TimeResource(LABYRINTH_START_TIME)
@@ -243,6 +285,10 @@ class LabyrinthRun:
         self._begin_maze()
 
     @property
+    def on_break(self) -> bool:
+        return self.break_kind is not None
+
+    @property
     def group_number(self) -> int:
         """1-based group number for the current maze."""
         return (self.maze_index - 1) // LABYRINTH_GROUP_SIZE + 1
@@ -252,6 +298,13 @@ class LabyrinthRun:
         return -(-LABYRINTH_TOTAL_MAZES // LABYRINTH_GROUP_SIZE)  # ceil division
 
     # ── Private helpers ───────────────────────────────────────────────────
+
+    def _current_break_choices(self) -> list | None:
+        if self.break_kind == "shop":
+            return self.shop_choices
+        if self.break_kind == "augment":
+            return self.augment_choices
+        return None
 
     def _is_gated(self) -> bool:
         return bool(
@@ -292,7 +345,7 @@ class LabyrinthRun:
         if is_boss_maze(self.maze_index):
             self.goal = None
             boss_pos = ctx.goal
-            encounter_index = self.maze_index // BOSS_INTERVAL - 1
+            encounter_index = boss_encounter_index(self.maze_index)
             self.boss = Boss(boss_pos, hp=BOSS_BASE_HP + BOSS_HP_STEP * encounter_index)
             self.pellets = []
             self.enemies = []
@@ -314,10 +367,32 @@ class LabyrinthRun:
     def _advance(self) -> None:
         if self.maze_index >= LABYRINTH_TOTAL_MAZES:
             self.completed_run = True
-        elif self.maze_index % LABYRINTH_GROUP_SIZE == 0:
-            self.on_break = True
-            self.shop_choices = offer_shop_cards(rng=self.rng)
-            self.shop_cursor = 0
-        else:
-            self.maze_index += 1
-            self._begin_maze()  # seamless -- no pause within a group
+            return
+        self._pending_breaks = _breaks_due_after(self.maze_index)
+        self._resume_after_break()
+
+    def _resume_after_break(self) -> None:
+        """
+        Pop the next queued break (if any) and show it; once the queue is
+        empty, actually advance to the next maze. This is what makes
+        multiple breaks on the same maze index stack sequentially (e.g.
+        maze 30: power-up screen, then modifier screen, then maze 30
+        begins) instead of one replacing another -- and, critically, only
+        resyncs the clock *once* the whole queue is drained, not after each
+        individual break, avoiding the exact TimeResource staleness bug
+        docs/progression.md already documents once (a stale tick reference
+        point charging the entire paused stretch in one lump the instant
+        play resumes).
+        """
+        if self._pending_breaks:
+            self.break_kind = self._pending_breaks.pop(0)
+            self.break_cursor = 0
+            if self.break_kind == "shop":
+                self.shop_choices = offer_shop_cards(rng=self.rng)
+            else:  # "augment"
+                self.augment_choices = offer_augment_cards(self.augment_build, rng=self.rng)
+            return
+        self.break_kind = None
+        self.time.resync()  # the break(s) paused the clock; don't charge their duration on the next tick()
+        self.maze_index += 1
+        self._begin_maze()  # seamless when no break was due -- no pause within a group
