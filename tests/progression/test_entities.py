@@ -11,8 +11,11 @@ import pytest
 from maze_game.constants import (
     PELLET_TIME_VALUE, PELLET_MIN_COUNT, ENEMY_TIME_PENALTY,
     BOSS_INTERVAL, BOSS_BASE_DAMAGE, LABYRINTH_TOTAL_MAZES,
+    ENEMY_UNLOCK_MAZE, ENEMY_RAMP_MAZES, ENEMY_RAMP_START_MULTIPLIER,
 )
-from maze_game.progression.entities.hazards import Pellet, Enemy, ENEMY_TYPES, spawn_pellets, spawn_enemies
+from maze_game.progression.entities.hazards import (
+    Pellet, Enemy, ENEMY_TYPES, spawn_pellets, spawn_enemies, enemy_density_ramp,
+)
 from maze_game.progression.entities.boss import Boss, is_boss_maze, boss_encounter_index
 from maze_game.progression.shop.perks import Build
 
@@ -128,6 +131,40 @@ def test_spawn_enemies_with_explicit_rng_is_deterministic():
     a = spawn_enemies(OPEN_ROOM, exclude=set(), rng=random.Random(12))
     b = spawn_enemies(OPEN_ROOM, exclude=set(), rng=random.Random(12))
     assert [e.pos for e in a] == [e.pos for e in b]
+
+
+def test_spawn_enemies_density_multiplier_scales_the_count():
+    random.seed(13)
+    full = spawn_enemies(OPEN_ROOM, exclude=set(), density_multiplier=1.0)
+    random.seed(13)
+    reduced = spawn_enemies(OPEN_ROOM, exclude=set(), density_multiplier=0.25)
+    assert len(reduced) <= len(full)
+
+
+# ── Enemy density ramp ──────────────────────────────────────────────────
+
+
+def test_enemy_density_ramp_starts_at_the_configured_fraction_on_unlock():
+    assert enemy_density_ramp(ENEMY_UNLOCK_MAZE) == pytest.approx(ENEMY_RAMP_START_MULTIPLIER)
+
+
+def test_enemy_density_ramp_reaches_full_density_after_ramp_mazes():
+    assert enemy_density_ramp(ENEMY_UNLOCK_MAZE + ENEMY_RAMP_MAZES) == pytest.approx(1.0)
+    assert enemy_density_ramp(ENEMY_UNLOCK_MAZE + ENEMY_RAMP_MAZES + 50) == pytest.approx(1.0)  # never exceeds 1.0
+
+
+def test_enemy_density_ramp_increases_monotonically():
+    values = [enemy_density_ramp(ENEMY_UNLOCK_MAZE + i) for i in range(ENEMY_RAMP_MAZES + 1)]
+    assert values == sorted(values)
+
+
+def test_first_enemy_maze_spawns_noticeably_fewer_enemies_than_full_density():
+    """The actual behaviour the ramp exists for: maze 11 should spawn far fewer enemies than the pre-ramp formula would."""
+    random.seed(14)
+    ramped = spawn_enemies(OPEN_ROOM, exclude=set(), density_multiplier=enemy_density_ramp(ENEMY_UNLOCK_MAZE))
+    random.seed(14)
+    unramped = spawn_enemies(OPEN_ROOM, exclude=set(), density_multiplier=1.0)
+    assert len(ramped) < len(unramped)
 
 
 # ── Boss ──────────────────────────────────────────────────────────────────

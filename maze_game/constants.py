@@ -80,6 +80,14 @@ ENEMY_TIME_PENALTY = 3.0      # seconds lost on contact
 ENEMY_DENSITY      = 0.5      # enemy count = density * sqrt(open cell count)
 ENEMY_MAX_COUNT    = 6
 
+# Ramp enemy density up gradually starting at ENEMY_UNLOCK_MAZE, rather than
+# spawning at full density (~4-5 enemies) the instant the mechanic is
+# introduced -- ENEMY_RAMP_START_MULTIPLIER is the density fraction on the
+# unlock maze itself (~1 enemy), reaching full ENEMY_DENSITY (1.0x)
+# ENEMY_RAMP_MAZES mazes later. See hazards.py::enemy_density_ramp().
+ENEMY_RAMP_MAZES            = 10
+ENEMY_RAMP_START_MULTIPLIER = 0.25
+
 # Boss: every BOSS_INTERVAL-th maze replaces the goal with a boss fight, and
 # the LABYRINTH_TOTAL_MAZES-th (final) maze always is one too, whether or not
 # it happens to be a BOSS_INTERVAL multiple. BOSS_INTERVAL must land on a

@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
 from maze_game.constants import (
     PELLET_TIME_VALUE, PELLET_DENSITY, PELLET_MIN_COUNT,
     ENEMY_TIME_PENALTY, ENEMY_DENSITY, ENEMY_MAX_COUNT,
+    ENEMY_UNLOCK_MAZE, ENEMY_RAMP_MAZES, ENEMY_RAMP_START_MULTIPLIER,
 )
 from maze_game.progression.entities import MazeEntity, apply_time_penalty
 
@@ -52,6 +53,19 @@ def _entity_count(candidate_count: int, density: float, minimum: int, maximum: i
     return min(count, maximum) if maximum is not None else count
 
 
+def enemy_density_ramp(maze_index: int) -> float:
+    """
+    Density multiplier for spawn_enemies(), starting at
+    ENEMY_RAMP_START_MULTIPLIER on the maze enemies first unlock (~1 enemy,
+    rather than the ~4-5 full density spawns immediately) and reaching full
+    density (1.0x) ENEMY_RAMP_MAZES mazes later. Callers are expected to
+    only call this for maze_index >= ENEMY_UNLOCK_MAZE.
+    """
+    mazes_since_unlock = maze_index - ENEMY_UNLOCK_MAZE
+    progress = min(1.0, mazes_since_unlock / ENEMY_RAMP_MAZES)
+    return ENEMY_RAMP_START_MULTIPLIER + (1.0 - ENEMY_RAMP_START_MULTIPLIER) * progress
+
+
 def spawn_pellets(
     grid: list[list[int]],
     exclude: set[tuple[int, int]],
@@ -65,9 +79,15 @@ def spawn_pellets(
 
 
 def spawn_enemies(
-    grid: list[list[int]], exclude: set[tuple[int, int]], rng: random.Random | None = None,
+    grid: list[list[int]],
+    exclude: set[tuple[int, int]],
+    density_multiplier: float = 1.0,
+    rng: random.Random | None = None,
 ) -> list[Enemy]:
     rng = rng if rng is not None else random
     candidates = [c for c in _open_cells(grid) if c not in exclude]
-    count = min(_entity_count(len(candidates), ENEMY_DENSITY, minimum=0, maximum=ENEMY_MAX_COUNT), len(candidates))
+    count = min(
+        _entity_count(len(candidates), ENEMY_DENSITY * density_multiplier, minimum=0, maximum=ENEMY_MAX_COUNT),
+        len(candidates),
+    )
     return [rng.choice(ENEMY_TYPES)(pos) for pos in rng.sample(candidates, count)]

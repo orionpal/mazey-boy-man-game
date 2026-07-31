@@ -35,7 +35,7 @@ from maze_game.constants import (
 from maze_game.maze import generate_maze, farthest_reachable_cell, shortest_path
 from maze_game.player import slide_path
 from maze_game.progression.entities import resolve_contacts
-from maze_game.progression.entities.hazards import spawn_pellets, spawn_enemies
+from maze_game.progression.entities.hazards import spawn_pellets, spawn_enemies, enemy_density_ramp
 from maze_game.progression.entities.boss import Boss, is_boss_maze, boss_encounter_index
 from maze_game.progression.shop import offer_shop_cards
 from maze_game.progression.shop.perks import Build, Perk
@@ -355,7 +355,12 @@ class LabyrinthRun:
             exclude = {START_POS, self.goal} | ctx.reserved
             self.pellets = spawn_pellets(self.grid, exclude, self.build.pellet_frequency_multiplier, rng=self.rng)
             exclude = exclude | {p.pos for p in self.pellets}
-            self.enemies = spawn_enemies(self.grid, exclude, rng=self.rng) if self.maze_index >= ENEMY_UNLOCK_MAZE else []
+            if self.maze_index >= ENEMY_UNLOCK_MAZE:
+                self.enemies = spawn_enemies(
+                    self.grid, exclude, density_multiplier=enemy_density_ramp(self.maze_index), rng=self.rng,
+                )
+            else:
+                self.enemies = []
 
         target = self.boss.pos if self.boss is not None else self.goal
         self._par_seconds = SPEED_BONUS_SECONDS_PER_CELL * len(

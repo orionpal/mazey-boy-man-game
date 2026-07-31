@@ -95,6 +95,17 @@ registry list that `spawn_enemies()` samples from. A new enemy type later
 is one subclass + one line appended to the registry — nothing else in the
 spawn/contact/rendering pipeline needs to change.
 
+**Ramped in, not full density from the first maze**: `spawn_enemies()`'s
+sqrt-scaled formula alone put ~4-5 enemies on the very first enemy maze --
+a spike right as the mechanic is introduced, not a gradual "here's a new
+threat" moment. `hazards.py::enemy_density_ramp(maze_index)` scales the
+density down to `ENEMY_RAMP_START_MULTIPLIER` (0.25, ~1 enemy) on
+`ENEMY_UNLOCK_MAZE` itself, climbing linearly back to full density over
+`ENEMY_RAMP_MAZES` (10) mazes. Passed into `spawn_enemies()` as
+`density_multiplier` rather than changing `ENEMY_DENSITY` itself, so the
+steady-state curve (already tuned) is untouched -- only the introduction is
+softened.
+
 ### The boss: every 30th maze, plus the 100th (final) maze
 
 Every `BOSS_INTERVAL`-th maze (30, 60, 90 —
