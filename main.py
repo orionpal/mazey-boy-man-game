@@ -75,13 +75,13 @@ def main() -> None:
                     run.restart()
                 elif run.on_break:
                     if event.key in (pygame.K_LEFT, pygame.K_UP):
-                        run.move_shop_cursor(-1)
+                        run.move_break_cursor(-1)
                     elif event.key in (pygame.K_RIGHT, pygame.K_DOWN):
-                        run.move_shop_cursor(1)
+                        run.move_break_cursor(1)
                     elif event.key == pygame.K_SPACE:
-                        run.choose_shop_card(run.shop_cursor)
+                        run.choose_break_card(run.break_cursor)
                     elif event.key in SHOP_CHOICE_KEYS:
-                        run.choose_shop_card(SHOP_CHOICE_KEYS[event.key])
+                        run.choose_break_card(SHOP_CHOICE_KEYS[event.key])
                 elif event.key == pygame.K_w:
                     run.activate_laser()
                 elif event.key == pygame.K_e:
@@ -98,7 +98,7 @@ def main() -> None:
                 layout = Layout(run.cols, run.rows)
                 for index, card in enumerate(layout.cards):
                     if card.collidepoint(event.pos):
-                        run.choose_shop_card(index)
+                        run.choose_break_card(index)
                         break
 
         run.update()

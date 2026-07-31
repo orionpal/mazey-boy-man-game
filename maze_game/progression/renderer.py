@@ -2,12 +2,15 @@
 renderer.py
 -----------
 All pygame drawing code for the labyrinth progression mode: the maze,
-pellets/enemies/boss, HUD (time resource + maze/group progress), the left
-sidebar (acquired perks, and the 4 fixed Q/W/E/R item slots -- always drawn,
-filled or not), and the shop-card screen that replaces the maze area during
-a group break. Layout owns the rect geometry so main.py's click hit-testing
-(shop cards) uses the same rects draw() paints with, mirroring
-freeplay/renderer.py's convention.
+pellets/enemies/boss/teleporter pads, HUD (time resource + maze/group
+progress + seed), the left sidebar (acquired perks, the 4 fixed Q/W/E/R
+item slots, and up to MAX_ACTIVE_AUGMENTS maze-modifier slots -- perks/items
+always draw their entire static catalog filled-or-not, augments draw only
+as many slots as can ever be simultaneously active), and the break-card
+screen that replaces the maze area during a power-up or maze-modifier
+break (`_draw_break_cards`, branching on `run.break_kind`). Layout owns the
+rect geometry so main.py's click hit-testing (break cards) uses the same
+rects draw() paints with, mirroring freeplay/renderer.py's convention.
 
 The window is a fixed size regardless of maze dimensions: the maze renders
 inside a static MAZE_AREA_SIZE viewport, with per-cell pixel size shrinking
@@ -22,13 +25,14 @@ import time
 import pygame
 
 from maze_game.constants import (
-    SIDEBAR_W, HUD_HEIGHT, LABYRINTH_TOTAL_MAZES,
+    SIDEBAR_W, HUD_HEIGHT, LABYRINTH_TOTAL_MAZES, MAX_ACTIVE_AUGMENTS,
     C_BG, C_WALL, C_FLOOR, C_PLAYER, C_GOAL, C_TEXT, C_DIM, C_FLASH, C_HUD_BG,
     C_PANEL_BG, C_PANEL_LINE, C_BUTTON, C_BUTTON_HOVER,
     C_PELLET, C_ENEMY, C_BOSS_IDLE, C_BOSS_ACTIVE, C_TELEPORT_PAIRS,
 )
 from maze_game.progression.shop.perks import ALL_PERKS
 from maze_game.progression.shop.items import ALL_ITEMS, UNLIMITED_ITEM_IDS
+from maze_game.progression.augments import AUGMENTS_BY_ID
 from maze_game.progression.run import LabyrinthRun
 
 MAZE_AREA_SIZE = 640  # fixed pixel viewport the maze renders within, at any dimension
@@ -45,6 +49,9 @@ BUILD_SQUARE_GAP = 12
 ITEMS_TITLE_Y = 180
 ITEMS_SUBTITLE_Y = 224
 ITEM_SQUARES_Y = 274
+AUGMENTS_TITLE_Y = 330
+AUGMENTS_SUBTITLE_Y = 374
+AUGMENT_SQUARES_Y = 424
 TOOLTIP_PADDING = 8
 TOOLTIP_MAX_WIDTH = 260
 
@@ -97,6 +104,15 @@ class Layout:
             pygame.Rect(bx + i * (BUILD_SQUARE_SIZE + BUILD_SQUARE_GAP), ITEM_SQUARES_Y, BUILD_SQUARE_SIZE, BUILD_SQUARE_SIZE)
             for i in range(len(ALL_ITEMS))
         ]
+        # Sized to MAX_ACTIVE_AUGMENTS fixed slots, not the full (still-growing)
+        # augment catalog -- unlike perks/items, which show their entire static
+        # catalog filled-or-not, only up to MAX_ACTIVE_AUGMENTS can ever be
+        # active at once, so that's the right slot count regardless of how
+        # many augments eventually exist.
+        self.augment_squares = [
+            pygame.Rect(bx + i * (BUILD_SQUARE_SIZE + BUILD_SQUARE_GAP), AUGMENT_SQUARES_Y, BUILD_SQUARE_SIZE, BUILD_SQUARE_SIZE)
+            for i in range(MAX_ACTIVE_AUGMENTS)
+        ]
 
 
 class Renderer:
@@ -124,7 +140,7 @@ class Renderer:
         self.surface.fill(C_BG)
 
         if run.on_break:
-            self._draw_shop_cards(run, layout, mouse_pos)
+            self._draw_break_cards(run, layout, mouse_pos)
         else:
             self._draw_maze(run.grid, layout)
             self._draw_pellets(run.pellets, layout)
@@ -140,6 +156,7 @@ class Renderer:
         self._draw_hud(run, layout)
         self._draw_build_sidebar(run.build, layout, mouse_pos)
         self._draw_items_sidebar(run.loadout, layout, mouse_pos)
+        self._draw_augment_sidebar(run.augment_build, layout, mouse_pos)
 
         if run.failed:
             self._draw_overlay(
@@ -234,7 +251,8 @@ class Renderer:
         self.surface.blit(timer_label, (layout.hud.x + 10, layout.hud.y + 8))
 
         progress = self.font_small.render(
-            f"Maze {run.maze_index}/{LABYRINTH_TOTAL_MAZES}   ({run.cols}x{run.rows})   group {run.group_number}/{run.total_groups}",
+            f"Maze {run.maze_index}/{LABYRINTH_TOTAL_MAZES}   ({run.cols}x{run.rows})   "
+            f"group {run.group_number}/{run.total_groups}   seed {run.seed}",
             True, C_DIM,
         )
         self.surface.blit(progress, (layout.hud.x + 10, layout.hud.y + 36))
@@ -296,6 +314,36 @@ class Renderer:
             name_line, desc_line, _ = hovered
             self._draw_tooltip(name_line, desc_line, None, mouse_pos)
 
+    # ── Augments sidebar (maze modifiers) ─────────────────────────────────
+
+    def _draw_augment_sidebar(self, augment_build, layout: Layout, mouse_pos) -> None:
+        title = self.font_big.render("AUGMENTS", True, C_TEXT)
+        self.surface.blit(title, (layout.left.x + 16, AUGMENTS_TITLE_Y))
+        section = self.font_small.render("Maze modifiers, chosen every 10 mazes", True, C_DIM)
+        self.surface.blit(section, (layout.left.x + 16, AUGMENTS_SUBTITLE_Y))
+
+        active_ids = augment_build.active_ids
+        hovered = None
+        for i, rect in enumerate(layout.augment_squares):
+            acquired = i < len(active_ids)
+            colour = C_BUTTON_HOVER if (acquired and rect.collidepoint(mouse_pos)) else (C_BUTTON if acquired else C_PANEL_LINE)
+            pygame.draw.rect(self.surface, colour, rect, border_radius=4)
+            if not acquired:
+                continue
+
+            augment_id = active_ids[i]
+            level = augment_build.level_of(augment_id)
+            badge = self.font_small.render(str(level), True, C_TEXT)
+            self.surface.blit(badge, (rect.right - badge.get_width() - 4, rect.bottom - badge.get_height() - 2))
+
+            if rect.collidepoint(mouse_pos):
+                augment = AUGMENTS_BY_ID.get(augment_id)
+                if augment is not None:
+                    hovered = (augment.name, augment.description, level)
+
+        if hovered is not None:
+            self._draw_tooltip(*hovered, mouse_pos)
+
     def _draw_tooltip(self, name: str, description: str, count: int | None, mouse_pos) -> None:
         name_line = f"{name} (x{count})" if count is not None else name
         desc_lines = _wrap_text(self.font_small, description, TOOLTIP_MAX_WIDTH - 2 * TOOLTIP_PADDING)
@@ -317,20 +365,24 @@ class Renderer:
             surf = self.font_small.render(line, True, C_DIM)
             self.surface.blit(surf, (x + TOOLTIP_PADDING, y + TOOLTIP_PADDING + (i + 1) * CARD_LINE_HEIGHT))
 
-    # ── Shop cards (group break) ─────────────────────────────────────────
+    # ── Break cards (power-up or maze-modifier break) ─────────────────────
 
-    def _draw_shop_cards(self, run: LabyrinthRun, layout: Layout, mouse_pos) -> None:
-        hint = self.font_small.render(
+    def _draw_break_cards(self, run: LabyrinthRun, layout: Layout, mouse_pos) -> None:
+        is_augment = run.break_kind == "augment"
+        choices = run.augment_choices if is_augment else run.shop_choices
+        hint_text = (
+            f"Maze {run.maze_index} -- choose a maze modifier (arrows + space, click, or 1/2/3)"
+            if is_augment else
             f"Group {run.group_number}/{run.total_groups} complete -- pick a card "
-            "(arrows + space, click, or 1/2/3)",
-            True, C_DIM,
+            "(arrows + space, click, or 1/2/3)"
         )
+        hint = self.font_small.render(hint_text, True, C_DIM)
         self.surface.blit(hint, (layout.left.right + 16, 0))
 
-        for i, (card, rect) in enumerate(zip(run.shop_choices or [], layout.cards)):
-            selected = rect.collidepoint(mouse_pos) or i == run.shop_cursor
+        for i, (card, rect) in enumerate(zip(choices or [], layout.cards)):
+            selected = rect.collidepoint(mouse_pos) or i == run.break_cursor
             pygame.draw.rect(self.surface, C_BUTTON_HOVER if selected else C_BUTTON, rect, border_radius=6)
-            pygame.draw.rect(self.surface, C_FLASH if i == run.shop_cursor else C_PANEL_LINE, rect, width=2, border_radius=6)
+            pygame.draw.rect(self.surface, C_FLASH if i == run.break_cursor else C_PANEL_LINE, rect, width=2, border_radius=6)
 
             text_w = rect.width - 2 * CARD_PADDING
 
@@ -340,8 +392,14 @@ class Renderer:
             name = self.font_big.render(card.name, True, C_TEXT)
             self.surface.blit(name, (rect.x + CARD_PADDING, rect.y + CARD_PADDING + 28))
 
+            description = card.description
+            if is_augment:
+                level = run.augment_build.level_of(card.id)
+                if level > 0:
+                    description = f"{description} (currently level {level})"
+
             desc_y = rect.y + CARD_PADDING + 28 + 34
-            for line in _wrap_text(self.font_small, card.description, text_w):
+            for line in _wrap_text(self.font_small, description, text_w):
                 desc = self.font_small.render(line, True, C_DIM)
                 self.surface.blit(desc, (rect.x + CARD_PADDING, desc_y))
                 desc_y += CARD_LINE_HEIGHT
