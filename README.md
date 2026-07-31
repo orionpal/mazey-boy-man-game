@@ -117,6 +117,16 @@ Click the `-`/`+` buttons in the left sidebar to change the number of columns/ro
 
 ---
 
+## Assets (Sound & Icons)
+
+Every entity currently renders as a plain shape and the game is silent — but
+both are hook-ready: drop a `.wav`/`.ogg` into `assets/sounds/` or a `.png`
+into `assets/icons/` (exact filenames in `assets/README.md`) and it's picked
+up automatically, no code change needed. See `docs/assets.md` for the full
+design and the complete event/icon-name vocabulary.
+
+---
+
 ## Project Structure
 
 ```
