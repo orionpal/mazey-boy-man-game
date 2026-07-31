@@ -1,13 +1,12 @@
 # Labyrinth Progression Mode
 
 The core loop beyond a single maze: get through 100 mazes, gradually
-bigger, with three break cadences layered on top of each other -- a
-power-up choice (a passive perk or an active Q/W/E/R item) every 5 mazes, a
-maze-modifier (augment) choice every 10 mazes, and a boss fight every 30
-mazes, plus the 100th (final) maze always being a boss too. A rogue-like
-resource layer sits underneath: time is one persistent budget carried
-across the *whole* run, topped up by pellets and drained by enemies (and
-bosses). Implemented in `maze_game/progression/` (`run.py`'s
+bigger, with two break cadences layered on top of each other -- a
+power-up choice (a passive perk or an active Q/W/E/R item) every 5 mazes,
+and a maze-modifier (augment) choice every 10 mazes. A rogue-like resource
+layer sits underneath: time is one persistent budget carried across the
+*whole* run, topped up by pellets and drained by enemies. Implemented in
+`maze_game/progression/` (`run.py`'s
 `LabyrinthRun`, `shop/` for perks and items, `augments/` for maze
 modifiers, `entities/`), playable via `main.py` (this is now the default
 entry point — see the "Renamed" note at the bottom). Everything below is a
@@ -57,8 +56,7 @@ there.
 
 `spawn_pellets()` (`progression/entities/hazards.py`) places
 `PELLET_TIME_VALUE` (1.0s) pickups on random open cells at maze generation
-time, excluding the start and goal (and, on boss mazes, the boss doesn't
-share a maze with pellets at all — see below). Count scales with
+time, excluding the start and goal. Count scales with
 `PELLET_DENSITY * sqrt(open_cell_count)` (0.6, e.g. ~3 pellets at 9x9, ~17
 at 41x41) rather than a flat fraction of cells, since traversal difficulty
 grows closer to linearly with maze size while a flat fraction grows
@@ -121,53 +119,9 @@ thing that caused it (`C_PELLET`/`C_ENEMY`), except the speed bonus, which
 gets its own `C_SPEED_BONUS` so a maze-clear bonus reads as something
 extra rather than "a big pellet."
 
-`apply_time_penalty()` gained a required `pos` parameter for this (the
-enemy's or, for an active-phase boss hit, the boss's current position) --
-both existing call sites (`Enemy.on_contact`, `Boss.on_contact`) already
-had a `self.pos` to pass, so the boss's active-phase hits get the same
-popup treatment for free, not just plain enemies.
-
-### The boss: every 30th maze, plus the 100th (final) maze
-
-Every `BOSS_INTERVAL`-th maze (30, 60, 90 —
-`progression/entities/boss.py::is_boss_maze()`), **and always
-`LABYRINTH_TOTAL_MAZES` (100)** even though it isn't a `BOSS_INTERVAL`
-multiple, replaces the normal goal with a `Boss` instead: it occupies the
-maze's post-augment goal position (see "Maze augments" below — a
-teleporter-gated maze's boss can sit behind a pocket just like a normal
-goal can), and defeating it — not reaching a cell — clears the maze. No
-pellets/enemies share a boss maze; it's a focused fight.
-
-(Changed from the original `BOSS_INTERVAL=20`/5-encounters scheme to 30/4
-encounters, per the pacing redesign below — fewer total boss fights, each
-correspondingly a bit rarer relative to the run's length.)
-
-The boss alternates every player move: idle turns (`move_count` 0, 2, 4,
-...) leave it stationary, and contact then damages it
-(`BOSS_BASE_DAMAGE`, scaled by the strength perk); active turns (1, 3, 5,
-...) step it one cell toward the player (via the existing `shortest_path`
-BFS — no new pathing code) and contact instead costs the player time, same
-as a regular enemy. This is the literal reading of "moves every other
-move": on the in-between turn it doesn't move, and that's the window to
-land a hit. HP is `BOSS_BASE_HP + BOSS_HP_STEP * encounter_index`
-(`boss_encounter_index()`) so later fights don't get relatively easier as
-the strength perk compounds — 5, 8, 11 across the 3 regular encounters
-(mazes 30/60/90), and **17 at maze 100**: the final maze is special-cased
-to one step past what plain interval math would give it (which would
-otherwise tie its HP with maze 90's, since `100 // 30 == 90 // 30 == 3`),
-deliberately chosen to exactly match the *old* scheme's final-boss HP —
-"especially hard" isn't accidentally weaker just because there are now 4
-boss encounters instead of 5. `BOSS_INTERVAL` must land on a group
-boundary (where a power-up break already exists) — enforced by an
-assertion next to `is_boss_maze()`, so retuning one constant without the
-other fails loudly instead of stranding a boss maze mid-group.
-
-Deliberately *not* an `Enemy` subclass: a boss is the maze's win condition
-with its own phase state, not "an enemy but bigger." The one bit of
-behaviour it shares with a regular enemy (costing the player time) goes
-through a small `apply_time_penalty()` helper instead of inheritance, so a
-boss can never accidentally end up iterated alongside randomly-spawned
-enemies.
+`apply_time_penalty()` takes a required `pos` parameter for this (the
+enemy's current position) -- `Enemy.on_contact` already had a `self.pos`
+to pass.
 
 ### Perks & items: the shop, chosen every group
 
@@ -179,8 +133,8 @@ earlier guaranteed-all-3-perks behaviour — `LabyrinthRun.choose_shop_card()`
 replaced the old `choose_perk()`; picking a card *is* the resume action.
 
 **Perks** (`progression/shop/perks.py::ALL_PERKS`, unchanged starter set):
-more pellet spawn frequency, more time per pellet, more damage to bosses.
-Stacking is explicitly **multiplicative** (picking the same perk again
+more pellet spawn frequency, more time per pellet. Stacking is explicitly
+**multiplicative** (picking the same perk again
 multiplies its multiplier by its magnitude again), a deliberate rogue-like
 snowball. The accumulated `Build` is reset on death along with the time
 resource (see "Failure" below) and shown in the left sidebar
@@ -293,7 +247,7 @@ still exists and is still tested; it's just no longer bound to a key.)
 This is just `player.slide_path()`'s existing wall-vs-junction stop rule
 generalized to "stop after the Nth junction" instead of hardcoded at the
 1st (`None` behaves as "never"). `LabyrinthRun.move()` passes the count
-straight through, so pellet/enemy/boss contact resolution (which already
+straight through, so pellet/enemy contact resolution (which already
 checks every cell in the returned path, not just the final stop) works
 identically for combo moves — a longer path is still just a longer path.
 
@@ -317,8 +271,7 @@ in `main.py`), at which point the chosen card is applied.
 
 That alone is unchanged from before. What's new: a maze index can be a
 boundary for more than one break at once (10 is a multiple of both
-`LABYRINTH_GROUP_SIZE` and `AUGMENT_INTERVAL`; 30 is a multiple of those
-*and* `BOSS_INTERVAL`). Rather than one break replacing another, they
+`LABYRINTH_GROUP_SIZE` and `AUGMENT_INTERVAL`). Rather than one break replacing another, they
 **stack sequentially** — `LabyrinthRun._breaks_due_after(maze_index)`
 builds the ordered list (`["shop", "augment"]` when both apply), and
 `_resume_after_break()` pops one at a time: pick a shop card, and instead
@@ -385,8 +338,8 @@ levels it up instead of doing nothing (same shape as perk stacking:
 
 **Architecture** (`progression/augments/`): `Augment.apply(ctx)` is the
 only shared hook (deliberately no generic `contact()`/`render()` hook --
-mirrors the existing precedent in `shop/items.py` and `hazards.py`/`boss.py`
-of bespoke methods over a forced-fit abstraction). `AugmentContext` bundles
+mirrors the existing precedent in `shop/items.py` and `hazards.py` of
+bespoke methods over a forced-fit abstraction). `AugmentContext` bundles
 the mutable state a pipeline pass works against (`grid`, `goal`, `rng`,
 `level`, `reserved` cells, an `extra` dict for augment-specific output).
 `run_pipeline()` applies every active augment in **registry order**

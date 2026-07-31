@@ -5,7 +5,7 @@ Single entry point: opens to a main menu choosing between two modes.
 
 - **Labyrinth Run**: the timed progression mode -- 100 mazes, gradually
   increasing in size, with one persistent time resource carried across the
-  whole run (topped up by pellets, drained by enemies/the boss). See
+  whole run (topped up by pellets, drained by enemies). See
   docs/progression.md for the design decisions behind the starting numbers.
 - **Relax (Free Play)**: a single maze at a time, adjustable size, no timer
   -- for practicing, or just wandering without pressure. Also runnable

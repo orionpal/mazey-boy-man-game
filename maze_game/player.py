@@ -40,7 +40,7 @@ def slide_path(
     Slide the player from `pos` in `direction`, returning every cell entered
     along the way (not just the final stopping point) -- needed so callers
     can detect contact with anything placed inside the maze (pellets,
-    enemies, a boss) that the slide passes *through* without stopping on,
+    enemies) that the slide passes *through* without stopping on,
     which happens routinely: the stop rule only cares whether the next cell
     in the *current* travel direction is a wall, so any cell that merely
     isn't a dead end/turn along this particular direction gets passed

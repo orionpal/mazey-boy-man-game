@@ -2,7 +2,7 @@
 renderer.py
 -----------
 All pygame drawing code for the labyrinth progression mode: the maze,
-pellets/enemies/boss/teleporter pads, HUD (time resource + maze/group
+pellets/enemies/teleporter pads, HUD (time resource + maze/group
 progress + seed), the left sidebar (acquired perks, the 4 fixed Q/W/E/R
 item slots, and up to MAX_ACTIVE_AUGMENTS maze-modifier slots -- perks/items
 always draw their entire static catalog filled-or-not, augments draw only
@@ -29,7 +29,7 @@ from maze_game.constants import (
     SIDEBAR_W, HUD_HEIGHT, LABYRINTH_TOTAL_MAZES, MAX_ACTIVE_AUGMENTS,
     C_BG, C_WALL, C_FLOOR, C_PLAYER, C_GOAL, C_TEXT, C_DIM, C_FLASH, C_HUD_BG,
     C_PANEL_BG, C_PANEL_LINE, C_BUTTON, C_BUTTON_HOVER,
-    C_PELLET, C_GOLD, C_ENEMY, C_BOSS_IDLE, C_BOSS_ACTIVE, C_TELEPORT_PAIRS,
+    C_PELLET, C_GOLD, C_ENEMY, C_TELEPORT_PAIRS,
     POPUP_DURATION_SECONDS, POPUP_RISE_PIXELS,
 )
 from maze_game.media import sprites
@@ -150,10 +150,7 @@ class Renderer:
             self._draw_gold_pellets(run.gold_pellets, layout)
             self._draw_enemies(run.enemies, layout)
             self._draw_teleporters(run.teleporters, layout)
-            if run.boss is not None:
-                self._draw_boss(run.boss, layout)
-            else:
-                self._draw_goal(run.goal, layout)
+            self._draw_goal(run.goal, layout)
             self._draw_player(run.player, layout)
             self._draw_squeak(run, layout)
             self._draw_popups(run, layout)
@@ -253,21 +250,6 @@ class Renderer:
             for x, y in (pair.a, pair.b):
                 rect = pygame.Rect(ox + x * cell + pad, oy + y * cell + pad, cell - 2 * pad, cell - 2 * pad)
                 pygame.draw.rect(self.surface, colour, rect, width=max(2, cell // 8))
-
-    def _draw_boss(self, boss, layout: Layout) -> None:
-        ox, oy = layout.maze_origin
-        cell = layout.cell
-        x, y = boss.pos
-        icon_name = "boss_idle" if boss.phase == "idle" else "boss_active"
-        icon = sprites.get(icon_name, cell)
-        if icon is not None:
-            self.surface.blit(icon, (ox + x * cell, oy + y * cell))
-        else:
-            pad = max(1, cell // 10)
-            colour = C_BOSS_IDLE if boss.phase == "idle" else C_BOSS_ACTIVE
-            pygame.draw.ellipse(self.surface, colour, pygame.Rect(ox + x * cell + pad, oy + y * cell + pad, cell - 2 * pad, cell - 2 * pad))
-        hp_label = self.font_small.render(f"HP {max(0, boss.hp):g}", True, C_TEXT)
-        self.surface.blit(hp_label, (ox + x * cell - hp_label.get_width() // 2 + cell // 2, oy + y * cell - 18))
 
     def _draw_squeak(self, run: LabyrinthRun, layout: Layout) -> None:
         if run.last_squeak_at is None or time.monotonic() - run.last_squeak_at > SQUEAK_FLASH_SECONDS:

@@ -59,13 +59,12 @@ Sound events (`assets/sounds/{event}.wav` or `.ogg`):
 | `teleport` | a slide ends by stepping through a teleporter pad |
 | `pellet` | a time pellet is collected |
 | `gold` | a gold pellet is collected |
-| `enemy_hit` | contact with an enemy, or an active-phase boss hit (same time-cost code path) |
-| `boss_damage` | damaging the boss while it's idle |
+| `enemy_hit` | contact with an enemy |
 | `wall_break` | the Wall Breaker item breaks a wall |
 | `laser` | the Laser item is activated |
 | `stopwatch` | the Stopwatch item is activated |
 | `squeak` | the Squeaky Toy item is activated |
-| `maze_complete` | a maze is cleared (goal reached or boss defeated) |
+| `maze_complete` | a maze is cleared (goal reached) |
 | `speed_bonus` | the speed bonus is awarded (alongside `maze_complete`) |
 | `fail` | the run fails (time depleted) |
 | `card_select` | a power-up or maze-modifier break card is chosen |
@@ -81,8 +80,6 @@ Icon names (`assets/icons/{name}.png`):
 | `pellet` | a time pellet |
 | `gold` | a gold pellet |
 | `enemy` | an enemy |
-| `boss_idle` | the boss, idle phase |
-| `boss_active` | the boss, active phase |
 
 Not covered: teleporter pads (their per-pair colour coding *is* the visual
 language; a single named icon doesn't fit that) and popups (text, not

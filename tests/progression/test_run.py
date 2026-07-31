@@ -1,9 +1,9 @@
 """
 Tests for maze_game.progression.run -- dimension ramp, the persistent
 TimeResource, the LabyrinthRun state machine (sequencing, shop-choice
-breaks, boss mazes, timeout failure, restart), and pellet/enemy/item
-contact via move(). Perk/Build and Item/Loadout are tested in isolation
-under tests/progression/shop/.
+breaks, timeout failure, restart), and pellet/enemy/item contact via
+move(). Perk/Build and Item/Loadout are tested in isolation under
+tests/progression/shop/.
 """
 
 import time
@@ -13,12 +13,10 @@ import pytest
 from maze_game.constants import (
     MIN_DIMENSION, MAX_DIMENSION, DIMENSION_STEP,
     LABYRINTH_GROUP_SIZE, LABYRINTH_TOTAL_MAZES, LABYRINTH_START_TIME,
-    BOSS_INTERVAL, BOSS_BASE_HP, BOSS_HP_STEP, BOSS_BASE_DAMAGE,
     ENEMY_TIME_PENALTY, SPEED_BONUS_TIME, POPUP_DURATION_SECONDS,
 )
 from maze_game.progression.run import dimensions_for_maze, TimeResource, LabyrinthRun
 from maze_game.progression.entities.hazards import Pellet, GoldPellet, Enemy
-from maze_game.progression.entities.boss import Boss
 from maze_game.progression.shop.perks import ALL_PERKS, Perk
 from maze_game.progression.shop.items import ALL_ITEMS
 
@@ -142,13 +140,6 @@ def test_gold_pellets_never_overlap_pellets():
         pellet_positions = {p.pos for p in run.pellets}
         gold_positions = {g.pos for g in run.gold_pellets}
         assert pellet_positions.isdisjoint(gold_positions)
-
-
-def test_gold_pellets_are_empty_on_a_boss_maze():
-    run = LabyrinthRun()
-    run.maze_index = BOSS_INTERVAL
-    run._begin_maze()
-    assert run.gold_pellets == []
 
 
 def test_enemies_are_empty_before_the_unlock_maze(run):
@@ -329,10 +320,7 @@ def test_restart_does_not_reset_gold():
 def test_completing_the_final_maze_sets_completed_run_not_on_break():
     run = LabyrinthRun()
     for maze_num in range(1, LABYRINTH_TOTAL_MAZES + 1):
-        if run.boss is not None:
-            run.boss.hp = 0
-        else:
-            run.player = run.goal
+        run.player = run.goal
         run.update()
         while run.on_break and maze_num != LABYRINTH_TOTAL_MAZES:
             run.choose_break_card(0)  # may need to clear more than one stacked break (e.g. shop then augment)
@@ -341,7 +329,7 @@ def test_completing_the_final_maze_sets_completed_run_not_on_break():
     assert run.maze_index == LABYRINTH_TOTAL_MAZES
 
 
-# ── New pacing: power-up / modifier / boss cadence ───────────────────────
+# ── New pacing: power-up / modifier cadence ───────────────────────────────
 
 
 def test_maze_5_completion_shows_shop_break_only():
@@ -375,23 +363,8 @@ def test_maze_10_completion_stacks_shop_then_augment():
     assert run.maze_index == 11
 
 
-def test_maze_29_to_30_transition_is_seamless_and_maze_30_is_a_boss_maze():
-    """29 isn't a group/augment boundary, so entering maze 30 (the first boss maze) has no break screen at all."""
-    run = LabyrinthRun()
-    run.maze_index = 29
-    run._advance()
-    assert run.on_break is False
-    assert run.maze_index == 30
-    assert run.boss is not None
-    assert run.goal is None
-
-
 def test_maze_30_completion_stacks_shop_then_augment_before_maze_31():
-    """
-    30 is a multiple of 5, 10, AND BOSS_INTERVAL(30) -- clearing the boss at
-    maze 30 still stacks the same shop-then-augment breaks as any other
-    double-boundary maze before maze 31 begins (31 itself isn't a boss maze).
-    """
+    """30 is a multiple of both 5 and 10 -- stacks the same shop-then-augment breaks as any other double-boundary maze."""
     run = LabyrinthRun()
     run.maze_index = 30
     run._advance()
@@ -401,25 +374,6 @@ def test_maze_30_completion_stacks_shop_then_augment_before_maze_31():
     run.choose_break_card(0)
     assert run.on_break is False
     assert run.maze_index == 31
-    assert run.boss is None
-
-
-def test_maze_99_to_100_transition_is_seamless_and_maze_100_is_the_hardest_boss():
-    """
-    99 isn't a boundary, so maze 100 (the special final boss) begins with no
-    preceding break, exactly like maze 30/60/90's transitions. Its HP is
-    deliberately the highest of the run (boss_encounter_index special-cases
-    the final maze) -- "especially hard" isn't accidentally undercut by
-    BOSS_INTERVAL=30 giving fewer total encounters than the old scheme.
-    """
-    run = LabyrinthRun()
-    run.maze_index = 99
-    run._advance()
-    assert run.on_break is False
-    assert run.maze_index == LABYRINTH_TOTAL_MAZES
-    assert run.boss is not None
-    assert run.boss.hp == BOSS_BASE_HP + BOSS_HP_STEP * 4  # boss_encounter_index(100) == 4, matches the old scheme's final HP
-    assert run.boss.hp > BOSS_BASE_HP + BOSS_HP_STEP * 2  # strictly harder than maze 90's encounter (index 2)
 
 
 def test_stacked_breaks_do_not_retroactively_charge_the_combined_break_duration():
@@ -487,10 +441,7 @@ def test_no_seed_still_assigns_some_int_seed():
 def _scripted_playthrough(run, moves):
     """Drive a run through group/augment breaks, always picking card 0, until `moves` mazes have cleared."""
     for _ in range(moves):
-        if run.boss is not None:
-            run.boss.hp = 0
-        else:
-            run.player = run.goal
+        run.player = run.goal
         run.update()
         while run.on_break:
             run.choose_break_card(0)  # may need to clear more than one stacked break (e.g. shop then augment)
@@ -578,29 +529,6 @@ def test_completing_a_maze_slowly_appends_only_the_maze_complete_event(run):
     assert run.events == ["maze_complete"]
 
 
-# ── Boss mazes ────────────────────────────────────────────────────────────
-
-
-def test_boss_maze_has_no_goal_pellets_or_enemies_and_a_boss():
-    run = LabyrinthRun()
-    run.maze_index = BOSS_INTERVAL
-    run._begin_maze()
-    assert run.goal is None
-    assert run.pellets == []
-    assert run.enemies == []
-    assert run.boss is not None
-    assert run.boss.hp > 0
-
-
-def test_defeating_the_boss_clears_the_maze():
-    run = LabyrinthRun()
-    run.maze_index = BOSS_INTERVAL
-    run._begin_maze()
-    run.boss.hp = 0
-    run.update()
-    assert run.finished is True
-
-
 # ── move() contact resolution ────────────────────────────────────────────
 
 
@@ -612,7 +540,6 @@ def _corridor_run() -> LabyrinthRun:
     run.pellets = []
     run.gold_pellets = []
     run.enemies = []
-    run.boss = None
     return run
 
 
@@ -708,7 +635,6 @@ def _teleport_run() -> LabyrinthRun:
     run.goal = (3, 1)
     run.pellets = []
     run.enemies = []
-    run.boss = None
     run._teleport_map = {(2, 1): (3, 1)}
     return run
 
@@ -765,7 +691,6 @@ def _junction_corridor_run() -> LabyrinthRun:
     run.goal = (4, 1)
     run.pellets = []
     run.enemies = []
-    run.boss = None
     return run
 
 
@@ -789,60 +714,6 @@ def test_move_with_number_combo_collects_pellets_it_now_passes_through():
     assert run.player == (4, 1)
     assert run.pellets == []
     assert run.time.amount == pytest.approx(before + 1.0 * run.build.pellet_value_multiplier)
-
-
-def test_move_damages_an_idle_boss_without_costing_time():
-    run = _corridor_run()
-    run.goal = None
-    run.boss = Boss((2, 1), hp=5)
-    before_time = run.time.amount
-    run.move((1, 0))  # move_count starts at 0 -> idle phase
-    assert run.boss.hp == pytest.approx(5 - BOSS_BASE_DAMAGE * run.build.strength_multiplier)
-    assert run.time.amount == pytest.approx(before_time)
-
-
-def test_move_costs_time_against_an_active_boss():
-    run = _corridor_run()
-    run.goal = None
-    # Starts at the far end of the corridor: stepping toward the player's
-    # pre-move position (1,1) lands it on (2,1), which the player's slide
-    # from (1,1) going right passes through -- contact happens this move.
-    run.boss = Boss((3, 1), hp=5)
-    run.boss.move_count = 1  # force active phase
-    before_time = run.time.amount
-    before_hp = run.boss.hp
-    run.move((1, 0))
-    assert run.boss.pos == (2, 1)
-    assert run.boss.hp == before_hp  # no damage while active
-    assert run.time.amount < before_time
-
-
-# (5, 1) has zero open grid neighbours -- only the extra_edges link to
-# (1, 1) below reaches it, same as a real teleporter-only pocket.
-BOSS_TELEPORT_POCKET_GRID = [
-    [1, 1, 1, 1, 1, 1, 1],
-    [1, 0, 0, 1, 1, 0, 1],
-    [1, 1, 1, 1, 1, 1, 1],
-]
-
-
-def test_move_against_an_active_boss_reaches_it_through_a_teleporter_only_pocket():
-    """
-    Regression test: LabyrinthRun.move() used to call boss.advance() without
-    the run's teleport map, so a boss placed inside a pocket only reachable
-    through a teleporter (a real possibility -- see augments/teleporters.py
-    and _begin_maze()'s comment on ctx.goal doubling as the boss's
-    placement) crashed with a KeyError the instant it hit an active turn.
-    """
-    run = _corridor_run()
-    run.grid = [row[:] for row in BOSS_TELEPORT_POCKET_GRID]
-    run.player = (1, 1)
-    run.goal = None
-    run.boss = Boss((5, 1), hp=5)
-    run.boss.move_count = 1  # force active phase on this move
-    run._teleport_map = {(1, 1): (5, 1), (5, 1): (1, 1)}
-    run.move((1, 0))
-    assert run.boss.pos == (1, 1)  # stepped through the teleporter link toward the player's pre-move position
 
 
 # ── Active items (Q/W/E/R) ────────────────────────────────────────────────

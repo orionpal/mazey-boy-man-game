@@ -4,19 +4,21 @@ run.py
 The labyrinth progression mode: a sequence of LABYRINTH_TOTAL_MAZES mazes,
 gradually increasing in size. Time is one persistent resource (TimeResource)
 carried across the whole run rather than a per-maze budget -- pellets add
-to it, enemies/the boss subtract from it, clearing a maze fast enough adds
-a small bonus, and running out ends the whole run back at maze 1
-(rogue-like: no retry in place, matching the project's existing "full
-reset, not a retry" framing).
+to it, enemies subtract from it, clearing a maze fast enough adds a small
+bonus, and running out ends the whole run back at maze 1 (rogue-like: no
+retry in place, matching the project's existing "full reset, not a retry"
+framing).
 
 Pacing: every LABYRINTH_GROUP_SIZE-th maze pauses for a "power-up" break (a
 passive perk or an active item, drawn from shop/); every AUGMENT_INTERVAL-th
 maze pauses for a "modifier" break (a maze augment choice, drawn from
-augments/); every BOSS_INTERVAL-th maze -- and always the
-LABYRINTH_TOTAL_MAZES-th (final) maze -- replaces the goal with a boss
-fight. When a maze index triggers more than one of these, the break screens
-stack sequentially (e.g. maze 30: power-up screen, then modifier screen,
-then that maze begins, as a boss maze) rather than one replacing another --
+augments/); every MILESTONE_INTERVAL-th maze -- and always the
+LABYRINTH_TOTAL_MAZES-th (final) maze -- gets a one-off dimension spike
+(see dimensions_for_maze()), a noticeably bigger maze than the normal ramp
+would give it, reverting to the regular ramp on the very next maze. When a
+maze index triggers more than one of these, the break screens stack
+sequentially (e.g. maze 30: power-up screen, then modifier screen, then
+that maze begins, as a milestone maze) rather than one replacing another --
 see _breaks_due_after()/_resume_after_break().
 
 Deliberately independent of pygame -- pure state machine, testable without a
@@ -31,7 +33,7 @@ from pathlib import Path
 from maze_game.constants import (
     LABYRINTH_TOTAL_MAZES, LABYRINTH_GROUP_SIZE, LABYRINTH_START_TIME,
     MIN_DIMENSION, MAX_DIMENSION, DIMENSION_STEP,
-    BOSS_BASE_HP, BOSS_HP_STEP, BOSS_INTERVAL, AUGMENT_INTERVAL, ENEMY_UNLOCK_MAZE,
+    AUGMENT_INTERVAL, ENEMY_UNLOCK_MAZE,
     SPEED_BONUS_TIME, SPEED_BONUS_SECONDS_PER_CELL, STOPWATCH_PAUSE_SECONDS,
     POPUP_DURATION_SECONDS, C_SPEED_BONUS,
 )
@@ -42,7 +44,6 @@ from maze_game.progression.entities.hazards import (
     spawn_pellets, spawn_enemies, enemy_density_ramp,
     spawn_gold_pellets, load_gold_total, DEFAULT_GOLD_PATH,
 )
-from maze_game.progression.entities.boss import Boss, is_boss_maze, boss_encounter_index
 from maze_game.progression.shop import offer_shop_cards
 from maze_game.progression.shop.perks import Build, Perk
 from maze_game.progression.shop.items import Loadout
@@ -61,12 +62,11 @@ class Popup:
     created_at: float
 
 # Breaks should always coincide with (or be subsumed by) the group cadence,
-# so a modifier or boss maze is never a total surprise with zero preceding
-# screen -- pacing-predictability invariants, not strictly required for
-# correctness (an unaligned interval would just show fewer break screens,
-# not crash), but worth failing loudly on if retuned inconsistently.
+# so a modifier maze is never a total surprise with zero preceding screen --
+# a pacing-predictability invariant, not strictly required for correctness
+# (an unaligned interval would just show fewer break screens, not crash),
+# but worth failing loudly on if retuned inconsistently.
 assert AUGMENT_INTERVAL % LABYRINTH_GROUP_SIZE == 0
-assert BOSS_INTERVAL % AUGMENT_INTERVAL == 0
 
 
 def _breaks_due_after(completed_index: int) -> list[str]:
@@ -145,8 +145,8 @@ class TimeResource:
 class LabyrinthRun:
     """
     Owns the full progression state machine: current maze, the persistent
-    time resource, this maze's pellets/enemies/boss, the player's perk
-    build and item loadout, group breaks, and pass/fail.
+    time resource, this maze's pellets/enemies, the player's perk build
+    and item loadout, group breaks, and pass/fail.
     """
 
     def __init__(self, seed: int | None = None, gold_path: Path | None = None) -> None:
@@ -239,8 +239,6 @@ class LabyrinthRun:
         # (see player.py), so this pair is the exact, sufficient signature.
         teleported = len(path) >= 2 and self._teleport_map.get(path[-2]) == path[-1]
         self.events.append("teleport" if teleported else "move")
-        if self.boss is not None:
-            self.boss.advance(self.player, self.grid, extra_edges=self._teleport_map)
         self.player = path[-1]
         resolve_contacts(self, path)
 
@@ -366,7 +364,7 @@ class LabyrinthRun:
         )
 
     def _maze_cleared(self) -> bool:
-        return self.boss.defeated if self.boss is not None else self.player == self.goal
+        return self.player == self.goal
 
     def _try_break_wall(self, nx: int, ny: int) -> bool:
         if nx in (0, self.cols - 1) or ny in (0, self.rows - 1):
@@ -385,8 +383,6 @@ class LabyrinthRun:
 
         # Augments (e.g. teleporting squares) are a post-process over the
         # freshly-generated grid -- generate_maze() itself stays untouched.
-        # Applies to boss mazes too: `ctx.goal` doubles as "the boss's
-        # placement" there, same as the pre-augment target selection did.
         default_target = farthest_reachable_cell(self.grid, START_POS)
         ctx = run_pipeline(self.grid, cols, rows, START_POS, default_target, self.augment_build, self.rng)
         self.grid = ctx.grid
@@ -396,32 +392,21 @@ class LabyrinthRun:
             self._teleport_map[pair.a] = pair.b
             self._teleport_map[pair.b] = pair.a
 
-        if is_boss_maze(self.maze_index):
-            self.goal = None
-            boss_pos = ctx.goal
-            encounter_index = boss_encounter_index(self.maze_index)
-            self.boss = Boss(boss_pos, hp=BOSS_BASE_HP + BOSS_HP_STEP * encounter_index)
-            self.pellets = []
-            self.gold_pellets = []
-            self.enemies = []
+        self.goal = ctx.goal
+        exclude = {START_POS, self.goal} | ctx.reserved
+        self.pellets = spawn_pellets(self.grid, exclude, self.build.pellet_frequency_multiplier, rng=self.rng)
+        exclude = exclude | {p.pos for p in self.pellets}
+        self.gold_pellets = spawn_gold_pellets(self.grid, exclude, rng=self.rng)
+        exclude = exclude | {p.pos for p in self.gold_pellets}
+        if self.maze_index >= ENEMY_UNLOCK_MAZE:
+            self.enemies = spawn_enemies(
+                self.grid, exclude, density_multiplier=enemy_density_ramp(self.maze_index), rng=self.rng,
+            )
         else:
-            self.goal = ctx.goal
-            self.boss = None
-            exclude = {START_POS, self.goal} | ctx.reserved
-            self.pellets = spawn_pellets(self.grid, exclude, self.build.pellet_frequency_multiplier, rng=self.rng)
-            exclude = exclude | {p.pos for p in self.pellets}
-            self.gold_pellets = spawn_gold_pellets(self.grid, exclude, rng=self.rng)
-            exclude = exclude | {p.pos for p in self.gold_pellets}
-            if self.maze_index >= ENEMY_UNLOCK_MAZE:
-                self.enemies = spawn_enemies(
-                    self.grid, exclude, density_multiplier=enemy_density_ramp(self.maze_index), rng=self.rng,
-                )
-            else:
-                self.enemies = []
+            self.enemies = []
 
-        target = self.boss.pos if self.boss is not None else self.goal
         self._par_seconds = SPEED_BONUS_SECONDS_PER_CELL * len(
-            shortest_path(self.grid, START_POS, target, extra_edges=self._teleport_map)
+            shortest_path(self.grid, START_POS, self.goal, extra_edges=self._teleport_map)
         )
         self._maze_started_at = time.monotonic()
         self.finished = False

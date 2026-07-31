@@ -34,13 +34,10 @@ LABYRINTH_GROUP_SIZE  = 5     # mazes per group; a power-up (perk/item) break fo
 # above, rather than inventing a separate ceiling).
 
 # Pacing cadence: a power-up every LABYRINTH_GROUP_SIZE mazes, a maze-modifier
-# (augment) choice every AUGMENT_INTERVAL mazes, a boss every BOSS_INTERVAL
-# mazes, and the LABYRINTH_TOTAL_MAZES-th (final) maze is always a boss too,
-# even though it isn't necessarily a BOSS_INTERVAL multiple -- see
-# is_boss_maze()/boss_encounter_index() in progression/entities/boss.py.
-# When a maze index is a multiple of more than one of these, the breaks
-# stack sequentially (power-up screen, then modifier screen) rather than one
-# replacing another -- see progression/run.py::_breaks_due_after().
+# (augment) choice every AUGMENT_INTERVAL mazes. When a maze index is a
+# multiple of more than one of these, the breaks stack sequentially
+# (power-up screen, then modifier screen) rather than one replacing another
+# -- see progression/run.py::_breaks_due_after().
 AUGMENT_INTERVAL = 10
 
 # Maze augments (progression/augments/): generation-time modifiers (e.g.
@@ -52,7 +49,7 @@ MAX_ACTIVE_AUGMENTS = 4
 
 # Time is one persistent resource carried across the whole run (rogue-like),
 # not a per-maze budget: it ticks down continuously, pellets add to it,
-# enemies/the boss subtract from it, and it's only reset on death (restart()).
+# enemies subtract from it, and it's only reset on death (restart()).
 LABYRINTH_START_TIME = 15.0   # seconds the run starts with
 
 # Speed bonus: clearing a maze quickly adds a little time back. "Fast
@@ -88,20 +85,9 @@ ENEMY_MAX_COUNT    = 6
 ENEMY_RAMP_MAZES            = 10
 ENEMY_RAMP_START_MULTIPLIER = 0.25
 
-# Boss: every BOSS_INTERVAL-th maze replaces the goal with a boss fight, and
-# the LABYRINTH_TOTAL_MAZES-th (final) maze always is one too, whether or not
-# it happens to be a BOSS_INTERVAL multiple. BOSS_INTERVAL must land on a
-# group boundary (a power-up break already exists there) -- see the
-# assertion next to its use in progression/entities/boss.py.
-BOSS_INTERVAL    = 30
-BOSS_BASE_HP     = 5
-BOSS_HP_STEP     = 3          # extra HP per boss encounter (encounter 0, 1, 2, ...)
-BOSS_BASE_DAMAGE = 1          # damage per idle-phase hit, before the strength perk multiplier
-
 # Perk magnitudes (multiplicative -- stacking compounds, see progression/shop/perks.py).
 PELLET_FREQUENCY_PERK_MAGNITUDE = 1.2
 PELLET_VALUE_PERK_MAGNITUDE     = 1.3
-STRENGTH_PERK_MAGNITUDE         = 1.5
 
 # Items (progression/shop/items.py): Q/W/E/R active abilities, each gated by
 # a charge count in Loadout (except Squeaky Toy, which is unlimited).
@@ -156,8 +142,6 @@ C_BUTTON_HOVER = (55, 90, 140)
 C_PELLET    = (230, 210,  70)
 C_GOLD      = (255, 175,  20)  # warm amber-orange, distinct from C_PELLET's pale yellow
 C_ENEMY     = (200, 60,   60)
-C_BOSS_IDLE = (230, 90,  200)
-C_BOSS_ACTIVE = (120, 40, 110)
 C_SPEED_BONUS = (100, 220, 255)  # distinct from C_PELLET, so a maze-clear time bonus reads as its own thing
 
 # Teleporter pairs: each pair drawn in its own colour (cycled by

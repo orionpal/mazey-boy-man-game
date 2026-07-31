@@ -1,6 +1,6 @@
 """
-Tests for maze_game.progression.entities -- Pellet/Enemy spawning and
-contact effects, and the Boss's phase alternation, movement, and combat.
+Tests for maze_game.progression.entities -- Pellet/GoldPellet/Enemy
+spawning and contact effects.
 """
 
 import math
@@ -10,7 +10,6 @@ import pytest
 
 from maze_game.constants import (
     PELLET_TIME_VALUE, PELLET_MIN_COUNT, ENEMY_TIME_PENALTY,
-    BOSS_INTERVAL, BOSS_BASE_DAMAGE, LABYRINTH_TOTAL_MAZES,
     ENEMY_UNLOCK_MAZE, ENEMY_RAMP_MAZES, ENEMY_RAMP_START_MULTIPLIER,
     ENEMY_DENSITY, ENEMY_MAX_COUNT, C_PELLET, C_GOLD, C_ENEMY,
 )
@@ -18,7 +17,6 @@ from maze_game.progression.entities.hazards import (
     Pellet, GoldPellet, Enemy, ENEMY_TYPES, spawn_pellets, spawn_enemies, enemy_density_ramp,
     spawn_gold_pellets, load_gold_total, save_gold_total,
 )
-from maze_game.progression.entities.boss import Boss, is_boss_maze, boss_encounter_index
 from maze_game.progression.shop.perks import Build
 
 # A small open room, no walls except the border -- every interior cell is
@@ -279,130 +277,3 @@ def test_first_enemy_maze_spawns_noticeably_fewer_enemies_than_full_density():
     unramped = spawn_enemies(OPEN_ROOM, exclude=set(), density_multiplier=1.0)
     assert len(ramped) < len(unramped)
 
-
-# ── Boss ──────────────────────────────────────────────────────────────────
-
-
-def test_is_boss_maze_only_true_on_the_interval():
-    assert is_boss_maze(BOSS_INTERVAL) is True
-    assert is_boss_maze(BOSS_INTERVAL * 2) is True
-    assert is_boss_maze(BOSS_INTERVAL - 1) is False
-    assert is_boss_maze(1) is False
-
-
-def test_is_boss_maze_true_on_the_final_maze_even_off_interval():
-    """LABYRINTH_TOTAL_MAZES(100) isn't a BOSS_INTERVAL(30) multiple, but the final maze is always a boss maze too."""
-    assert LABYRINTH_TOTAL_MAZES % BOSS_INTERVAL != 0
-    assert is_boss_maze(LABYRINTH_TOTAL_MAZES) is True
-
-
-def test_boss_encounter_index_increments_per_interval():
-    assert boss_encounter_index(BOSS_INTERVAL) == 0
-    assert boss_encounter_index(BOSS_INTERVAL * 2) == 1
-    assert boss_encounter_index(BOSS_INTERVAL * 3) == 2
-
-
-def test_boss_encounter_index_final_maze_is_strictly_the_hardest():
-    """
-    The final maze is special-cased to be one step past interval math (which
-    would otherwise tie its HP with the prior regular encounter) -- keeps
-    "especially hard" true even though BOSS_INTERVAL=30 gives fewer total
-    encounters (4) than the old BOSS_INTERVAL=20 scheme (5) did.
-    """
-    last_regular_index = boss_encounter_index((LABYRINTH_TOTAL_MAZES // BOSS_INTERVAL) * BOSS_INTERVAL)
-    assert boss_encounter_index(LABYRINTH_TOTAL_MAZES) > last_regular_index
-
-
-def test_boss_starts_idle_at_move_count_zero():
-    boss = Boss((3, 3), hp=5)
-    assert boss.move_count == 0
-    assert boss.phase == "idle"
-    assert boss.defeated is False
-
-
-def test_boss_phase_alternates_idle_active_each_advance():
-    boss = Boss((3, 3), hp=5)
-    phases = []
-    for _ in range(6):
-        boss.advance(player_pos=(1, 1), grid=OPEN_ROOM)
-        phases.append(boss.phase)
-    assert phases == ["idle", "active", "idle", "active", "idle", "active"]
-
-
-def test_boss_only_moves_on_active_turns():
-    boss = Boss((5, 5), hp=5)
-    start_pos = boss.pos
-    boss.advance(player_pos=(1, 1), grid=OPEN_ROOM)  # idle turn
-    assert boss.pos == start_pos  # didn't move
-
-    boss.advance(player_pos=(1, 1), grid=OPEN_ROOM)  # active turn
-    assert boss.pos != start_pos  # stepped toward the player
-
-
-def test_boss_steps_one_cell_closer_to_the_player_each_active_turn():
-    boss = Boss((5, 5), hp=5)
-    boss.advance(player_pos=(1, 1), grid=OPEN_ROOM)  # idle, no move
-    before_dist = abs(boss.pos[0] - 1) + abs(boss.pos[1] - 1)
-    boss.advance(player_pos=(1, 1), grid=OPEN_ROOM)  # active, moves one step
-    after_dist = abs(boss.pos[0] - 1) + abs(boss.pos[1] - 1)
-    assert after_dist == before_dist - 1
-
-
-# A boss maze can place the boss inside a pocket only reachable through a
-# teleporter (see augments/teleporters.py) -- (5, 1) has zero open grid
-# neighbours, only the extra_edges link to (1, 1) below.
-BOSS_POCKET_GRID = [
-    [1, 1, 1, 1, 1, 1, 1],
-    [1, 0, 0, 1, 1, 0, 1],
-    [1, 1, 1, 1, 1, 1, 1],
-]
-
-
-def test_boss_advance_without_extra_edges_cannot_reach_a_teleporter_only_pocket():
-    """Confirms the pocket really is unreachable by plain grid adjacency -- the failure mode extra_edges fixes."""
-    boss = Boss((5, 1), hp=5)
-    boss.move_count = 1  # force the active phase, which is what triggers the pathing
-    with pytest.raises(KeyError):
-        boss.advance(player_pos=(1, 1), grid=BOSS_POCKET_GRID)
-
-
-def test_boss_advance_uses_extra_edges_to_escape_a_teleporter_only_pocket():
-    """
-    Regression test: advance() used to call shortest_path() with no
-    extra_edges at all, so a boss placed in a teleporter-only pocket crashed
-    with a KeyError (shortest_path() can't reach a goal with no path to it)
-    the instant it hit an active turn, instead of stepping through the link.
-    """
-    boss = Boss((5, 1), hp=5)
-    boss.move_count = 1  # force the active phase
-    tmap = {(1, 1): (5, 1), (5, 1): (1, 1)}
-    boss.advance(player_pos=(1, 1), grid=BOSS_POCKET_GRID, extra_edges=tmap)
-    assert boss.pos == (1, 1)  # one hop through the teleporter link lands directly on the player's cell
-
-
-def test_boss_on_contact_damages_hp_while_idle():
-    run = _FakeRun()
-    run.build.strength_multiplier = 2.0
-    boss = Boss((3, 3), hp=5)
-    boss.phase = "idle"
-    boss.on_contact(run)
-    assert boss.hp == pytest.approx(5 - BOSS_BASE_DAMAGE * 2.0)
-    assert run.time.amount == pytest.approx(10.0)  # no time cost while idle
-    assert run.events == ["boss_damage"]
-
-
-def test_boss_on_contact_costs_time_while_active():
-    run = _FakeRun()
-    boss = Boss((3, 3), hp=5)
-    boss.phase = "active"
-    boss.on_contact(run)
-    assert boss.hp == 5  # no damage while active
-    assert run.time.amount == pytest.approx(10.0 - ENEMY_TIME_PENALTY)
-    assert run.events == ["enemy_hit"]  # shares apply_time_penalty()'s event with a regular enemy hit
-
-
-def test_boss_defeated_when_hp_at_or_below_zero():
-    boss = Boss((3, 3), hp=1)
-    boss.phase = "idle"
-    boss.on_contact(_FakeRun())
-    assert boss.defeated is True

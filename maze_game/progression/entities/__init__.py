@@ -2,11 +2,11 @@
 entities/__init__.py
 ---------------------
 Shared base for anything placed in a maze that the player can contact
-mid-slide (pellets, enemies, the boss), plus the single dispatcher
-LabyrinthRun.move() calls to resolve contact against all of them -- this
-keeps entity-specific knowledge out of progression/run.py. Concrete entity
-types live in sibling modules (hazards.py, boss.py) and are imported
-directly by callers that need them; this module only holds what's shared.
+mid-slide (pellets, enemies), plus the single dispatcher LabyrinthRun.move()
+calls to resolve contact against all of them -- this keeps entity-specific
+knowledge out of progression/run.py. Concrete entity types live in sibling
+modules (hazards.py) and are imported directly by callers that need them;
+this module only holds what's shared.
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ class MazeEntity:
 
 
 def apply_time_penalty(run: "LabyrinthRun", amount: float, pos: tuple[int, int]) -> None:
-    """Shared time-cost helper used by both Enemy.on_contact and an active-phase Boss hit."""
+    """Shared time-cost helper used by Enemy.on_contact."""
     run.time.spend(amount)
     run.add_popup(pos, f"-{amount:.1f}s", C_ENEMY)
     run.events.append("enemy_hit")
@@ -39,10 +39,10 @@ def apply_time_penalty(run: "LabyrinthRun", amount: float, pos: tuple[int, int])
 def resolve_contacts(run: "LabyrinthRun", path: list[tuple[int, int]]) -> None:
     """
     Check every cell the player's slide just passed through against
-    pellets, gold pellets, enemies, and the boss (if this maze has one),
-    applying effects in order. Pellets and gold pellets are removed from
-    their lists on collection (one-time pickups); enemies and the boss are
-    persistent hazards that can be hit again on a later, separate move.
+    pellets, gold pellets, and enemies, applying effects in order. Pellets
+    and gold pellets are removed from their lists on collection (one-time
+    pickups); enemies are a persistent hazard that can be hit again on a
+    later, separate move.
     """
     for cell in path:
         remaining = []
@@ -64,6 +64,3 @@ def resolve_contacts(run: "LabyrinthRun", path: list[tuple[int, int]]) -> None:
         for enemy in run.enemies:
             if enemy.pos == cell:
                 enemy.on_contact(run)
-
-        if run.boss is not None and run.boss.pos == cell:
-            run.boss.on_contact(run)
