@@ -17,6 +17,7 @@ from maze_game.constants import (
     C_TEXT, C_DIM, C_FLASH, C_HUD_BG,
     C_PANEL_BG, C_PANEL_LINE, C_BUTTON, C_BUTTON_HOVER,
 )
+from maze_game.media import sprites
 
 BUTTON_SIZE = 28
 LEFT_CONTENT_HEIGHT = 260   # height needed for the (fixed) left sidebar controls
@@ -123,6 +124,10 @@ class Renderer:
     def _draw_goal(self, goal, layout: Layout) -> None:
         ox, oy = layout.maze_origin
         gx, gy = goal
+        icon = sprites.get("goal", CELL)
+        if icon is not None:
+            self.surface.blit(icon, (ox + gx * CELL, oy + gy * CELL))
+            return
         pygame.draw.ellipse(
             self.surface,
             C_GOAL,
@@ -132,6 +137,10 @@ class Renderer:
     def _draw_player(self, player, layout: Layout) -> None:
         ox, oy = layout.maze_origin
         px, py = player
+        icon = sprites.get("player", CELL)
+        if icon is not None:
+            self.surface.blit(icon, (ox + px * CELL, oy + py * CELL))
+            return
         pygame.draw.circle(
             self.surface,
             C_PLAYER,

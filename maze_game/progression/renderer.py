@@ -32,6 +32,7 @@ from maze_game.constants import (
     C_PELLET, C_ENEMY, C_BOSS_IDLE, C_BOSS_ACTIVE, C_TELEPORT_PAIRS,
     POPUP_DURATION_SECONDS, POPUP_RISE_PIXELS,
 )
+from maze_game.media import sprites
 from maze_game.progression.shop.perks import ALL_PERKS
 from maze_game.progression.shop.items import ALL_ITEMS, UNLIMITED_ITEM_IDS
 from maze_game.progression.augments import AUGMENTS_BY_ID
@@ -186,6 +187,10 @@ class Renderer:
         ox, oy = layout.maze_origin
         cell = layout.cell
         gx, gy = goal
+        icon = sprites.get("goal", cell)
+        if icon is not None:
+            self.surface.blit(icon, (ox + gx * cell, oy + gy * cell))
+            return
         pad = max(1, cell // 7)
         pygame.draw.ellipse(self.surface, C_GOAL, pygame.Rect(ox + gx * cell + pad, oy + gy * cell + pad, cell - 2 * pad, cell - 2 * pad))
 
@@ -193,13 +198,21 @@ class Renderer:
         ox, oy = layout.maze_origin
         cell = layout.cell
         px, py = player
+        icon = sprites.get("player", cell)
+        if icon is not None:
+            self.surface.blit(icon, (ox + px * cell, oy + py * cell))
+            return
         pygame.draw.circle(self.surface, C_PLAYER, (ox + px * cell + cell // 2, oy + py * cell + cell // 2), max(1, cell // 2 - 3))
 
     def _draw_pellets(self, pellets, layout: Layout) -> None:
         ox, oy = layout.maze_origin
         cell = layout.cell
+        icon = sprites.get("pellet", cell)
         for pellet in pellets:
             x, y = pellet.pos
+            if icon is not None:
+                self.surface.blit(icon, (ox + x * cell, oy + y * cell))
+                continue
             r = max(1, cell // 5)
             pygame.draw.circle(self.surface, C_PELLET, (ox + x * cell + cell // 2, oy + y * cell + cell // 2), r)
 
@@ -207,8 +220,12 @@ class Renderer:
         ox, oy = layout.maze_origin
         cell = layout.cell
         pad = max(1, cell // 5)
+        icon = sprites.get("enemy", cell)
         for enemy in enemies:
             x, y = enemy.pos
+            if icon is not None:
+                self.surface.blit(icon, (ox + x * cell, oy + y * cell))
+                continue
             pygame.draw.rect(
                 self.surface, C_ENEMY,
                 pygame.Rect(ox + x * cell + pad, oy + y * cell + pad, cell - 2 * pad, cell - 2 * pad),
@@ -228,9 +245,14 @@ class Renderer:
         ox, oy = layout.maze_origin
         cell = layout.cell
         x, y = boss.pos
-        pad = max(1, cell // 10)
-        colour = C_BOSS_IDLE if boss.phase == "idle" else C_BOSS_ACTIVE
-        pygame.draw.ellipse(self.surface, colour, pygame.Rect(ox + x * cell + pad, oy + y * cell + pad, cell - 2 * pad, cell - 2 * pad))
+        icon_name = "boss_idle" if boss.phase == "idle" else "boss_active"
+        icon = sprites.get(icon_name, cell)
+        if icon is not None:
+            self.surface.blit(icon, (ox + x * cell, oy + y * cell))
+        else:
+            pad = max(1, cell // 10)
+            colour = C_BOSS_IDLE if boss.phase == "idle" else C_BOSS_ACTIVE
+            pygame.draw.ellipse(self.surface, colour, pygame.Rect(ox + x * cell + pad, oy + y * cell + pad, cell - 2 * pad, cell - 2 * pad))
         hp_label = self.font_small.render(f"HP {max(0, boss.hp):g}", True, C_TEXT)
         self.surface.blit(hp_label, (ox + x * cell - hp_label.get_width() // 2 + cell // 2, oy + y * cell - 18))
 
