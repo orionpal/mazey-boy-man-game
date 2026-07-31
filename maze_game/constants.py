@@ -178,6 +178,7 @@ C_PLAYER    = (80, 220, 120)
 C_GOAL      = (220, 80,  80)
 C_TEXT      = (220, 220, 220)
 C_DIM       = (100, 100, 120)
+C_CARD_DESC = (190, 195, 210)  # card/tooltip description text -- brighter than C_DIM, dimmer than C_TEXT, legible against C_BUTTON's blue
 C_FLASH     = (255, 220,  60)
 C_HUD_BG    = (10,  10,  20)
 C_PANEL_BG  = (18,  18,  30)

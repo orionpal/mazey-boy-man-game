@@ -128,3 +128,25 @@ class MetaProgress:
             for _ in range(self.level_of(upgrade)):
                 effect(build, upgrade.magnitude)
         return build
+
+
+class Base:
+    """
+    Cursor state for the Base screen -- one slot per upgrade tile, plus a
+    final "Start Run" slot. Same shape as menu/__init__.py::MainMenu, for
+    keyboard nav (arrows + space/enter) alongside mouse click.
+    """
+
+    def __init__(self) -> None:
+        self.cursor = 0
+
+    @property
+    def slot_count(self) -> int:
+        return len(ALL_META_UPGRADES) + 1
+
+    def move_cursor(self, delta: int) -> None:
+        self.cursor = (self.cursor + delta) % self.slot_count
+
+    @property
+    def on_start_run(self) -> bool:
+        return self.cursor == len(ALL_META_UPGRADES)

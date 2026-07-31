@@ -1,5 +1,5 @@
 """
-Tests for maze_game.progression.meta -- MetaUpgrade/MetaProgress in
+Tests for maze_game.progression.meta -- MetaUpgrade/MetaProgress/Base in
 isolation. Every test uses tmp_path for both gold.json and
 meta_upgrades.json, so none of this ever touches the real on-disk files.
 """
@@ -8,7 +8,7 @@ import pytest
 
 from maze_game.progression.entities.hazards import save_gold_total
 from maze_game.progression.meta import (
-    ALL_META_UPGRADES, MetaProgress,
+    ALL_META_UPGRADES, MetaProgress, Base,
     load_meta_upgrade_levels, save_meta_upgrade_levels,
 )
 
@@ -167,3 +167,32 @@ def test_seed_build_returns_a_fresh_build_each_call(paths):
     build_a.picks["x"] = 99  # mutate one instance
     build_b = progress.seed_build()
     assert build_b.picks == {}  # unaffected -- not the same object, not shared state
+
+
+# ── Base cursor ───────────────────────────────────────────────────────────
+
+
+def test_base_starts_at_the_first_slot():
+    base = Base()
+    assert base.cursor == 0
+    assert base.on_start_run is False
+
+
+def test_base_slot_count_is_one_more_than_the_upgrade_count():
+    base = Base()
+    assert base.slot_count == len(ALL_META_UPGRADES) + 1
+
+
+def test_base_move_cursor_wraps_forward_and_backward():
+    base = Base()
+    base.move_cursor(-1)
+    assert base.cursor == base.slot_count - 1  # wraps backward from 0
+    base.move_cursor(1)
+    assert base.cursor == 0
+
+
+def test_base_on_start_run_is_true_only_on_the_final_slot():
+    base = Base()
+    for i in range(base.slot_count):
+        base.cursor = i
+        assert base.on_start_run == (i == len(ALL_META_UPGRADES))
