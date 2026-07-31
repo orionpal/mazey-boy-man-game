@@ -45,6 +45,7 @@ CARD_MARGIN = 24
 CARD_GAP = 16
 CARD_PADDING = 12
 CARD_LINE_HEIGHT = 18
+CARD_NAME_LINE_HEIGHT = 24
 
 BUILD_SQUARE_SIZE = 36
 BUILD_SQUARE_GAP = 12
@@ -462,8 +463,11 @@ class Renderer:
             index_label = self.font_small.render(f"[{i + 1}]", True, C_DIM)
             self.surface.blit(index_label, (rect.x + CARD_PADDING, rect.y + CARD_PADDING))
 
-            name = self.font_big.render(card.name, True, C_TEXT)
-            self.surface.blit(name, (rect.x + CARD_PADDING, rect.y + CARD_PADDING + 28))
+            name_y = rect.y + CARD_PADDING + 28
+            for line in _wrap_text(self.font_big, card.name, text_w):
+                name = self.font_big.render(line, True, C_TEXT)
+                self.surface.blit(name, (rect.x + CARD_PADDING, name_y))
+                name_y += CARD_NAME_LINE_HEIGHT
 
             description = card.description
             if is_augment:
@@ -471,7 +475,7 @@ class Renderer:
                 if level > 0:
                     description = f"{description} (currently level {level})"
 
-            desc_y = rect.y + CARD_PADDING + 28 + 34
+            desc_y = name_y + 10
             for line in _wrap_text(self.font_small, description, text_w):
                 desc = self.font_small.render(line, True, C_CARD_DESC)
                 self.surface.blit(desc, (rect.x + CARD_PADDING, desc_y))

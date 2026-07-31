@@ -9,6 +9,7 @@ import pygame
 
 from maze_game.progression.renderer import Layout, MAZE_AREA_SIZE, _wrap_text
 from maze_game.progression.shop.perks import ALL_PERKS
+from maze_game.progression.augments import ALL_AUGMENTS
 from maze_game.constants import SIDEBAR_W, HUD_HEIGHT
 
 
@@ -120,5 +121,22 @@ def test_wrap_text_fits_a_perk_card_at_the_smallest_maze_size():
     card_w = layout.cards[0].width
     for perk in ALL_PERKS:
         lines = _wrap_text(font, perk.description, card_w - 24)
+        for line in lines:
+            assert font.size(line)[0] <= card_w - 24
+
+
+def test_wrap_text_fits_every_card_name():
+    """
+    Regression test: card names (rendered in the bigger, bold font) used to
+    be blitted unwrapped, so "Teleporting Squares" overflowed its card and
+    bled into the next one -- _draw_break_cards() now wraps names the same
+    way it already wrapped descriptions.
+    """
+    pygame.font.init()
+    font = pygame.font.SysFont("monospace", 20, bold=True)
+    layout = Layout(cols=9, rows=9)
+    card_w = layout.cards[0].width
+    for card in list(ALL_PERKS) + list(ALL_AUGMENTS):
+        lines = _wrap_text(font, card.name, card_w - 24)
         for line in lines:
             assert font.size(line)[0] <= card_w - 24
