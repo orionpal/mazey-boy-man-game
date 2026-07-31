@@ -66,6 +66,30 @@ def test_meta_progress_starts_at_zero_gold_and_no_levels_with_no_prior_save(path
     assert progress.level_of(ALL_META_UPGRADES[0]) == 0
 
 
+def test_bare_construction_respects_monkeypatched_default_paths(tmp_path, monkeypatch):
+    """
+    Regression test: MetaProgress()'s defaults used to be bound as literal
+    parameter default values (DEFAULT_GOLD_PATH/DEFAULT_META_UPGRADES_PATH
+    evaluated once at import time), so monkeypatching those module
+    constants had no effect on a bare MetaProgress() call -- exactly the
+    bug class already fixed once for LabyrinthRun.__init__. This is what
+    progression/app.py::run_base() actually calls (no explicit paths), so
+    without this fix every test/tool that monkeypatches the module-level
+    defaults would silently read/write the real on-disk files instead.
+    """
+    gold_path = tmp_path / "gold.json"
+    upgrades_path = tmp_path / "meta_upgrades.json"
+    save_gold_total(42, gold_path)
+
+    monkeypatch.setattr("maze_game.progression.meta.DEFAULT_GOLD_PATH", gold_path)
+    monkeypatch.setattr("maze_game.progression.meta.DEFAULT_META_UPGRADES_PATH", upgrades_path)
+
+    progress = MetaProgress()  # no explicit paths -- must still resolve to the monkeypatched ones
+    assert progress.gold_path == gold_path
+    assert progress.upgrades_path == upgrades_path
+    assert progress.gold == 42
+
+
 def test_meta_progress_is_seeded_from_prior_saves(paths):
     gold_path, upgrades_path = paths
     save_gold_total(50, gold_path)

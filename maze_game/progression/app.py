@@ -20,6 +20,8 @@ from maze_game.constants import FPS
 from maze_game.media import sound
 from maze_game.progression.run import LabyrinthRun
 from maze_game.progression.renderer import Renderer, Layout
+from maze_game.progression.meta import Base, MetaProgress, ALL_META_UPGRADES
+from maze_game.progression.meta.renderer import BaseRenderer
 
 DIRECTION_MAP: dict[int, tuple[int, int]] = {
     pygame.K_UP:    ( 0, -1),
@@ -49,10 +51,13 @@ def sync_window_size(window: Window, size: tuple[int, int]) -> pygame.Surface:
 
 def run_labyrinth(window: Window, clock: pygame.time.Clock) -> str:
     """
-    Play a labyrinth run until the player backs out. Returns "quit" if the
-    window was closed (the whole app should exit) or "menu" if ESC was
-    pressed (back to main.py's menu -- a run in progress is simply
-    abandoned, same as closing the game used to do).
+    Play a labyrinth run until it ends or the player backs out. Returns
+    "quit" if the window was closed (the whole app should exit), "menu" if
+    ESC was pressed (back to main.py's menu -- a run in progress is simply
+    abandoned, same as closing the game used to do), or "base" if R was
+    pressed after a fail/complete screen (see run_progression_mode(), which
+    routes that back into run_base() to spend gold before the next run,
+    rather than restarting in place).
     """
     run = LabyrinthRun()
     renderer = Renderer(sync_window_size(window, Renderer.window_size(run.cols, run.rows)))
@@ -65,7 +70,7 @@ def run_labyrinth(window: Window, clock: pygame.time.Clock) -> str:
                 if event.key == pygame.K_ESCAPE:
                     return "menu"
                 elif event.key == pygame.K_r and (run.failed or run.completed_run):
-                    run.restart()
+                    return "base"
                 elif run.on_break:
                     if event.key in (pygame.K_LEFT, pygame.K_UP):
                         run.move_break_cursor(-1)
@@ -103,3 +108,80 @@ def run_labyrinth(window: Window, clock: pygame.time.Clock) -> str:
         renderer.draw(run)
         pygame.display.flip()
         clock.tick(FPS)
+
+
+def _try_purchase(progress: MetaProgress, upgrade) -> None:
+    """Silent no-op if unaffordable -- same "just doesn't happen" precedent as e.g. activating an item with no charges."""
+    if progress.purchase(upgrade):
+        sound.play("card_select")  # reuses the existing "a choice was confirmed" event
+
+
+def run_base(window: Window, clock: pygame.time.Clock) -> str:
+    """
+    Show the Base until the player starts a run or backs out. Returns
+    "start" (launch a fresh run), "menu" (ESC, back to the title screen),
+    or "quit" (window closed). A fresh MetaProgress is loaded on every
+    call, so it always reflects whatever gold the just-finished run left
+    behind.
+    """
+    progress = MetaProgress()
+    base = Base()
+    renderer = BaseRenderer(sync_window_size(window, BaseRenderer.window_size()))
+
+    while True:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                return "quit"
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    return "menu"
+                elif event.key in (pygame.K_LEFT, pygame.K_UP):
+                    base.move_cursor(-1)
+                    sound.play("menu_move")
+                elif event.key in (pygame.K_RIGHT, pygame.K_DOWN):
+                    base.move_cursor(1)
+                    sound.play("menu_move")
+                elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
+                    if base.on_start_run:
+                        sound.play("menu_select")
+                        return "start"
+                    _try_purchase(progress, ALL_META_UPGRADES[base.cursor])
+                elif event.key in SHOP_CHOICE_KEYS:
+                    index = SHOP_CHOICE_KEYS[event.key]
+                    if index < len(ALL_META_UPGRADES):
+                        base.cursor = index
+                        _try_purchase(progress, ALL_META_UPGRADES[index])
+            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                clicked_tile = False
+                for index, rect in enumerate(renderer.tile_rects()):
+                    if rect.collidepoint(event.pos):
+                        base.cursor = index
+                        _try_purchase(progress, ALL_META_UPGRADES[index])
+                        clicked_tile = True
+                        break
+                if not clicked_tile and renderer.start_button_rect().collidepoint(event.pos):
+                    base.cursor = len(ALL_META_UPGRADES)
+                    sound.play("menu_select")
+                    return "start"
+
+        renderer.set_surface(sync_window_size(window, BaseRenderer.window_size()))
+        renderer.draw(base, progress, pygame.mouse.get_pos())
+        pygame.display.flip()
+        clock.tick(FPS)
+
+
+def run_progression_mode(window: Window, clock: pygame.time.Clock) -> str:
+    """
+    Owns the Base<->run loop: the Base always precedes a run, and R after a
+    fail/complete screen loops back into it (see run_labyrinth()) rather
+    than restarting in place. main.py only ever sees "quit"/"menu" from
+    this -- the same contract every other mode's entry point exposes.
+    """
+    while True:
+        base_result = run_base(window, clock)
+        if base_result in ("quit", "menu"):
+            return base_result
+        run_result = run_labyrinth(window, clock)
+        if run_result in ("quit", "menu"):
+            return run_result
+        # run_result == "base" -- loop back to the Base to spend gold before the next run.

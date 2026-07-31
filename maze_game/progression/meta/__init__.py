@@ -93,11 +93,16 @@ class MetaProgress:
     the just-finished run left behind.
     """
 
-    def __init__(self, gold_path: Path = DEFAULT_GOLD_PATH, upgrades_path: Path = DEFAULT_META_UPGRADES_PATH) -> None:
-        self.gold_path = gold_path
-        self.upgrades_path = upgrades_path
-        self.gold = load_gold_total(gold_path)
-        self.levels: dict[str, int] = load_meta_upgrade_levels(upgrades_path)
+    def __init__(self, gold_path: Path | None = None, upgrades_path: Path | None = None) -> None:
+        # DEFAULT_GOLD_PATH/DEFAULT_META_UPGRADES_PATH are looked up here
+        # (not as the parameters' default values, which bind at def-time
+        # and would be immune to monkeypatching) so tests can isolate every
+        # bare MetaProgress() call from the real on-disk files -- the exact
+        # same reason LabyrinthRun.__init__ handles gold_path this way.
+        self.gold_path = gold_path if gold_path is not None else DEFAULT_GOLD_PATH
+        self.upgrades_path = upgrades_path if upgrades_path is not None else DEFAULT_META_UPGRADES_PATH
+        self.gold = load_gold_total(self.gold_path)
+        self.levels: dict[str, int] = load_meta_upgrade_levels(self.upgrades_path)
 
     def level_of(self, upgrade: MetaUpgrade) -> int:
         return self.levels.get(upgrade.id, 0)

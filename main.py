@@ -5,14 +5,17 @@ Single entry point: opens to a main menu choosing between two modes.
 
 - **Labyrinth Run**: the timed progression mode -- 100 mazes, gradually
   increasing in size, with one persistent time resource carried across the
-  whole run (topped up by pellets, drained by enemies). See
+  whole run (topped up by pellets, drained by enemies). Always launched
+  from the Base (progression/app.py::run_progression_mode()), where
+  persistent gold buys permanent meta-progression upgrades between runs;
+  R after a run ends returns there instead of restarting in place. See
   docs/progression.md for the design decisions behind the starting numbers.
 - **Relax (Free Play)**: a single maze at a time, adjustable size, no timer
   -- for practicing, or just wandering without pressure. Also runnable
   directly via mvp_main.py.
 
-ESC backs out one level (in a game -> back to this menu; at the menu ->
-quit); closing the window quits immediately from anywhere.
+ESC backs out one level (in a game/the Base -> back to this menu; at the
+menu -> quit); closing the window quits immediately from anywhere.
 
 Run with:
     python main.py
@@ -25,7 +28,7 @@ from maze_game.constants import FPS
 from maze_game.media import sound
 from maze_game.menu import MainMenu
 from maze_game.menu.renderer import MenuRenderer
-from maze_game.progression.app import run_labyrinth
+from maze_game.progression.app import run_progression_mode
 from maze_game.freeplay.app import run_freeplay
 
 
@@ -78,7 +81,7 @@ def main() -> None:
 
     mode = run_menu(window, clock)
     while mode is not None:
-        result = run_labyrinth(window, clock) if mode == "labyrinth" else run_freeplay(window, clock)
+        result = run_progression_mode(window, clock) if mode == "labyrinth" else run_freeplay(window, clock)
         if result == "quit":
             break
         mode = run_menu(window, clock)
