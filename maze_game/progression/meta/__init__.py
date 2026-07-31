@@ -46,7 +46,7 @@ class MetaUpgrade:
 ALL_META_UPGRADES: list[MetaUpgrade] = [
     MetaUpgrade(
         id="pellet_bonus", name="Prospector's Eye",
-        description="+10% time gained per pellet, permanently. Stacks with Rich Vein.",
+        description="+10% time gained per pellet, permanently.",
         effect_key="pellet_value", magnitude=META_PELLET_VALUE_MAGNITUDE,
         cost_base=META_UPGRADE_COST_BASE, cost_step=META_UPGRADE_COST_STEP,
     ),

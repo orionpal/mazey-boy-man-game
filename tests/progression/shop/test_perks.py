@@ -14,6 +14,8 @@ def test_build_starts_with_no_picks_and_unit_multipliers():
     assert build.pellet_frequency_multiplier == 1.0
     assert build.pellet_value_multiplier == 1.0
     assert build.enemy_resistance_multiplier == 1.0
+    assert build.enemy_shield_charges_per_maze == 0
+    assert build.gold_rush_bonus == 0
 
 
 def test_acquiring_a_perk_records_the_pick_and_applies_its_effect():
@@ -39,6 +41,22 @@ def test_acquiring_an_enemy_resistance_effect_reduces_the_multiplier():
     build.acquire(perk)
     build.acquire(perk)
     assert build.enemy_resistance_multiplier == pytest.approx(0.81)  # 0.9 * 0.9, compounding down
+
+
+def test_acquiring_an_enemy_shield_effect_adds_charges_additively():
+    build = Build()
+    perk = Perk(id="x", name="X", description="d", effect_key="enemy_shield", magnitude=1)
+    build.acquire(perk)
+    build.acquire(perk)
+    assert build.enemy_shield_charges_per_maze == 2  # 1 + 1, additive not compounding
+
+
+def test_acquiring_a_gold_rush_effect_adds_bonus_additively():
+    build = Build()
+    perk = Perk(id="x", name="X", description="d", effect_key="gold_rush", magnitude=1)
+    build.acquire(perk)
+    build.acquire(perk)
+    assert build.gold_rush_bonus == 2  # 1 + 1, additive not compounding
 
 
 def test_all_perks_have_distinct_ids_and_valid_effect_keys():

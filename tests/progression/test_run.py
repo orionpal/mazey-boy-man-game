@@ -390,7 +390,7 @@ def test_restart_reseeds_the_build_from_the_same_owned_meta_upgrades(tmp_path):
     save_meta_upgrade_levels({upgrade.id: 1}, upgrades_path)
 
     run = LabyrinthRun(gold_path=tmp_path / "gold.json", meta_upgrades_path=upgrades_path)
-    run.build.acquire(next(p for p in ALL_PERKS if p.effect_key == "pellet_value"))  # in-run pick, should reset
+    run.build.acquire(ALL_PERKS[0])  # in-run pick, should reset
     run.restart()
     assert run.build.enemy_resistance_multiplier == pytest.approx(upgrade.magnitude)  # meta upgrade persists
     assert run.build.picks == {}  # in-run pick did not

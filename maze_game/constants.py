@@ -100,9 +100,10 @@ ENEMY_MAX_COUNT    = 6
 ENEMY_RAMP_MAZES            = 10
 ENEMY_RAMP_START_MULTIPLIER = 0.25
 
-# Perk magnitudes (multiplicative -- stacking compounds, see progression/shop/perks.py).
-PELLET_FREQUENCY_PERK_MAGNITUDE = 1.2
-PELLET_VALUE_PERK_MAGNITUDE     = 1.3
+# Perk magnitudes (additive -- each pick adds one more charge/bonus unit,
+# see progression/shop/perks.py).
+ENEMY_SHIELD_CHARGES_PER_LEVEL = 1  # Bulwark: ignored enemy contacts per maze, per pick
+GOLD_RUSH_BONUS_PER_LEVEL      = 1  # Speedrunner: bonus gold on an under-par clear, per pick
 
 # Feedback popups: a brief floating "+Xs"/"-Xs" label wherever a pellet,
 # enemy, or maze-clear speed bonus changes the time resource, so the effect
@@ -129,7 +130,7 @@ GOLD_SPAWN_CHANCE = 0.3
 # are deliberately gentler than the equivalent in-run perk's, since a meta
 # upgrade's level accumulates indefinitely across every future run rather
 # than being capped by how many break screens one run has.
-META_PELLET_VALUE_MAGNITUDE     = 1.1   # +10% pellet time per level (vs. the in-run perk's +30%)
+META_PELLET_VALUE_MAGNITUDE     = 1.1   # +10% pellet time per level
 META_ENEMY_RESISTANCE_MAGNITUDE = 0.9   # -10% enemy damage per level
 META_UPGRADE_COST_BASE = 5
 META_UPGRADE_COST_STEP = 4
@@ -192,6 +193,7 @@ C_ENEMY     = (220, 60,   60)
 C_SPEED_BONUS = (100, 220, 255)  # distinct from C_PELLET, so a maze-clear time bonus reads as its own thing
 C_DOOR_LOCKED   = (170, 70,  40)   # brick -- was (140,40,40), colliding with C_ENEMY/C_GOAL
 C_DOOR_UNLOCKED = (60, 190, 170)   # teal -- was (90,180,90), colliding with C_PLAYER
+C_SHIELD        = (190, 210, 230)  # pale blue/silver -- Bulwark's "Shielded!" popup, distinct from C_ENEMY's red
 
 # Teleporter pairs: each pair drawn in its own colour (cycled by
 # pair.color_index if there are more pairs than colours), so linked cells
