@@ -10,7 +10,7 @@ retry in place, matching the project's existing "full reset, not a retry"
 framing).
 
 Pacing: every LABYRINTH_GROUP_SIZE-th maze pauses for a "power-up" break (a
-passive perk or an active item, drawn from shop/); every AUGMENT_INTERVAL-th
+passive perk, drawn from shop/); every AUGMENT_INTERVAL-th
 maze pauses for a "modifier" break (a maze augment choice, drawn from
 augments/); every MILESTONE_INTERVAL-th maze -- and always the
 LABYRINTH_TOTAL_MAZES-th (final) maze -- gets a one-off dimension spike
@@ -35,7 +35,7 @@ from maze_game.constants import (
     MIN_DIMENSION, MAX_DIMENSION, DIMENSION_STEP,
     MILESTONE_INTERVAL, MILESTONE_DIMENSION_BOOST, MILESTONE_MAX_DIMENSION,
     AUGMENT_INTERVAL, ENEMY_UNLOCK_MAZE,
-    SPEED_BONUS_TIME, SPEED_BONUS_SECONDS_PER_CELL, STOPWATCH_PAUSE_SECONDS,
+    SPEED_BONUS_TIME, SPEED_BONUS_SECONDS_PER_CELL,
     POPUP_DURATION_SECONDS, C_SPEED_BONUS,
 )
 from maze_game.maze import generate_maze, farthest_reachable_cell, shortest_path
@@ -46,8 +46,6 @@ from maze_game.progression.entities.hazards import (
     spawn_gold_pellets, load_gold_total, DEFAULT_GOLD_PATH,
 )
 from maze_game.progression.shop import offer_shop_cards
-from maze_game.progression.shop.perks import Perk
-from maze_game.progression.shop.items import Loadout
 from maze_game.progression.augments import AugmentBuild, run_pipeline, offer_augment_cards
 from maze_game.progression.augments.doors import Key
 from maze_game.progression.meta import MetaProgress, DEFAULT_META_UPGRADES_PATH
@@ -116,9 +114,6 @@ def dimensions_for_maze(maze_index: int) -> tuple[int, int]:
     return size, size
 
 
-DIRECTIONS = [(0, -1), (0, 1), (-1, 0), (1, 0)]
-
-
 class TimeResource:
     """
     The run's single persistent time budget. Ticks down by real elapsed
@@ -139,8 +134,8 @@ class TimeResource:
     def resync(self) -> None:
         """
         Reset the tick reference point to now. Call after any stretch where
-        tick() wasn't invoked (a shop-choice break, or a Stopwatch pause)
-        before ticking resumes -- otherwise the next tick() computes its
+        tick() wasn't invoked (a shop-choice break) before ticking resumes
+        -- otherwise the next tick() computes its
         delta against a stale timestamp from before the pause, charging the
         *entire* paused stretch as elapsed time in one lump the instant
         play resumes.
@@ -161,8 +156,8 @@ class TimeResource:
 class LabyrinthRun:
     """
     Owns the full progression state machine: current maze, the persistent
-    time resource, this maze's pellets/enemies, the player's perk build
-    and item loadout, group breaks, and pass/fail.
+    time resource, this maze's pellets/enemies, the player's perk build,
+    group breaks, and pass/fail.
     """
 
     def __init__(
@@ -179,7 +174,6 @@ class LabyrinthRun:
         self.failed = False
         self.completed_run = False
         self.time = TimeResource(LABYRINTH_START_TIME)
-        self.loadout = Loadout()
         self.augment_build = AugmentBuild()
         self.teleporters: list = []
         self._teleport_map: dict[tuple[int, int], tuple[int, int]] = {}
@@ -189,8 +183,6 @@ class LabyrinthRun:
         self.shop_choices: list | None = None
         self.augment_choices: list | None = None
         self.break_cursor = 0
-        self.stopwatch_until: float | None = None
-        self.last_squeak_at: float | None = None
         self.popups: list[Popup] = []
         self.events: list[str] = []
         # Gold is a persistent meta-currency, unlike time -- loaded once here
@@ -223,11 +215,6 @@ class LabyrinthRun:
         """Advance the timer and check win/timeout. Call once per frame."""
         now = time.monotonic()
         self.popups = [p for p in self.popups if now - p.created_at < POPUP_DURATION_SECONDS]
-        if self.stopwatch_until is not None:
-            if time.monotonic() >= self.stopwatch_until:
-                self.stopwatch_until = None
-                self.time.resync()  # same fix as the shop-break pause -- don't charge the pause itself
-            return  # fully paused either way: no tick, no movement, no win-check
         if self.on_break or self.failed or self.completed_run or self.finished:
             return
         self.time.tick()
@@ -244,25 +231,20 @@ class LabyrinthRun:
             self.events.append("maze_complete")
             self._advance()
 
-    def move(self, direction: tuple[int, int], junction_stop_count: int | None = 1, use_wall_breaker: bool = False) -> None:
+    def move(self, direction: tuple[int, int], junction_stop_count: int | None = 1) -> None:
         """
         junction_stop_count follows player.slide_path(): 1 (default) is a
         normal single-press move; None is the "hold spacebar" combo (run to
         the next wall, ignoring intersections); N>1 blows through the first
-        N-1 intersections reached. use_wall_breaker forces None (Wall
-        Breaker always behaves "as if holding spacebar") and additionally
-        lets the slide break through one non-border wall if a charge is
-        available.
+        N-1 intersections reached.
         """
         if self._is_gated():
             return
-        break_wall = self._try_break_wall if use_wall_breaker else None
         teleport = (lambda nx, ny: self._teleport_map.get((nx, ny))) if self._teleport_map else None
         door_locked = (lambda nx, ny: (nx, ny) in self._locked_doors) if self._locked_doors else None
         path = slide_path(
             self.grid, self.player, direction,
-            junction_stop_count=None if use_wall_breaker else junction_stop_count,
-            break_wall=break_wall,
+            junction_stop_count=junction_stop_count,
             teleport=teleport,
             door_locked=door_locked,
         )
@@ -276,30 +258,6 @@ class LabyrinthRun:
         self.events.append("teleport" if teleported else "move")
         self.player = path[-1]
         resolve_contacts(self, path)
-
-    def activate_laser(self) -> None:
-        """Fire in all 4 directions from the player's position, destroying any enemy hit (1 charge)."""
-        if self._is_gated() or not self.loadout.consume_charge("laser"):
-            return
-        hit_cells: set[tuple[int, int]] = set()
-        for direction in DIRECTIONS:
-            hit_cells.update(slide_path(self.grid, self.player, direction, junction_stop_count=None))
-        self.enemies = [e for e in self.enemies if e.pos not in hit_cells]
-        self.events.append("laser")
-
-    def activate_stopwatch(self) -> None:
-        """Pause the clock and block movement for STOPWATCH_PAUSE_SECONDS (1 charge)."""
-        if self._is_gated() or not self.loadout.consume_charge("stopwatch"):
-            return
-        self.stopwatch_until = time.monotonic() + STOPWATCH_PAUSE_SECONDS
-        self.events.append("stopwatch")
-
-    def activate_squeaky_toy(self) -> None:
-        """Does nothing except leave a timestamp the renderer can flash a "Squeak!" acknowledgment from."""
-        if self._is_gated():
-            return
-        self.last_squeak_at = time.monotonic()
-        self.events.append("squeak")
 
     def move_break_cursor(self, delta: int) -> None:
         """Move the keyboard-selected break card left/right (wraps), for whichever break (shop or augment) is currently active."""
@@ -316,14 +274,10 @@ class LabyrinthRun:
             self.choose_augment_card(index)
 
     def choose_shop_card(self, index: int) -> None:
-        """Apply the chosen card (a perk or an item), then resume (the next queued break, or the next maze)."""
+        """Apply the chosen perk, then resume (the next queued break, or the next maze)."""
         if self.break_kind != "shop" or self.shop_choices is None:
             return
-        card = self.shop_choices[index]
-        if isinstance(card, Perk):
-            self.build.acquire(card)
-        else:
-            self.loadout.acquire(card)
+        self.build.acquire(self.shop_choices[index])
         self.shop_choices = None
         self.events.append("card_select")
         self._resume_after_break()
@@ -358,13 +312,10 @@ class LabyrinthRun:
         self.shop_choices = None
         self.augment_choices = None
         self.break_cursor = 0
-        self.stopwatch_until = None
-        self.last_squeak_at = None
         self.popups = []
         self.events = []
         self.time = TimeResource(LABYRINTH_START_TIME)
         self.build = self.meta_progress.seed_build()  # reseeded, not reset to a plain Build() -- owned upgrades persist across restarts
-        self.loadout = Loadout()
         self.augment_build = AugmentBuild()
         self.teleporters = []
         self._teleport_map = {}
@@ -396,22 +347,10 @@ class LabyrinthRun:
         return None
 
     def _is_gated(self) -> bool:
-        return bool(
-            self.on_break or self.failed or self.completed_run or self.finished
-            or self.stopwatch_until is not None
-        )
+        return bool(self.on_break or self.failed or self.completed_run or self.finished)
 
     def _maze_cleared(self) -> bool:
         return self.player == self.goal
-
-    def _try_break_wall(self, nx: int, ny: int) -> bool:
-        if nx in (0, self.cols - 1) or ny in (0, self.rows - 1):
-            return False  # never break the border
-        if not self.loadout.consume_charge("wall_breaker"):
-            return False
-        self.grid[ny][nx] = 0
-        self.events.append("wall_break")
-        return True
 
     def _begin_maze(self) -> None:
         cols, rows = dimensions_for_maze(self.maze_index)

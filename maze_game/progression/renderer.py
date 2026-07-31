@@ -3,10 +3,10 @@ renderer.py
 -----------
 All pygame drawing code for the labyrinth progression mode: the maze,
 pellets/enemies/teleporter pads/doors and keys, HUD (time resource +
-maze/group progress + seed), the left sidebar (acquired perks, the 4 fixed Q/W/E/R
-item slots, and up to MAX_ACTIVE_AUGMENTS maze-modifier slots -- perks/items
-always draw their entire static catalog filled-or-not, augments draw only
-as many slots as can ever be simultaneously active), and the break-card
+maze/group progress + seed), the left sidebar (acquired perks, and up to
+MAX_ACTIVE_AUGMENTS maze-modifier slots -- perks draw their entire static
+catalog filled-or-not, augments draw only as many slots as can ever be
+simultaneously active), and the break-card
 screen that replaces the maze area during a power-up or maze-modifier
 break (`_draw_break_cards`, branching on `run.break_kind`). Layout owns the
 rect geometry so progression/app.py::run_labyrinth()'s click hit-testing
@@ -35,13 +35,11 @@ from maze_game.constants import (
 )
 from maze_game.media import sprites
 from maze_game.progression.shop.perks import ALL_PERKS
-from maze_game.progression.shop.items import ALL_ITEMS, UNLIMITED_ITEM_IDS
 from maze_game.progression.augments import AUGMENTS_BY_ID
 from maze_game.progression.run import LabyrinthRun
 
 MAZE_AREA_SIZE = 640  # fixed pixel viewport the maze renders within, at any dimension
 LOW_TIME_WARNING_SECONDS = 5.0
-SQUEAK_FLASH_SECONDS = 1.0
 
 CARD_MARGIN = 24
 CARD_GAP = 16
@@ -50,12 +48,9 @@ CARD_LINE_HEIGHT = 18
 
 BUILD_SQUARE_SIZE = 36
 BUILD_SQUARE_GAP = 12
-ITEMS_TITLE_Y = 180
-ITEMS_SUBTITLE_Y = 224
-ITEM_SQUARES_Y = 274
-AUGMENTS_TITLE_Y = 330
-AUGMENTS_SUBTITLE_Y = 374
-AUGMENT_SQUARES_Y = 424
+AUGMENTS_TITLE_Y = 180
+AUGMENTS_SUBTITLE_Y = 224
+AUGMENT_SQUARES_Y = 274
 TOOLTIP_PADDING = 8
 TOOLTIP_MAX_WIDTH = 260
 
@@ -112,12 +107,8 @@ class Layout:
             pygame.Rect(bx + i * (BUILD_SQUARE_SIZE + BUILD_SQUARE_GAP), 110, BUILD_SQUARE_SIZE, BUILD_SQUARE_SIZE)
             for i in range(len(ALL_PERKS))
         ]
-        self.item_squares = [
-            pygame.Rect(bx + i * (BUILD_SQUARE_SIZE + BUILD_SQUARE_GAP), ITEM_SQUARES_Y, BUILD_SQUARE_SIZE, BUILD_SQUARE_SIZE)
-            for i in range(len(ALL_ITEMS))
-        ]
         # Sized to MAX_ACTIVE_AUGMENTS fixed slots, not the full (still-growing)
-        # augment catalog -- unlike perks/items, which show their entire static
+        # augment catalog -- unlike perks, which show their entire static
         # catalog filled-or-not, only up to MAX_ACTIVE_AUGMENTS can ever be
         # active at once, so that's the right slot count regardless of how
         # many augments eventually exist.
@@ -162,12 +153,10 @@ class Renderer:
             self._draw_doors_and_keys(run, layout)
             self._draw_goal(run.goal, layout)
             self._draw_player(run.player, layout)
-            self._draw_squeak(run, layout)
             self._draw_popups(run, layout)
 
         self._draw_hud(run, layout)
         self._draw_build_sidebar(run.build, layout, mouse_pos)
-        self._draw_items_sidebar(run.loadout, layout, mouse_pos)
         self._draw_augment_sidebar(run.augment_build, layout, mouse_pos)
         self._draw_legend(layout)
 
@@ -293,15 +282,6 @@ class Renderer:
             r = max(1, cell // 5)
             pygame.draw.circle(self.surface, colour, (ox + x * cell + cell // 2, oy + y * cell + cell // 2), r)
 
-    def _draw_squeak(self, run: LabyrinthRun, layout: Layout) -> None:
-        if run.last_squeak_at is None or time.monotonic() - run.last_squeak_at > SQUEAK_FLASH_SECONDS:
-            return
-        ox, oy = layout.maze_origin
-        cell = layout.cell
-        px, py = run.player
-        label = self.font_big.render("Squeak!", True, C_FLASH)
-        self.surface.blit(label, (ox + px * cell + cell // 2 - label.get_width() // 2, oy + py * cell - cell))
-
     def _draw_popups(self, run: LabyrinthRun, layout: Layout) -> None:
         """Floating "+Xs"/"-Xs" labels for pellet/enemy/speed-bonus time changes -- rises and fades out over its lifetime."""
         ox, oy = layout.maze_origin
@@ -364,37 +344,6 @@ class Renderer:
 
         if hovered is not None:
             self._draw_tooltip(*hovered, mouse_pos)
-
-    # ── Items sidebar (Q/W/E/R active abilities) ──────────────────────────
-
-    def _draw_items_sidebar(self, loadout, layout: Layout, mouse_pos) -> None:
-        title = self.font_big.render("ITEMS", True, C_TEXT)
-        self.surface.blit(title, (layout.left.x + 16, ITEMS_TITLE_Y))
-        section = self.font_small.render("Q/W/E/R to use", True, C_DIM)
-        self.surface.blit(section, (layout.left.x + 16, ITEMS_SUBTITLE_Y))
-
-        hovered = None
-        for item, rect in zip(ALL_ITEMS, layout.item_squares):
-            count = loadout.picks.get(item.id, 0)
-            acquired = count > 0
-            colour = C_BUTTON_HOVER if (acquired and rect.collidepoint(mouse_pos)) else (C_BUTTON if acquired else C_PANEL_LINE)
-            pygame.draw.rect(self.surface, colour, rect, border_radius=4)
-
-            letter = self.font_small.render(item.slot_key, True, C_TEXT if acquired else C_DIM)
-            self.surface.blit(letter, (rect.x + 4, rect.y + 4))
-
-            if acquired and item.id not in UNLIMITED_ITEM_IDS:
-                charges = loadout.charges.get(item.id, 0)
-                badge = self.font_small.render(str(charges), True, C_TEXT)
-                self.surface.blit(badge, (rect.right - badge.get_width() - 4, rect.bottom - badge.get_height() - 2))
-
-            if acquired and rect.collidepoint(mouse_pos):
-                charge_label = "unlimited" if item.id in UNLIMITED_ITEM_IDS else f"x{loadout.charges.get(item.id, 0)} charges"
-                hovered = (f"{item.name} ({item.slot_key})", f"{item.description} [{charge_label}]", None)
-
-        if hovered is not None:
-            name_line, desc_line, _ = hovered
-            self._draw_tooltip(name_line, desc_line, None, mouse_pos)
 
     # ── Augments sidebar (maze modifiers) ─────────────────────────────────
 

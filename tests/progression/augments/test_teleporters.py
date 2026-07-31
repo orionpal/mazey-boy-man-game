@@ -211,29 +211,6 @@ def test_slide_path_teleport_is_a_noop_when_no_cell_is_linked():
     assert path == [(2, 1), (3, 1), (4, 1), (5, 1)]  # runs to the wall, same as with no teleport at all
 
 
-def test_slide_path_teleport_composes_with_break_wall():
-    # A 1-wide corridor with a wall between (2,1) and (3,1) that break_wall opens;
-    # (3,1) is a teleporter linked to (5,1).
-    grid = [row[:] for row in CORRIDOR_GRID]
-    grid[1][3] = 1  # wall between cell (2,1) and (4,1) at the (3,1) midpoint... use as a break target directly
-    broken = []
-
-    def break_wall(nx, ny):
-        broken.append((nx, ny))
-        grid[ny][nx] = 0
-        return True
-
-    teleport_map = {(3, 1): (5, 1)}
-    path = slide_path(
-        grid, (1, 1), (1, 0),
-        junction_stop_count=None,
-        break_wall=break_wall,
-        teleport=lambda x, y: teleport_map.get((x, y)),
-    )
-    assert (3, 1) in broken
-    assert path[-1] == (5, 1)
-
-
 # ── End-to-end solvability ────────────────────────────────────────────────
 
 

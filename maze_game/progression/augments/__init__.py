@@ -22,10 +22,9 @@ interface). Up to MAX_ACTIVE_AUGMENTS augments can be active in the same
 run, all composing through the same pipeline.
 
 Deliberately no generic contact()/render() hook here -- mirrors the
-project's existing precedent (shop/items.py: four different item mechanics
-get four dedicated LabyrinthRun methods rather than one forced
-abstraction; hazards.py/renderer.py: bespoke draw methods, not a generic
-dispatch). Augment.apply() is the only shared hook; an augment's run-time
+project's existing precedent (hazards.py/renderer.py: bespoke draw
+methods, not a generic dispatch). Augment.apply() is the only shared
+hook; an augment's run-time
 behaviour (e.g. teleporters.py's contact effect) wires directly into
 player.slide_path()/progression/renderer.py instead.
 

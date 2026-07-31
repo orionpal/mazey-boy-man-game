@@ -1,9 +1,8 @@
 """
 Tests for maze_game.progression.run -- dimension ramp, the persistent
 TimeResource, the LabyrinthRun state machine (sequencing, shop-choice
-breaks, timeout failure, restart), and pellet/enemy/item contact via
-move(). Perk/Build and Item/Loadout are tested in isolation under
-tests/progression/shop/.
+breaks, timeout failure, restart), and pellet/enemy contact via move().
+Perk/Build is tested in isolation under tests/progression/shop/.
 """
 
 import time
@@ -19,7 +18,6 @@ from maze_game.constants import (
 from maze_game.progression.run import dimensions_for_maze, is_milestone_maze, TimeResource, LabyrinthRun
 from maze_game.progression.entities.hazards import Pellet, GoldPellet, Enemy
 from maze_game.progression.shop.perks import ALL_PERKS, Perk
-from maze_game.progression.shop.items import ALL_ITEMS
 from maze_game.progression.augments.teleporters import TeleportersAugment
 from maze_game.progression.augments.doors import DoorKeyPair, Key
 
@@ -218,10 +216,9 @@ def test_completing_a_non_group_boundary_maze_advances_seamlessly(run):
 
 def test_completing_the_last_maze_of_a_group_offers_shop_choices():
     """
-    Shop choices are now a random draw of 3 from the combined pool of all
-    perks and items (confirmed: this replaces the old guaranteed-all-3-perks
-    behavior), so this only checks length and pool membership, not exact
-    identity.
+    Shop choices are a random draw of 3 from the full perk pool (confirmed:
+    this replaces the old guaranteed-all-3-perks behavior), so this only
+    checks length and pool membership, not exact identity.
     """
     run = LabyrinthRun()
     for _ in range(LABYRINTH_GROUP_SIZE):
@@ -230,9 +227,8 @@ def test_completing_the_last_maze_of_a_group_offers_shop_choices():
         run.update()
     assert run.on_break is True
     assert run.maze_index == LABYRINTH_GROUP_SIZE  # doesn't advance until choose_shop_card()
-    assert len(run.shop_choices) == 3
-    pool = list(ALL_PERKS) + list(ALL_ITEMS)
-    assert all(card in pool for card in run.shop_choices)
+    assert len(run.shop_choices) == min(3, len(ALL_PERKS))
+    assert all(card in ALL_PERKS for card in run.shop_choices)
 
 
 def test_choose_shop_card_applies_the_card_and_advances_past_the_break():
@@ -249,10 +245,7 @@ def test_choose_shop_card_applies_the_card_and_advances_past_the_break():
     assert "card_select" in run.events
     assert run.maze_index == LABYRINTH_GROUP_SIZE + 1
     assert (run.cols, run.rows) == (MIN_DIMENSION + DIMENSION_STEP, MIN_DIMENSION + DIMENSION_STEP)
-    if isinstance(chosen, Perk):
-        assert run.build.picks == {chosen.id: 1}
-    else:
-        assert run.loadout.picks == {chosen.id: 1}
+    assert run.build.picks == {chosen.id: 1}
 
 
 def test_choose_shop_card_is_a_no_op_when_not_on_break(run):
@@ -850,147 +843,3 @@ def test_move_with_number_combo_collects_pellets_it_now_passes_through():
     assert run.player == (4, 1)
     assert run.pellets == []
     assert run.time.amount == pytest.approx(before + 1.0 * run.build.pellet_value_multiplier)
-
-
-# ── Active items (Q/W/E/R) ────────────────────────────────────────────────
-# Hand-built grids drive LabyrinthRun.move()/activate_*() deterministically,
-# same approach as the corridor grids above.
-
-WALL_BREAKER_GRID = [
-    [1, 1, 1, 1, 1],
-    [1, 0, 1, 0, 1],
-    [1, 1, 1, 1, 1],
-]
-
-
-def _wall_breaker_run() -> LabyrinthRun:
-    run = _corridor_run()
-    run.grid = [row[:] for row in WALL_BREAKER_GRID]
-    run.player = (1, 1)
-    run.goal = (3, 1)
-    return run
-
-
-def test_wall_breaker_breaks_a_non_border_wall_and_continues():
-    run = _wall_breaker_run()
-    run.loadout.charges["wall_breaker"] = 1
-    run.move((1, 0), use_wall_breaker=True)
-    assert run.grid[1][2] == 0  # the wall is now open
-    assert run.player == (3, 1)  # slide continued through it
-    assert run.loadout.charges["wall_breaker"] == 0
-    assert "wall_break" in run.events
-
-
-def test_wall_breaker_without_a_charge_stops_at_the_wall():
-    run = _wall_breaker_run()
-    run.move((1, 0), use_wall_breaker=True)
-    assert run.grid[1][2] == 1  # unchanged
-    assert run.player == (1, 1)  # never moved -- stopped immediately at the wall
-    assert "wall_break" not in run.events
-
-
-def test_wall_breaker_refuses_to_break_the_border_wall():
-    run = _corridor_run()
-    run.grid = [
-        [1, 1, 1],
-        [1, 0, 1],
-        [1, 1, 1],
-    ]
-    run.player = (1, 1)
-    run.loadout.charges["wall_breaker"] = 5
-    run.move((-1, 0), use_wall_breaker=True)
-    assert run.grid[1][0] == 1  # border wall never broken
-    assert run.player == (1, 1)  # never moved
-    assert run.loadout.charges["wall_breaker"] == 5  # border check precedes the charge check
-    assert "wall_break" not in run.events
-
-
-LASER_ROOM_GRID = [
-    [1, 1, 1, 1, 1],
-    [1, 0, 0, 0, 1],
-    [1, 0, 0, 0, 1],
-    [1, 0, 0, 0, 1],
-    [1, 1, 1, 1, 1],
-]
-
-
-def _laser_room_run() -> LabyrinthRun:
-    run = _corridor_run()
-    run.grid = [row[:] for row in LASER_ROOM_GRID]
-    run.player = (2, 2)  # centre of the 3x3 open room
-    run.goal = None
-    return run
-
-
-def test_activate_laser_destroys_enemies_on_a_cardinal_ray_but_not_off_it():
-    run = _laser_room_run()
-    on_ray = Enemy((2, 1))       # directly above the player -- hit
-    off_ray = Enemy((1, 1))      # corner, not on any of the 4 rays -- survives
-    run.enemies = [on_ray, off_ray]
-    run.loadout.charges["laser"] = 1
-    run.activate_laser()
-    assert run.enemies == [off_ray]
-    assert run.loadout.charges["laser"] == 0
-    assert run.events == ["laser"]
-
-
-def test_activate_laser_without_a_charge_is_a_no_op():
-    run = _laser_room_run()
-    enemy = Enemy((2, 1))
-    run.enemies = [enemy]
-    run.activate_laser()
-    assert run.enemies == [enemy]
-    assert run.events == []
-
-
-def test_activate_stopwatch_pauses_time_and_blocks_movement_then_resyncs():
-    """Mirrors test_choosing_a_perk_does_not_retroactively_charge_the_break_duration -- same resync fix, applied to the Stopwatch pause."""
-    run = _corridor_run()
-    run.loadout.charges["stopwatch"] = 1
-    run.activate_stopwatch()
-    assert run.stopwatch_until is not None
-    assert run.loadout.charges["stopwatch"] == 0
-    assert run.events == ["stopwatch"]
-
-    pos_before = run.player
-    run.move((1, 0))
-    assert run.player == pos_before  # movement blocked while paused
-    assert run.events == ["stopwatch"]  # move() was gated -- no "move" event appended
-
-    before_time = run.time.amount
-    run.update()  # still paused -- no tick, no resync yet
-    assert run.time.amount == pytest.approx(before_time)
-    assert run.stopwatch_until is not None
-
-    run.stopwatch_until = time.monotonic() - 0.01  # force elapsed
-    run.time._last_tick -= 30.0  # simulate 30s of real time spent paused
-    run.update()  # the first frame after the pause ends
-    assert run.stopwatch_until is None
-    assert run.time.amount == pytest.approx(before_time, abs=0.05)  # resynced, pause not charged
-
-
-def test_activate_stopwatch_without_a_charge_is_a_no_op():
-    run = _corridor_run()
-    run.activate_stopwatch()
-    assert run.stopwatch_until is None
-    assert run.events == []
-
-
-def test_activate_squeaky_toy_sets_a_timestamp_and_needs_no_charge():
-    run = _corridor_run()
-    assert run.last_squeak_at is None
-    run.activate_squeaky_toy()
-    assert run.last_squeak_at is not None
-    assert run.loadout.charges.get("squeaky_toy", 0) == 0  # unlimited -- never consumes a charge
-    assert run.events == ["squeak"]
-
-
-def test_activate_squeaky_toy_is_a_no_op_once_failed():
-    run = _corridor_run()
-    run.time.amount = 0.0
-    run.update()
-    assert run.failed is True
-    assert run.events == ["fail"]
-    run.activate_squeaky_toy()
-    assert run.last_squeak_at is None
-    assert run.events == ["fail"]  # gated -- no "squeak" appended

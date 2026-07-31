@@ -33,7 +33,6 @@ def slide_path(
     direction: tuple[int, int],
     *,
     junction_stop_count: int | None = 1,
-    break_wall: Callable[[int, int], bool] | None = None,
     teleport: Callable[[int, int], tuple[int, int] | None] | None = None,
     door_locked: Callable[[int, int], bool] | None = None,
 ) -> list[tuple[int, int]]:
@@ -59,13 +58,7 @@ def slide_path(
         "hold spacebar" combo, for running a corridor out to its end.
 
     Normally also stops the instant the next cell would be a wall or out of
-    bounds. If `break_wall` is given, it's offered the chance to override an
-    in-bounds wall stop: called as `break_wall(nx, ny)`, and if it returns
-    True (having mutated `grid[ny][nx]` to open, which is this hook's
-    responsibility, not this function's -- `slide_path` stays maze/charge-
-    agnostic, just "ask, and if yes, treat this cell as open now"), the
-    slide continues straight through it instead of stopping. Out-of-bounds
-    is never offered to `break_wall` -- there's no cell there to open.
+    bounds.
 
     If `teleport` is given, it's checked against every newly-entered cell:
     called as `teleport(cx, cy)`, and if it returns a cell (rather than
@@ -77,10 +70,9 @@ def slide_path(
     next direction" feel already used for junctions.
 
     If `door_locked` is given, it's checked against a candidate next cell
-    that's grid-*open* (mutually exclusive with the `break_wall` branch --
-    a locked door is never offered to Wall Breaker): called as
-    `door_locked(nx, ny)`, and if it returns True, the slide stops there,
-    exactly like an un-openable wall. This lets a cell be grid-open (so
+    that's grid-*open*: called as `door_locked(nx, ny)`, and if it returns
+    True, the slide stops there, exactly like an un-openable wall. This
+    lets a cell be grid-open (so
     every BFS-based helper -- shortest_path, farthest_reachable_cell, etc.
     -- treats it as ordinarily passable) while still being impassable to
     real movement until whatever `door_locked` is checking against changes
@@ -100,9 +92,7 @@ def slide_path(
             break
 
         if grid[ny][nx] == 1:
-            if break_wall is None or not break_wall(nx, ny):
-                break
-            # break_wall() has opened (nx, ny); fall through and move into it.
+            break
         elif door_locked is not None and door_locked(nx, ny):
             break
 

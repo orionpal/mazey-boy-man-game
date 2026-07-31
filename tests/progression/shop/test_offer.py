@@ -7,15 +7,13 @@ import random
 
 from maze_game.progression.shop import offer_shop_cards, SHOP_CARDS_OFFERED
 from maze_game.progression.shop.perks import ALL_PERKS
-from maze_game.progression.shop.items import ALL_ITEMS
 
 
-def test_offer_shop_cards_draws_from_the_combined_pool():
+def test_offer_shop_cards_draws_from_the_perk_pool():
     random.seed(1)
     cards = offer_shop_cards()
-    assert len(cards) == SHOP_CARDS_OFFERED
-    pool = list(ALL_PERKS) + list(ALL_ITEMS)
-    assert all(card in pool for card in cards)
+    assert len(cards) == min(SHOP_CARDS_OFFERED, len(ALL_PERKS))
+    assert all(card in ALL_PERKS for card in cards)
 
 
 def test_offer_shop_cards_with_explicit_rng_is_deterministic():

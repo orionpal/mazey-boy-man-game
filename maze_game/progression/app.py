@@ -80,18 +80,9 @@ def run_labyrinth(window: Window, clock: pygame.time.Clock) -> str:
                         run.choose_break_card(run.break_cursor)
                     elif event.key in SHOP_CHOICE_KEYS:
                         run.choose_break_card(SHOP_CHOICE_KEYS[event.key])
-                elif event.key == pygame.K_w:
-                    run.activate_laser()
-                elif event.key == pygame.K_e:
-                    run.activate_stopwatch()
-                elif event.key == pygame.K_r:
-                    run.activate_squeaky_toy()
                 elif event.key in DIRECTION_MAP:
                     keys_held = pygame.key.get_pressed()
-                    if keys_held[pygame.K_q]:
-                        run.move(DIRECTION_MAP[event.key], use_wall_breaker=True)
-                    else:
-                        run.move(DIRECTION_MAP[event.key], _junction_stop_count(keys_held))
+                    run.move(DIRECTION_MAP[event.key], _junction_stop_count(keys_held))
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 and run.on_break:
                 layout = Layout(run.cols, run.rows)
                 for index, card in enumerate(layout.cards):
@@ -111,7 +102,7 @@ def run_labyrinth(window: Window, clock: pygame.time.Clock) -> str:
 
 
 def _try_purchase(progress: MetaProgress, upgrade) -> None:
-    """Silent no-op if unaffordable -- same "just doesn't happen" precedent as e.g. activating an item with no charges."""
+    """Silent no-op if unaffordable -- no error sound/popup, it just doesn't happen."""
     if progress.purchase(upgrade):
         sound.play("card_select")  # reuses the existing "a choice was confirmed" event
 

@@ -104,12 +104,6 @@ ENEMY_RAMP_START_MULTIPLIER = 0.25
 PELLET_FREQUENCY_PERK_MAGNITUDE = 1.2
 PELLET_VALUE_PERK_MAGNITUDE     = 1.3
 
-# Items (progression/shop/items.py): Q/W/E/R active abilities, each gated by
-# a charge count in Loadout (except Squeaky Toy, which is unlimited).
-# Wall Breaker and Laser have no other numeric knobs -- their effect is a
-# single wall-open / all-enemies-in-4-directions action, not a magnitude.
-STOPWATCH_PAUSE_SECONDS = 5.0  # seconds paused per Stopwatch charge used
-
 # Feedback popups: a brief floating "+Xs"/"-Xs" label wherever a pellet,
 # enemy, or maze-clear speed bonus changes the time resource, so the effect
 # is legible in the moment instead of only visible via the HUD ticking.
