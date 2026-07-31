@@ -25,7 +25,7 @@ from maze_game.constants import (
     SIDEBAR_W, HUD_HEIGHT, LABYRINTH_TOTAL_MAZES,
     C_BG, C_WALL, C_FLOOR, C_PLAYER, C_GOAL, C_TEXT, C_DIM, C_FLASH, C_HUD_BG,
     C_PANEL_BG, C_PANEL_LINE, C_BUTTON, C_BUTTON_HOVER,
-    C_PELLET, C_ENEMY, C_BOSS_IDLE, C_BOSS_ACTIVE,
+    C_PELLET, C_ENEMY, C_BOSS_IDLE, C_BOSS_ACTIVE, C_TELEPORT_PAIRS,
 )
 from maze_game.progression.shop.perks import ALL_PERKS
 from maze_game.progression.shop.items import ALL_ITEMS, UNLIMITED_ITEM_IDS
@@ -129,6 +129,7 @@ class Renderer:
             self._draw_maze(run.grid, layout)
             self._draw_pellets(run.pellets, layout)
             self._draw_enemies(run.enemies, layout)
+            self._draw_teleporters(run.teleporters, layout)
             if run.boss is not None:
                 self._draw_boss(run.boss, layout)
             else:
@@ -192,6 +193,16 @@ class Renderer:
                 self.surface, C_ENEMY,
                 pygame.Rect(ox + x * cell + pad, oy + y * cell + pad, cell - 2 * pad, cell - 2 * pad),
             )
+
+    def _draw_teleporters(self, teleporters, layout: Layout) -> None:
+        ox, oy = layout.maze_origin
+        cell = layout.cell
+        pad = max(1, cell // 5)
+        for pair in teleporters:
+            colour = C_TELEPORT_PAIRS[pair.color_index % len(C_TELEPORT_PAIRS)]
+            for x, y in (pair.a, pair.b):
+                rect = pygame.Rect(ox + x * cell + pad, oy + y * cell + pad, cell - 2 * pad, cell - 2 * pad)
+                pygame.draw.rect(self.surface, colour, rect, width=max(2, cell // 8))
 
     def _draw_boss(self, boss, layout: Layout) -> None:
         ox, oy = layout.maze_origin

@@ -90,6 +90,20 @@ STRENGTH_PERK_MAGNITUDE         = 1.5
 # single wall-open / all-enemies-in-4-directions action, not a magnitude.
 STOPWATCH_PAUSE_SECONDS = 5.0  # seconds paused per Stopwatch charge used
 
+# Teleporting squares (progression/augments/teleporters.py): the first maze
+# augment. Pair count and how many of those pairs are load-bearing (the
+# goal is unreachable without using them) both scale with the augment's
+# level (its pick count in AugmentBuild -- see progression/augments/), same
+# density-formula shape as pellets/enemies above.
+TELEPORT_PAIR_COUNT_BASE        = 3   # "a handful" of pairs at level 1
+TELEPORT_PAIR_COUNT_STEP        = 1   # extra pairs per level above 1
+TELEPORT_PAIR_COUNT_MAX         = 6
+TELEPORT_MANDATORY_COUNT_BASE   = 1   # every pick guarantees >=1 real gate, never a no-op pick
+TELEPORT_MANDATORY_COUNT_STEP   = 1   # extra mandatory pairs per level, capped at pair count
+TELEPORT_POCKET_MIN_SIZE        = 3   # cells sealed off behind one mandatory pair
+TELEPORT_POCKET_MAX_SIZE        = 8
+TELEPORT_PLACEMENT_MAX_ATTEMPTS = 10  # retries per gated pocket before giving up on it (graceful degradation, never a crash/hang)
+
 # ── Colours  (R, G, B) ────────────────────────────────────────────────────
 C_BG        = (15,  15,  25)
 C_WALL      = (40,  80, 140)
@@ -108,3 +122,15 @@ C_PELLET    = (230, 210,  70)
 C_ENEMY     = (200, 60,   60)
 C_BOSS_IDLE = (230, 90,  200)
 C_BOSS_ACTIVE = (120, 40, 110)
+
+# Teleporter pairs: each pair drawn in its own colour (cycled by
+# pair.color_index if there are more pairs than colours), so linked cells
+# are visually identifiable as belonging to each other.
+C_TELEPORT_PAIRS = [
+    (80,  200, 230),
+    (230, 160, 60),
+    (170, 100, 230),
+    (120, 220, 160),
+    (230, 90,  140),
+    (210, 210, 90),
+]

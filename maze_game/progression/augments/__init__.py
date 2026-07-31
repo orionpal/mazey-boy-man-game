@@ -25,15 +25,13 @@ Deliberately no generic contact()/render() hook here -- mirrors the
 project's existing precedent (shop/items.py: four different item mechanics
 get four dedicated LabyrinthRun methods rather than one forced
 abstraction; hazards/boss/renderer.py: bespoke draw methods, not a generic
-dispatch). Augment.apply() is the only shared hook; a concrete augment's
-run-time behaviour (contact effects, rendering) wires directly into
-player.slide_path()/progression/renderer.py instead, in its own sibling
-module.
+dispatch). Augment.apply() is the only shared hook; an augment's run-time
+behaviour (e.g. teleporters.py's contact effect) wires directly into
+player.slide_path()/progression/renderer.py instead.
 
-ALL_AUGMENTS/AUGMENTS_BY_ID start empty here -- concrete augments (the
-first being teleporting squares) register themselves into this registry
-from their own module, keeping this file free of forward references to
-augments that don't exist yet.
+NOTE: with ALL_AUGMENTS currently holding just the one shipped augment
+(teleporters), every modifier break necessarily offers a single forced
+card until more augments are built -- expected, not a bug.
 """
 
 from __future__ import annotations
@@ -160,3 +158,13 @@ def offer_augment_cards(
 
 ALL_AUGMENTS: list[Augment] = []
 AUGMENTS_BY_ID: dict[str, Augment] = {}
+
+# Deferred import: teleporters.py imports Augment/AugmentContext/ALL_AUGMENTS
+# from this module, so the registration step has to happen down here, after
+# they're defined, not at the top of the file (that would be circular).
+from maze_game.progression.augments.teleporters import TeleportersAugment  # noqa: E402
+
+for _augment in (TeleportersAugment(),):
+    ALL_AUGMENTS.append(_augment)
+    AUGMENTS_BY_ID[_augment.id] = _augment
+del _augment

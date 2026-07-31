@@ -33,6 +33,7 @@ from maze_game.progression.entities.boss import Boss, is_boss_maze
 from maze_game.progression.shop import offer_shop_cards
 from maze_game.progression.shop.perks import Build, Perk
 from maze_game.progression.shop.items import Loadout
+from maze_game.progression.augments import AugmentBuild, run_pipeline
 
 START_POS: tuple[int, int] = (1, 1)
 
@@ -117,6 +118,9 @@ class LabyrinthRun:
         self.time = TimeResource(LABYRINTH_START_TIME)
         self.build = Build()
         self.loadout = Loadout()
+        self.augment_build = AugmentBuild()
+        self.teleporters: list = []
+        self._teleport_map: dict[tuple[int, int], tuple[int, int]] = {}
         self.shop_choices: list | None = None
         self.shop_cursor = 0
         self.stopwatch_until: float | None = None
@@ -157,10 +161,12 @@ class LabyrinthRun:
         if self._is_gated():
             return
         break_wall = self._try_break_wall if use_wall_breaker else None
+        teleport = (lambda nx, ny: self._teleport_map.get((nx, ny))) if self._teleport_map else None
         path = slide_path(
             self.grid, self.player, direction,
             junction_stop_count=None if use_wall_breaker else junction_stop_count,
             break_wall=break_wall,
+            teleport=teleport,
         )
         if not path:
             return
@@ -231,6 +237,9 @@ class LabyrinthRun:
         self.time = TimeResource(LABYRINTH_START_TIME)
         self.build = Build()
         self.loadout = Loadout()
+        self.augment_build = AugmentBuild()
+        self.teleporters = []
+        self._teleport_map = {}
         self._begin_maze()
 
     @property
@@ -267,23 +276,38 @@ class LabyrinthRun:
         self.grid = generate_maze(cols, rows, rng=self.rng)
         self.player = START_POS
 
+        # Augments (e.g. teleporting squares) are a post-process over the
+        # freshly-generated grid -- generate_maze() itself stays untouched.
+        # Applies to boss mazes too: `ctx.goal` doubles as "the boss's
+        # placement" there, same as the pre-augment target selection did.
+        default_target = farthest_reachable_cell(self.grid, START_POS)
+        ctx = run_pipeline(self.grid, cols, rows, START_POS, default_target, self.augment_build, self.rng)
+        self.grid = ctx.grid
+        self.teleporters = ctx.extra.get("teleporters", [])
+        self._teleport_map = {}
+        for pair in self.teleporters:
+            self._teleport_map[pair.a] = pair.b
+            self._teleport_map[pair.b] = pair.a
+
         if is_boss_maze(self.maze_index):
             self.goal = None
-            boss_pos = farthest_reachable_cell(self.grid, START_POS)
+            boss_pos = ctx.goal
             encounter_index = self.maze_index // BOSS_INTERVAL - 1
             self.boss = Boss(boss_pos, hp=BOSS_BASE_HP + BOSS_HP_STEP * encounter_index)
             self.pellets = []
             self.enemies = []
         else:
-            self.goal = farthest_reachable_cell(self.grid, START_POS)
+            self.goal = ctx.goal
             self.boss = None
-            exclude = {START_POS, self.goal}
+            exclude = {START_POS, self.goal} | ctx.reserved
             self.pellets = spawn_pellets(self.grid, exclude, self.build.pellet_frequency_multiplier, rng=self.rng)
             exclude = exclude | {p.pos for p in self.pellets}
             self.enemies = spawn_enemies(self.grid, exclude, rng=self.rng) if self.maze_index >= ENEMY_UNLOCK_MAZE else []
 
         target = self.boss.pos if self.boss is not None else self.goal
-        self._par_seconds = SPEED_BONUS_SECONDS_PER_CELL * len(shortest_path(self.grid, START_POS, target))
+        self._par_seconds = SPEED_BONUS_SECONDS_PER_CELL * len(
+            shortest_path(self.grid, START_POS, target, extra_edges=self._teleport_map)
+        )
         self._maze_started_at = time.monotonic()
         self.finished = False
 

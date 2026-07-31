@@ -34,6 +34,7 @@ def slide_path(
     *,
     junction_stop_count: int | None = 1,
     break_wall: Callable[[int, int], bool] | None = None,
+    teleport: Callable[[int, int], tuple[int, int] | None] | None = None,
 ) -> list[tuple[int, int]]:
     """
     Slide the player from `pos` in `direction`, returning every cell entered
@@ -64,6 +65,15 @@ def slide_path(
     agnostic, just "ask, and if yes, treat this cell as open now"), the
     slide continues straight through it instead of stopping. Out-of-bounds
     is never offered to `break_wall` -- there's no cell there to open.
+
+    If `teleport` is given, it's checked against every newly-entered cell:
+    called as `teleport(cx, cy)`, and if it returns a cell (rather than
+    None), the slide immediately warps there and stops -- one hop per call,
+    no momentum carried through the link. Stopping (rather than continuing
+    in `direction` from the linked cell) sidesteps needing extra state to
+    guard against bouncing back and forth through a pair, and matches the
+    existing "you always land exactly on a stopping cell, then choose your
+    next direction" feel already used for junctions.
     """
     cols = len(grid[0])
     rows = len(grid)
@@ -85,6 +95,13 @@ def slide_path(
 
         cx, cy = nx, ny
         path.append((cx, cy))
+
+        if teleport is not None:
+            dest = teleport(cx, cy)
+            if dest is not None:
+                cx, cy = dest
+                path.append((cx, cy))
+                break
 
         # Stop at an intersection once junction_stop_count of them have been reached.
         if _open_neighbour_count(grid, cx, cy) > 2:
