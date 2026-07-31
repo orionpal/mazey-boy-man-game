@@ -172,6 +172,14 @@ def test_enemy_on_contact_adds_a_popup_at_its_position():
     assert color == C_ENEMY
 
 
+def test_enemy_on_contact_scales_the_penalty_by_enemy_resistance():
+    run = _FakeRun()
+    run.build.enemy_resistance_multiplier = 0.5
+    enemy = Enemy((1, 1))
+    enemy.on_contact(run)
+    assert run.time.amount == pytest.approx(10.0 - ENEMY_TIME_PENALTY * 0.5)
+
+
 def test_enemy_on_contact_appends_the_enemy_hit_sound_event():
     run = _FakeRun()
     Enemy((1, 1)).on_contact(run)

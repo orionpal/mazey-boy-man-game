@@ -37,10 +37,11 @@ def _isolate_gold_file(tmp_path, monkeypatch):
     """
     Every LabyrinthRun() in this file (there are dozens, unlike Game's
     single history_path-taking fixture) should never touch the real
-    on-disk gold.json -- patching the module-level default the __init__
-    falls back to isolates all of them at once.
+    on-disk gold.json/meta_upgrades.json -- patching the module-level
+    defaults the __init__ falls back to isolates all of them at once.
     """
     monkeypatch.setattr("maze_game.progression.run.DEFAULT_GOLD_PATH", tmp_path / "gold.json")
+    monkeypatch.setattr("maze_game.progression.run.DEFAULT_META_UPGRADES_PATH", tmp_path / "meta_upgrades.json")
 
 
 # ── dimensions_for_maze ───────────────────────────────────────────────────
@@ -375,6 +376,31 @@ def test_restart_does_not_reset_gold():
     run.gold = 5
     run.restart()
     assert run.gold == 5
+
+
+def test_owned_meta_upgrades_seed_the_starting_build(tmp_path):
+    from maze_game.progression.meta import ALL_META_UPGRADES, save_meta_upgrade_levels
+
+    upgrade = next(u for u in ALL_META_UPGRADES if u.id == "pellet_bonus")
+    upgrades_path = tmp_path / "meta_upgrades.json"
+    save_meta_upgrade_levels({upgrade.id: 2}, upgrades_path)
+
+    run = LabyrinthRun(gold_path=tmp_path / "gold.json", meta_upgrades_path=upgrades_path)
+    assert run.build.pellet_value_multiplier == pytest.approx(upgrade.magnitude ** 2)
+
+
+def test_restart_reseeds_the_build_from_the_same_owned_meta_upgrades(tmp_path):
+    from maze_game.progression.meta import ALL_META_UPGRADES, save_meta_upgrade_levels
+
+    upgrade = next(u for u in ALL_META_UPGRADES if u.id == "enemy_resistance")
+    upgrades_path = tmp_path / "meta_upgrades.json"
+    save_meta_upgrade_levels({upgrade.id: 1}, upgrades_path)
+
+    run = LabyrinthRun(gold_path=tmp_path / "gold.json", meta_upgrades_path=upgrades_path)
+    run.build.acquire(next(p for p in ALL_PERKS if p.effect_key == "pellet_value"))  # in-run pick, should reset
+    run.restart()
+    assert run.build.enemy_resistance_multiplier == pytest.approx(upgrade.magnitude)  # meta upgrade persists
+    assert run.build.picks == {}  # in-run pick did not
 
 
 def test_completing_the_final_maze_sets_completed_run_not_on_break():

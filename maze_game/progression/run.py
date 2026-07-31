@@ -46,10 +46,11 @@ from maze_game.progression.entities.hazards import (
     spawn_gold_pellets, load_gold_total, DEFAULT_GOLD_PATH,
 )
 from maze_game.progression.shop import offer_shop_cards
-from maze_game.progression.shop.perks import Build, Perk
+from maze_game.progression.shop.perks import Perk
 from maze_game.progression.shop.items import Loadout
 from maze_game.progression.augments import AugmentBuild, run_pipeline, offer_augment_cards
 from maze_game.progression.augments.doors import Key
+from maze_game.progression.meta import MetaProgress, DEFAULT_META_UPGRADES_PATH
 
 START_POS: tuple[int, int] = (1, 1)
 
@@ -164,7 +165,12 @@ class LabyrinthRun:
     and item loadout, group breaks, and pass/fail.
     """
 
-    def __init__(self, seed: int | None = None, gold_path: Path | None = None) -> None:
+    def __init__(
+        self,
+        seed: int | None = None,
+        gold_path: Path | None = None,
+        meta_upgrades_path: Path | None = None,
+    ) -> None:
         self.seed = seed if seed is not None else _random_seed()
         self.rng = random.Random(self.seed)
         self.maze_index = 1
@@ -173,7 +179,6 @@ class LabyrinthRun:
         self.failed = False
         self.completed_run = False
         self.time = TimeResource(LABYRINTH_START_TIME)
-        self.build = Build()
         self.loadout = Loadout()
         self.augment_build = AugmentBuild()
         self.teleporters: list = []
@@ -190,12 +195,22 @@ class LabyrinthRun:
         self.events: list[str] = []
         # Gold is a persistent meta-currency, unlike time -- loaded once here
         # and never reset by restart() (see restart()'s docstring/comment).
-        # DEFAULT_GOLD_PATH is looked up here (not as the parameter's default
-        # value) so tests can monkeypatch it and isolate every LabyrinthRun()
-        # construction from the real on-disk gold.json, same as conftest.py
-        # does for it.
+        # DEFAULT_GOLD_PATH/DEFAULT_META_UPGRADES_PATH are looked up here
+        # (not as the parameters' default values) so tests can monkeypatch
+        # them and isolate every LabyrinthRun() construction from the real
+        # on-disk files, same as conftest.py does for it.
         self.gold_path = gold_path if gold_path is not None else DEFAULT_GOLD_PATH
         self.gold = load_gold_total(self.gold_path)
+        meta_upgrades_path = meta_upgrades_path if meta_upgrades_path is not None else DEFAULT_META_UPGRADES_PATH
+        # Owned meta upgrades (purchased in the Base, between runs -- see
+        # progression/meta/) seed the starting Build. Loaded from disk once
+        # here, not reloaded by restart() -- meta progress can't change
+        # mid-run, only the Base (which always runs before a new one
+        # starts) purchases -- but restart() still reseeds self.build from
+        # this same self.meta_progress, so owned upgrades keep applying to
+        # every run, not just the very first one.
+        self.meta_progress = MetaProgress(self.gold_path, meta_upgrades_path)
+        self.build = self.meta_progress.seed_build()
         self._begin_maze()
 
     # ── Public API ────────────────────────────────────────────────────────
@@ -348,7 +363,7 @@ class LabyrinthRun:
         self.popups = []
         self.events = []
         self.time = TimeResource(LABYRINTH_START_TIME)
-        self.build = Build()
+        self.build = self.meta_progress.seed_build()  # reseeded, not reset to a plain Build() -- owned upgrades persist across restarts
         self.loadout = Loadout()
         self.augment_build = AugmentBuild()
         self.teleporters = []

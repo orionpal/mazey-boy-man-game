@@ -67,7 +67,7 @@ class Enemy(MazeEntity):
     penalty: float = ENEMY_TIME_PENALTY
 
     def on_contact(self, run: "LabyrinthRun") -> None:
-        apply_time_penalty(run, self.penalty, self.pos)
+        apply_time_penalty(run, self.penalty * run.build.enemy_resistance_multiplier, self.pos)
 
 
 ENEMY_TYPES: list[type[Enemy]] = [Enemy]
