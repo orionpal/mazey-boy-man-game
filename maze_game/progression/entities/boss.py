@@ -80,5 +80,6 @@ class Boss(MazeEntity):
     def on_contact(self, run: "LabyrinthRun") -> None:
         if self.phase == "idle":
             self.hp -= BOSS_BASE_DAMAGE * run.build.strength_multiplier
+            run.events.append("boss_damage")
         else:
             apply_time_penalty(run, ENEMY_TIME_PENALTY, self.pos)

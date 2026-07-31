@@ -34,6 +34,7 @@ class Pellet(MazeEntity):
         amount = self.value * run.build.pellet_value_multiplier
         run.time.add(amount)
         run.add_popup(self.pos, f"+{amount:.1f}s", C_PELLET)
+        run.events.append("pellet")
 
 
 class Enemy(MazeEntity):

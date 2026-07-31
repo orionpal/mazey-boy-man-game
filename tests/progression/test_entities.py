@@ -35,6 +35,7 @@ class _FakeRun:
         self.time = _FakeTimeResource()
         self.build = Build()
         self.popups = []
+        self.events = []
 
     def add_popup(self, pos, text, color):
         self.popups.append((pos, text, color))
@@ -74,6 +75,12 @@ def test_pellet_on_contact_adds_a_popup_with_the_scaled_amount():
     assert color == C_PELLET
 
 
+def test_pellet_on_contact_appends_the_pellet_sound_event():
+    run = _FakeRun()
+    Pellet((1, 1)).on_contact(run)
+    assert run.events == ["pellet"]
+
+
 # ── Enemy ─────────────────────────────────────────────────────────────────
 
 
@@ -93,6 +100,12 @@ def test_enemy_on_contact_adds_a_popup_at_its_position():
     assert pos == (2, 3)
     assert text == f"-{ENEMY_TIME_PENALTY:.1f}s"
     assert color == C_ENEMY
+
+
+def test_enemy_on_contact_appends_the_enemy_hit_sound_event():
+    run = _FakeRun()
+    Enemy((1, 1)).on_contact(run)
+    assert run.events == ["enemy_hit"]
 
 
 def test_enemy_types_registry_contains_the_base_type():
@@ -271,6 +284,7 @@ def test_boss_on_contact_damages_hp_while_idle():
     boss.on_contact(run)
     assert boss.hp == pytest.approx(5 - BOSS_BASE_DAMAGE * 2.0)
     assert run.time.amount == pytest.approx(10.0)  # no time cost while idle
+    assert run.events == ["boss_damage"]
 
 
 def test_boss_on_contact_costs_time_while_active():
@@ -280,6 +294,7 @@ def test_boss_on_contact_costs_time_while_active():
     boss.on_contact(run)
     assert boss.hp == 5  # no damage while active
     assert run.time.amount == pytest.approx(10.0 - ENEMY_TIME_PENALTY)
+    assert run.events == ["enemy_hit"]  # shares apply_time_penalty()'s event with a regular enemy hit
 
 
 def test_boss_defeated_when_hp_at_or_below_zero():

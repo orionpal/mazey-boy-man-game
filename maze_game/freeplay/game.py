@@ -28,6 +28,10 @@ class Game:
         self.rows = DEFAULT_ROWS
         self.history_path = history_path
         self.history: list[RunRecord] = load_history(history_path)
+        # Event-name strings for mvp_main.py/freeplay/app.py to play sounds
+        # for -- see docs/assets.md. Drained once per frame by the loop, not
+        # reset by new_maze() (it's a per-frame buffer, not round state).
+        self.events: list[str] = []
         # Kick off the first maze immediately.
         self.new_maze()
 
@@ -87,12 +91,16 @@ class Game:
             self.finished = True
             record = new_record(self.cols, self.rows, self.elapsed)
             self.history = append_record(self.history, record, self.history_path)
+            self.events.append("maze_complete")
 
     def move(self, direction: tuple[int, int]) -> None:
         """Slide the player in `direction` (ignored after the maze is solved)."""
         if self.finished:
             return
-        self.player = slide(self.grid, self.player, direction)
+        new_pos = slide(self.grid, self.player, direction)
+        if new_pos != self.player:
+            self.events.append("move")
+        self.player = new_pos
 
 
 def _clamp_odd(value: int) -> int:

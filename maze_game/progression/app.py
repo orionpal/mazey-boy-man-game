@@ -4,12 +4,20 @@ app.py
 The labyrinth-run event loop, factored out of main.py so it can be reused
 both by that entry point's menu and (if ever needed) elsewhere without
 duplicating the loop.
+
+Also the sound side of asset-readiness (see docs/assets.md): LabyrinthRun
+reports what happened each frame via run.events (a plain list of event-name
+strings, same idea as its add_popup() mechanism) rather than calling
+pygame.mixer itself -- run.py stays a pure state machine, independent of
+pygame. This loop drains and clears that list once per frame, playing
+whatever sound (if any) exists for each event.
 """
 
 import pygame
 from pygame._sdl2.video import Window
 
 from maze_game.constants import FPS
+from maze_game.media import sound
 from maze_game.progression.run import LabyrinthRun
 from maze_game.progression.renderer import Renderer, Layout
 
@@ -87,6 +95,10 @@ def run_labyrinth(window: Window, clock: pygame.time.Clock) -> str:
                         break
 
         run.update()
+        for event_name in run.events:
+            sound.play(event_name)
+        run.events.clear()
+
         renderer.set_surface(sync_window_size(window, Renderer.window_size(run.cols, run.rows)))
         renderer.draw(run)
         pygame.display.flip()

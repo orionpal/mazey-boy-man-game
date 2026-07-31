@@ -4,12 +4,19 @@ app.py
 The free-play event loop, factored out of mvp_main.py so it can be reused
 both by that standalone entry point and by main.py's "Relax" menu option
 without duplicating the loop.
+
+Also the sound side of asset-readiness (see docs/assets.md): Game reports
+what happened each frame via game.events (a plain list of event-name
+strings) rather than calling pygame.mixer itself, keeping it a pure state
+machine. This loop drains and clears that list once per frame, playing
+whatever sound (if any) exists for each event.
 """
 
 import pygame
 from pygame._sdl2.video import Window
 
 from maze_game.constants import FPS
+from maze_game.media import sound
 from maze_game.freeplay.game import Game
 from maze_game.freeplay.renderer import Renderer, Layout
 
@@ -72,6 +79,10 @@ def run_freeplay(window: Window, clock: pygame.time.Clock) -> str:
                     game.adjust_rows(1)
 
         game.update()
+        for event_name in game.events:
+            sound.play(event_name)
+        game.events.clear()
+
         renderer.set_surface(sync_window_size(window, Renderer.window_size(game.cols, game.rows, len(game.history))))
         renderer.draw(
             grid      = game.grid,

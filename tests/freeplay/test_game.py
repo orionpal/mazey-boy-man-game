@@ -126,6 +126,61 @@ def test_best_time_is_seeded_from_history_on_a_fresh_session(tmp_path):
     assert new_session.best_time == pytest.approx(3.0, abs=0.05)
 
 
+# ── Sound events (game.events) ───────────────────────────────────────────
+# A hand-built straight corridor, same technique used in
+# tests/progression/test_run.py, so move() is deterministic instead of
+# depending on a randomly-generated maze's layout.
+
+CORRIDOR_GRID = [
+    [1, 1, 1, 1, 1],
+    [1, 0, 0, 0, 1],
+    [1, 1, 1, 1, 1],
+]
+
+
+def test_move_into_open_space_appends_the_move_event(game):
+    game.grid = [row[:] for row in CORRIDOR_GRID]
+    game.player = (1, 1)
+    game.goal = (3, 1)
+    game.move((1, 0))
+    assert game.player == (3, 1)
+    assert game.events == ["move"]
+
+
+def test_move_into_a_wall_appends_no_event(game):
+    game.grid = [row[:] for row in CORRIDOR_GRID]
+    game.player = (1, 1)
+    game.goal = (3, 1)
+    game.move((0, -1))  # straight into the border wall
+    assert game.player == (1, 1)
+    assert game.events == []
+
+
+def test_reaching_goal_appends_the_maze_complete_event(game):
+    game.player = game.goal
+    game.update()
+    assert game.events == ["maze_complete"]
+
+
+def test_finishing_does_not_reappend_the_maze_complete_event(game):
+    game.player = game.goal
+    game.update()
+    game.events.clear()  # simulate the loop layer draining events, same as progression/app.py
+    game.update()  # already finished -- should be a no-op, no event re-appended
+    assert game.events == []
+
+
+def test_new_maze_does_not_clear_events(game):
+    """events is a per-frame buffer drained by the loop layer, not round state -- new_maze() must not touch it."""
+    game.grid = [row[:] for row in CORRIDOR_GRID]
+    game.player = (1, 1)
+    game.goal = (3, 1)
+    game.move((1, 0))
+    assert game.events == ["move"]
+    game.new_maze()
+    assert game.events == ["move"]
+
+
 # ── Adjustable dimensions ────────────────────────────────────────────────
 
 

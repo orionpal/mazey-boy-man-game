@@ -165,6 +165,7 @@ def test_choose_shop_card_applies_the_card_and_advances_past_the_break():
     run.choose_shop_card(0)
     assert run.on_break is False
     assert run.shop_choices is None
+    assert "card_select" in run.events
     assert run.maze_index == LABYRINTH_GROUP_SIZE + 1
     assert (run.cols, run.rows) == (MIN_DIMENSION + DIMENSION_STEP, MIN_DIMENSION + DIMENSION_STEP)
     if isinstance(chosen, Perk):
@@ -312,9 +313,11 @@ def test_maze_10_completion_stacks_shop_then_augment():
     run._advance()
     assert run.break_kind == "shop"
     run.choose_break_card(0)
+    assert run.events == ["card_select"]
     assert run.break_kind == "augment"
     assert run.augment_choices is not None
     run.choose_break_card(0)
+    assert run.events == ["card_select", "card_select"]
     assert run.on_break is False
     assert run.maze_index == 11
 
@@ -501,12 +504,25 @@ def test_completing_a_maze_quickly_adds_a_speed_bonus_popup(run):
     assert any(p.text == f"+{SPEED_BONUS_TIME:.1f}s" and p.pos == goal for p in run.popups)
 
 
+def test_completing_a_maze_quickly_appends_speed_bonus_and_maze_complete_events(run):
+    run.player = run.goal
+    run.update()
+    assert run.events == ["speed_bonus", "maze_complete"]
+
+
 def test_completing_a_maze_slowly_does_not_award_a_speed_bonus(run):
     run._maze_started_at -= (run._par_seconds + 5.0)
     before = run.time.amount
     run.player = run.goal
     run.update()
     assert run.time.amount <= before  # no bonus, only the tiny real-time tick
+
+
+def test_completing_a_maze_slowly_appends_only_the_maze_complete_event(run):
+    run._maze_started_at -= (run._par_seconds + 5.0)
+    run.player = run.goal
+    run.update()
+    assert run.events == ["maze_complete"]
 
 
 # ── Boss mazes ────────────────────────────────────────────────────────────
@@ -582,6 +598,70 @@ def test_move_hitting_an_enemy_adds_a_popup_at_its_position():
     assert len(run.popups) == 1
     assert run.popups[0].pos == (2, 1)
     assert run.popups[0].text == f"-{ENEMY_TIME_PENALTY:.1f}s"
+
+
+# ── Sound events (run.events) ────────────────────────────────────────────
+
+
+def test_move_appends_the_move_event():
+    run = _corridor_run()
+    run.move((1, 0))
+    assert run.events == ["move"]
+
+
+def test_move_collecting_a_pellet_appends_move_and_pellet_events():
+    run = _corridor_run()
+    run.pellets = [Pellet((2, 1), value=4.0)]
+    run.move((1, 0))
+    assert run.events == ["move", "pellet"]
+
+
+def test_move_hitting_an_enemy_appends_move_and_enemy_hit_events():
+    run = _corridor_run()
+    run.enemies = [Enemy((2, 1))]
+    run.move((1, 0))
+    assert run.events == ["move", "enemy_hit"]
+
+
+def test_move_that_does_not_move_the_player_appends_no_event():
+    run = _corridor_run()
+    run.move((0, 1))  # into a wall from (1, 1) in CORRIDOR_GRID
+    assert run.player == (1, 1)
+    assert run.events == []
+
+
+TELEPORT_GRID = [
+    [1, 1, 1, 1, 1],
+    [1, 0, 0, 0, 1],
+    [1, 1, 1, 1, 1],
+]
+
+
+def _teleport_run() -> LabyrinthRun:
+    run = LabyrinthRun()
+    run.grid = [row[:] for row in TELEPORT_GRID]
+    run.player = (1, 1)
+    run.goal = (3, 1)
+    run.pellets = []
+    run.enemies = []
+    run.boss = None
+    run._teleport_map = {(2, 1): (3, 1)}
+    return run
+
+
+def test_moving_through_a_teleporter_appends_the_teleport_event_not_move():
+    run = _teleport_run()
+    run.move((1, 0))
+    assert run.player == (3, 1)
+    assert run.events == ["teleport"]
+
+
+def test_restart_clears_events():
+    run = _corridor_run()
+    run.move((1, 0))
+    assert run.events != []
+    run.restart()
+    assert run.events == []
 
 
 # ── Popups ────────────────────────────────────────────────────────────────
@@ -699,6 +779,7 @@ def test_wall_breaker_breaks_a_non_border_wall_and_continues():
     assert run.grid[1][2] == 0  # the wall is now open
     assert run.player == (3, 1)  # slide continued through it
     assert run.loadout.charges["wall_breaker"] == 0
+    assert "wall_break" in run.events
 
 
 def test_wall_breaker_without_a_charge_stops_at_the_wall():
@@ -706,6 +787,7 @@ def test_wall_breaker_without_a_charge_stops_at_the_wall():
     run.move((1, 0), use_wall_breaker=True)
     assert run.grid[1][2] == 1  # unchanged
     assert run.player == (1, 1)  # never moved -- stopped immediately at the wall
+    assert "wall_break" not in run.events
 
 
 def test_wall_breaker_refuses_to_break_the_border_wall():
@@ -721,6 +803,7 @@ def test_wall_breaker_refuses_to_break_the_border_wall():
     assert run.grid[1][0] == 1  # border wall never broken
     assert run.player == (1, 1)  # never moved
     assert run.loadout.charges["wall_breaker"] == 5  # border check precedes the charge check
+    assert "wall_break" not in run.events
 
 
 LASER_ROOM_GRID = [
@@ -749,6 +832,7 @@ def test_activate_laser_destroys_enemies_on_a_cardinal_ray_but_not_off_it():
     run.activate_laser()
     assert run.enemies == [off_ray]
     assert run.loadout.charges["laser"] == 0
+    assert run.events == ["laser"]
 
 
 def test_activate_laser_without_a_charge_is_a_no_op():
@@ -757,6 +841,7 @@ def test_activate_laser_without_a_charge_is_a_no_op():
     run.enemies = [enemy]
     run.activate_laser()
     assert run.enemies == [enemy]
+    assert run.events == []
 
 
 def test_activate_stopwatch_pauses_time_and_blocks_movement_then_resyncs():
@@ -766,10 +851,12 @@ def test_activate_stopwatch_pauses_time_and_blocks_movement_then_resyncs():
     run.activate_stopwatch()
     assert run.stopwatch_until is not None
     assert run.loadout.charges["stopwatch"] == 0
+    assert run.events == ["stopwatch"]
 
     pos_before = run.player
     run.move((1, 0))
     assert run.player == pos_before  # movement blocked while paused
+    assert run.events == ["stopwatch"]  # move() was gated -- no "move" event appended
 
     before_time = run.time.amount
     run.update()  # still paused -- no tick, no resync yet
@@ -787,6 +874,7 @@ def test_activate_stopwatch_without_a_charge_is_a_no_op():
     run = _corridor_run()
     run.activate_stopwatch()
     assert run.stopwatch_until is None
+    assert run.events == []
 
 
 def test_activate_squeaky_toy_sets_a_timestamp_and_needs_no_charge():
@@ -795,6 +883,7 @@ def test_activate_squeaky_toy_sets_a_timestamp_and_needs_no_charge():
     run.activate_squeaky_toy()
     assert run.last_squeak_at is not None
     assert run.loadout.charges.get("squeaky_toy", 0) == 0  # unlimited -- never consumes a charge
+    assert run.events == ["squeak"]
 
 
 def test_activate_squeaky_toy_is_a_no_op_once_failed():
@@ -802,5 +891,7 @@ def test_activate_squeaky_toy_is_a_no_op_once_failed():
     run.time.amount = 0.0
     run.update()
     assert run.failed is True
+    assert run.events == ["fail"]
     run.activate_squeaky_toy()
     assert run.last_squeak_at is None
+    assert run.events == ["fail"]  # gated -- no "squeak" appended

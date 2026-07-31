@@ -165,6 +165,7 @@ class LabyrinthRun:
         self.stopwatch_until: float | None = None
         self.last_squeak_at: float | None = None
         self.popups: list[Popup] = []
+        self.events: list[str] = []
         self._begin_maze()
 
     # ── Public API ────────────────────────────────────────────────────────
@@ -187,12 +188,15 @@ class LabyrinthRun:
         self.time.tick()
         if self.time.depleted:
             self.failed = True
+            self.events.append("fail")
             return
         if self._maze_cleared():
             if time.monotonic() - self._maze_started_at <= self._par_seconds:
                 self.time.add(SPEED_BONUS_TIME)
                 self.add_popup(self.player, f"+{SPEED_BONUS_TIME:.1f}s", C_SPEED_BONUS)
+                self.events.append("speed_bonus")
             self.finished = True
+            self.events.append("maze_complete")
             self._advance()
 
     def move(self, direction: tuple[int, int], junction_stop_count: int | None = 1, use_wall_breaker: bool = False) -> None:
@@ -217,6 +221,12 @@ class LabyrinthRun:
         )
         if not path:
             return
+        # A teleport fired if the second-to-last cell entered maps (via
+        # _teleport_map) to the last one -- slide_path() always appends the
+        # entrance immediately followed by the exit and stops right there
+        # (see player.py), so this pair is the exact, sufficient signature.
+        teleported = len(path) >= 2 and self._teleport_map.get(path[-2]) == path[-1]
+        self.events.append("teleport" if teleported else "move")
         if self.boss is not None:
             self.boss.advance(self.player, self.grid)
         self.player = path[-1]
@@ -230,18 +240,21 @@ class LabyrinthRun:
         for direction in DIRECTIONS:
             hit_cells.update(slide_path(self.grid, self.player, direction, junction_stop_count=None))
         self.enemies = [e for e in self.enemies if e.pos not in hit_cells]
+        self.events.append("laser")
 
     def activate_stopwatch(self) -> None:
         """Pause the clock and block movement for STOPWATCH_PAUSE_SECONDS (1 charge)."""
         if self._is_gated() or not self.loadout.consume_charge("stopwatch"):
             return
         self.stopwatch_until = time.monotonic() + STOPWATCH_PAUSE_SECONDS
+        self.events.append("stopwatch")
 
     def activate_squeaky_toy(self) -> None:
         """Does nothing except leave a timestamp the renderer can flash a "Squeak!" acknowledgment from."""
         if self._is_gated():
             return
         self.last_squeak_at = time.monotonic()
+        self.events.append("squeak")
 
     def move_break_cursor(self, delta: int) -> None:
         """Move the keyboard-selected break card left/right (wraps), for whichever break (shop or augment) is currently active."""
@@ -267,6 +280,7 @@ class LabyrinthRun:
         else:
             self.loadout.acquire(card)
         self.shop_choices = None
+        self.events.append("card_select")
         self._resume_after_break()
 
     def choose_augment_card(self, index: int) -> None:
@@ -275,6 +289,7 @@ class LabyrinthRun:
             return
         self.augment_build.acquire(self.augment_choices[index])
         self.augment_choices = None
+        self.events.append("card_select")
         self._resume_after_break()
 
     def restart(self, same_seed: bool = False) -> None:
@@ -297,6 +312,7 @@ class LabyrinthRun:
         self.stopwatch_until = None
         self.last_squeak_at = None
         self.popups = []
+        self.events = []
         self.time = TimeResource(LABYRINTH_START_TIME)
         self.build = Build()
         self.loadout = Loadout()
@@ -342,6 +358,7 @@ class LabyrinthRun:
         if not self.loadout.consume_charge("wall_breaker"):
             return False
         self.grid[ny][nx] = 0
+        self.events.append("wall_break")
         return True
 
     def _begin_maze(self) -> None:

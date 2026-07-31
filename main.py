@@ -22,6 +22,7 @@ import pygame
 from pygame._sdl2.video import Window
 
 from maze_game.constants import FPS
+from maze_game.media import sound
 from maze_game.menu import MainMenu
 from maze_game.menu.renderer import MenuRenderer
 from maze_game.progression.app import run_labyrinth
@@ -49,14 +50,18 @@ def run_menu(window: Window, clock: pygame.time.Clock) -> str | None:
                     return None
                 elif event.key in (pygame.K_UP, pygame.K_LEFT):
                     menu.move_cursor(-1)
+                    sound.play("menu_move")
                 elif event.key in (pygame.K_DOWN, pygame.K_RIGHT):
                     menu.move_cursor(1)
+                    sound.play("menu_move")
                 elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
+                    sound.play("menu_select")
                     return menu.selected_mode
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 for index, rect in enumerate(renderer.option_rects()):
                     if rect.collidepoint(event.pos):
                         menu.cursor = index
+                        sound.play("menu_select")
                         return menu.selected_mode
 
         renderer.draw(menu, pygame.mouse.get_pos())

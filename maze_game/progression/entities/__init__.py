@@ -33,6 +33,7 @@ def apply_time_penalty(run: "LabyrinthRun", amount: float, pos: tuple[int, int])
     """Shared time-cost helper used by both Enemy.on_contact and an active-phase Boss hit."""
     run.time.spend(amount)
     run.add_popup(pos, f"-{amount:.1f}s", C_ENEMY)
+    run.events.append("enemy_hit")
 
 
 def resolve_contacts(run: "LabyrinthRun", path: list[tuple[int, int]]) -> None:
