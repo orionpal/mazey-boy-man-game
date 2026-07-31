@@ -2,12 +2,13 @@
 
 A minimal, keyboard-driven maze game built with Python and pygame.
 
-The main experience (`main.py`) is a **labyrinth progression run**: 100
-mazes, gradually growing in size, each with its own time limit. Press an
-arrow key and your dot slides in that direction until it hits a wall or
-reaches a junction — then you choose again. There's also a simpler
-**free-play mode** (`mvp_main.py`) for practicing without a timer: a single
-maze at a time, with adjustable size and a run-history log.
+`main.py` opens to a menu with two modes. **Labyrinth Run** is the main
+experience: 100 mazes, gradually growing in size, sharing one time budget
+for the whole run. Press an arrow key and your dot slides in that direction
+until it hits a wall or reaches a junction — then you choose again.
+**Relax (Free Play)** is a single maze at a time, adjustable size, no
+timer, with a run-history log — for practicing, or just wandering without
+pressure (also runnable directly via `mvp_main.py`, skipping the menu).
 
 ---
 
@@ -48,8 +49,8 @@ pip install -r requirements.txt
 ### 4. Run the game
 
 ```bash
-python main.py      # labyrinth mode: 100 mazes, gradually bigger, timed -- see docs/progression.md
-python mvp_main.py  # free play: adjustable size, no time limit
+python main.py      # opens a menu: Labyrinth Run (timed, see docs/progression.md) or Relax (free play, no timer)
+python mvp_main.py  # skips the menu, straight into Relax/free play
 ```
 
 ---

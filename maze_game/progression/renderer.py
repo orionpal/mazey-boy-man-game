@@ -9,8 +9,9 @@ always draw their entire static catalog filled-or-not, augments draw only
 as many slots as can ever be simultaneously active), and the break-card
 screen that replaces the maze area during a power-up or maze-modifier
 break (`_draw_break_cards`, branching on `run.break_kind`). Layout owns the
-rect geometry so main.py's click hit-testing (break cards) uses the same
-rects draw() paints with, mirroring freeplay/renderer.py's convention.
+rect geometry so progression/app.py::run_labyrinth()'s click hit-testing
+(break cards) uses the same rects draw() paints with, mirroring
+freeplay/renderer.py's convention.
 
 The window is a fixed size regardless of maze dimensions: the maze renders
 inside a static MAZE_AREA_SIZE viewport, with per-cell pixel size shrinking
@@ -75,7 +76,7 @@ def _wrap_text(font: pygame.font.Font, text: str, max_width: int) -> list[str]:
 
 
 class Layout:
-    """Computed rects for the current cols/rows -- shared by draw() and main.py's click handling."""
+    """Computed rects for the current cols/rows -- shared by draw() and progression/app.py::run_labyrinth()'s click handling."""
 
     def __init__(self, cols: int, rows: int) -> None:
         self.cell = max(1, MAZE_AREA_SIZE // max(cols, rows))

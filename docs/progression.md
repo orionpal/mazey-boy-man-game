@@ -460,11 +460,16 @@ pair.
 - No persistent history/leaderboard for labyrinth runs (unlike free-play's
   `run_history.json`) — didn't want to lock in a record schema before the
   numbers above are even validated by playing it.
-- `main.py` is a minimal, separate entry point rather than integrated into
-  free-play's (`mvp_main.py`) sidebar UI — free-play's sidebars (dimension
-  adjustment, history log) don't apply to a structured progression run, and
-  building a unified shell felt premature before knowing whether this
-  pacing is even fun. Worth merging once it is.
+- ~~`main.py` is a minimal, separate entry point rather than integrated into
+  free-play's (`mvp_main.py`) sidebar UI~~ — **done**: `main.py` now opens
+  to a menu (`maze_game/menu.py`/`menu_renderer.py`) offering both modes.
+  Each mode's event loop was factored out into its own package
+  (`progression/app.py::run_labyrinth()`, `freeplay/app.py::run_freeplay()`)
+  so `main.py`'s menu and `mvp_main.py`'s standalone launch share the exact
+  same loop rather than duplicating it — free-play's sidebars (dimension
+  adjustment, history log) still don't apply to a structured progression
+  run, so this is a shared *launcher*, not a merged UI shell; each mode
+  still owns its own renderer/layout.
 - See `docs/planning/future-ideas.md` for a longer backlog of mechanics
   considered but deliberately deferred (stances, limited wall-breaking as a
   maze-gen requirement, and others now partially overlapping with the
