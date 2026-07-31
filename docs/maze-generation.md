@@ -181,3 +181,25 @@ of those, the maze was unsolvable: confirmed in ~18% of generated mazes
 sliding mechanic can actually stop on. Full writeup, plus a related
 under-counting bug in the labyrinth mode's time-limit estimate, in
 `docs/progression.md`.
+
+## Update: teleporting squares shipped using exactly the predicted pattern
+
+The "When true grid-level WFC would actually be worth it" section above
+named teleporters directly as the kind of topology-changing tile that
+would need "real WFC/constraint-solving with a generate → BFS-connectivity-
+check → retry loop," not just the tile-skin-pool idea — since it changes
+what's *reachable*, not just what a cell looks like. That's exactly what
+`progression/augments/teleporters.py` does now: it's a post-process step
+over `generate_maze()`'s output (not a change to the generator itself, so
+`generate_maze(cols, rows) -> grid` stays the stable interface this doc
+already committed to), which seals off a pocket of the maze, verifies the
+result with `bfs_reachable()` *and* a real-move simulation (plain
+grid-adjacency reachability isn't sufficient once entering a cell can
+force an unconditional redirect — see `docs/progression.md`'s "Maze
+augments" section for why), and rejects-and-retries on failure. Not
+literal Wave Function Collapse, but the same shape the escalation path
+here anticipated — closing that open thread with what actually got built.
+This is also the template `docs/planning/future-ideas.md`'s remaining
+maze-augment backlog (multi-level mazes, shifting maze, reverse controls,
+lights out) is expected to follow if/when any of them turn out to also be
+reachability-changing rather than purely decorative.

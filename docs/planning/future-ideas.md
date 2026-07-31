@@ -43,3 +43,36 @@ typically have banked by maze N."
 
 ## 5. Trap doors, puzzle elements, collectors, portals, false wall
 
+## 6. Maze augments -- IN PROGRESS, see docs/progression.md and docs/maze-generation.md
+
+A pool of generation-time maze modifiers, chosen every `AUGMENT_INTERVAL`
+(10) mazes alongside the existing perk/item shop, each able to level up on
+repeat picks (more/harder effect) and up to `MAX_ACTIVE_AUGMENTS` (4)
+composable at once in a single run. Architecture: `progression/augments/`
+(`Augment`, `AugmentContext`, `AugmentBuild`, `run_pipeline()`,
+`offer_augment_cards()`) is a post-process pipeline over `generate_maze()`'s
+output -- `generate_maze(cols, rows) -> grid` itself stays untouched, per
+`docs/maze-generation.md`'s "Proposed near-term plan". Every future augment
+plugs into the same registry (`ALL_AUGMENTS`) and composes through the same
+pipeline without a rewrite.
+
+Starting list:
+
+- **Teleporting squares -- SHIPPED first**, `progression/augments/teleporters.py`.
+  Seals a "pocket" of the maze off from the rest (re-walled boundary,
+  verified with `bfs_reachable()` *and* a real-move simulation -- see
+  `docs/progression.md`), reachable only via a linked teleporter pad pair.
+  Level 1 places a handful of pairs with one mandatory; higher levels add
+  more pairs and make more of them mandatory, each nested one pocket deeper
+  than the last.
+- **Multi-level mazes** -- not started. Named extension point in the
+  registry; no generation logic exists yet.
+- **Shifting maze** -- not started.
+- **Reverse controls** -- not started.
+- **Lights out** -- not started.
+
+The last four are pure backlog: naming them here reserves their place in
+the augment pool and pacing, nothing more. Pull one into an actual design
+(generation-time pass, run-time hook, rendering) when it's time to build it
+-- teleporting squares is the concrete template for what that involves.
+
