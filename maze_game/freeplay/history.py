@@ -13,7 +13,9 @@ from dataclasses import dataclass, asdict
 from datetime import datetime
 from pathlib import Path
 
-DEFAULT_HISTORY_PATH = Path(__file__).resolve().parent.parent.parent / "run_history.json"
+from maze_game.constants import APP_ROOT
+
+DEFAULT_HISTORY_PATH = APP_ROOT / "run_history.json"
 
 
 @dataclass(frozen=True)

@@ -22,14 +22,14 @@ from maze_game.constants import (
     GOLD_PELLET_VALUE, GOLD_SPAWN_CHANCE, C_GOLD,
     HAZARD_TIME_PENALTY, HAZARD_DENSITY, HAZARD_MAX_COUNT,
     HAZARD_UNLOCK_MAZE, HAZARD_RAMP_MAZES, HAZARD_RAMP_START_MULTIPLIER,
-    C_PELLET, C_SHIELD,
+    C_PELLET, C_SHIELD, APP_ROOT,
 )
 from maze_game.progression.entities import MazeEntity, apply_time_penalty
 
 if TYPE_CHECKING:
     from maze_game.progression.run import LabyrinthRun
 
-DEFAULT_GOLD_PATH = Path(__file__).resolve().parent.parent.parent.parent / "gold.json"
+DEFAULT_GOLD_PATH = APP_ROOT / "gold.json"
 
 
 class Pellet(MazeEntity):

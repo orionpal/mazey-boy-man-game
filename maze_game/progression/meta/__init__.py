@@ -24,12 +24,12 @@ from pathlib import Path
 
 from maze_game.constants import (
     META_PELLET_VALUE_MAGNITUDE, META_HAZARD_RESISTANCE_MAGNITUDE,
-    META_UPGRADE_COST_BASE, META_UPGRADE_COST_STEP,
+    META_UPGRADE_COST_BASE, META_UPGRADE_COST_STEP, APP_ROOT,
 )
 from maze_game.progression.entities.hazards import DEFAULT_GOLD_PATH, load_gold_total, save_gold_total
 from maze_game.progression.shop.perks import Build, EFFECTS
 
-DEFAULT_META_UPGRADES_PATH = Path(__file__).resolve().parent.parent.parent.parent / "meta_upgrades.json"
+DEFAULT_META_UPGRADES_PATH = APP_ROOT / "meta_upgrades.json"
 
 
 @dataclass(frozen=True)

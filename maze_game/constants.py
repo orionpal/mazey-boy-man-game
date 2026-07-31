@@ -5,6 +5,21 @@ All tuneable game settings live here. Change values in this file to
 customise the look and feel without touching game logic.
 """
 
+import sys
+from pathlib import Path
+
+# ── Persistent save-file location ───────────────────────────────────────────
+# gold.json/meta_upgrades.json/run_history.json all live next to APP_ROOT. In
+# a normal checkout that's the repo root (__file__-relative). In a
+# PyInstaller-frozen build (sys.frozen), __file__ instead resolves inside the
+# temp extraction dir that's wiped after every run -- saves would silently
+# reset on each launch -- so a frozen build routes this next to the .exe
+# itself instead, which persists across runs and travels with it if moved.
+if getattr(sys, "frozen", False):
+    APP_ROOT = Path(sys.executable).resolve().parent
+else:
+    APP_ROOT = Path(__file__).resolve().parent.parent
+
 # ── Grid dimensions ────────────────────────────────────────────────────────
 # Cols/rows are runtime-adjustable via the left sidebar (see Game.set_dimensions),
 # these are just the starting values. Must stay odd (the maze carver requires

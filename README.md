@@ -75,6 +75,11 @@ run it) to play. A couple of things worth knowing:
   an ELF binary. There's no cross-compiling from one to produce another.
 - **`build/` and `dist/`** are gitignored — treat them as disposable output,
   regenerate with the command above whenever you want a fresh binary.
+- **Saves live next to the executable**: `gold.json`/`meta_upgrades.json`/
+  `run_history.json` are created beside whatever `.exe` (or binary) you're
+  running, not in some fixed install location — so the whole thing (progress
+  included) travels as one file. Sharing a fresh copy with someone gives them
+  a fresh save; copying *their* `.exe` back preserves it.
 
 ---
 
