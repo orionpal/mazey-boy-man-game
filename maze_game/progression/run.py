@@ -240,7 +240,7 @@ class LabyrinthRun:
         teleported = len(path) >= 2 and self._teleport_map.get(path[-2]) == path[-1]
         self.events.append("teleport" if teleported else "move")
         if self.boss is not None:
-            self.boss.advance(self.player, self.grid)
+            self.boss.advance(self.player, self.grid, extra_edges=self._teleport_map)
         self.player = path[-1]
         resolve_contacts(self, path)
 

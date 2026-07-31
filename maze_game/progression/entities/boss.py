@@ -68,11 +68,22 @@ class Boss(MazeEntity):
     def defeated(self) -> bool:
         return self.hp <= 0
 
-    def advance(self, player_pos: tuple[int, int], grid: list[list[int]]) -> None:
-        """Call once per player move, before resolving contact for that move."""
+    def advance(
+        self,
+        player_pos: tuple[int, int],
+        grid: list[list[int]],
+        extra_edges: dict[tuple[int, int], tuple[int, int]] | None = None,
+    ) -> None:
+        """
+        Call once per player move, before resolving contact for that move.
+        `extra_edges` should be the run's teleport map -- a boss maze can
+        place the boss inside a pocket that's only reachable through a
+        teleporter (same reason _begin_maze()'s par-time BFS needs it), and
+        without it shortest_path() can't find a path to the player at all.
+        """
         self.phase = "idle" if self.move_count % 2 == 0 else "active"
         if self.phase == "active":
-            path = shortest_path(grid, self.pos, player_pos)
+            path = shortest_path(grid, self.pos, player_pos, extra_edges=extra_edges)
             if len(path) > 1:
                 self.pos = path[1]
         self.move_count += 1

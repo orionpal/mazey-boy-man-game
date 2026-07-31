@@ -817,6 +817,34 @@ def test_move_costs_time_against_an_active_boss():
     assert run.time.amount < before_time
 
 
+# (5, 1) has zero open grid neighbours -- only the extra_edges link to
+# (1, 1) below reaches it, same as a real teleporter-only pocket.
+BOSS_TELEPORT_POCKET_GRID = [
+    [1, 1, 1, 1, 1, 1, 1],
+    [1, 0, 0, 1, 1, 0, 1],
+    [1, 1, 1, 1, 1, 1, 1],
+]
+
+
+def test_move_against_an_active_boss_reaches_it_through_a_teleporter_only_pocket():
+    """
+    Regression test: LabyrinthRun.move() used to call boss.advance() without
+    the run's teleport map, so a boss placed inside a pocket only reachable
+    through a teleporter (a real possibility -- see augments/teleporters.py
+    and _begin_maze()'s comment on ctx.goal doubling as the boss's
+    placement) crashed with a KeyError the instant it hit an active turn.
+    """
+    run = _corridor_run()
+    run.grid = [row[:] for row in BOSS_TELEPORT_POCKET_GRID]
+    run.player = (1, 1)
+    run.goal = None
+    run.boss = Boss((5, 1), hp=5)
+    run.boss.move_count = 1  # force active phase on this move
+    run._teleport_map = {(1, 1): (5, 1), (5, 1): (1, 1)}
+    run.move((1, 0))
+    assert run.boss.pos == (1, 1)  # stepped through the teleporter link toward the player's pre-move position
+
+
 # ── Active items (Q/W/E/R) ────────────────────────────────────────────────
 # Hand-built grids drive LabyrinthRun.move()/activate_*() deterministically,
 # same approach as the corridor grids above.

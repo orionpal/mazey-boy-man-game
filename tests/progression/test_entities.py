@@ -348,6 +348,38 @@ def test_boss_steps_one_cell_closer_to_the_player_each_active_turn():
     assert after_dist == before_dist - 1
 
 
+# A boss maze can place the boss inside a pocket only reachable through a
+# teleporter (see augments/teleporters.py) -- (5, 1) has zero open grid
+# neighbours, only the extra_edges link to (1, 1) below.
+BOSS_POCKET_GRID = [
+    [1, 1, 1, 1, 1, 1, 1],
+    [1, 0, 0, 1, 1, 0, 1],
+    [1, 1, 1, 1, 1, 1, 1],
+]
+
+
+def test_boss_advance_without_extra_edges_cannot_reach_a_teleporter_only_pocket():
+    """Confirms the pocket really is unreachable by plain grid adjacency -- the failure mode extra_edges fixes."""
+    boss = Boss((5, 1), hp=5)
+    boss.move_count = 1  # force the active phase, which is what triggers the pathing
+    with pytest.raises(KeyError):
+        boss.advance(player_pos=(1, 1), grid=BOSS_POCKET_GRID)
+
+
+def test_boss_advance_uses_extra_edges_to_escape_a_teleporter_only_pocket():
+    """
+    Regression test: advance() used to call shortest_path() with no
+    extra_edges at all, so a boss placed in a teleporter-only pocket crashed
+    with a KeyError (shortest_path() can't reach a goal with no path to it)
+    the instant it hit an active turn, instead of stepping through the link.
+    """
+    boss = Boss((5, 1), hp=5)
+    boss.move_count = 1  # force the active phase
+    tmap = {(1, 1): (5, 1), (5, 1): (1, 1)}
+    boss.advance(player_pos=(1, 1), grid=BOSS_POCKET_GRID, extra_edges=tmap)
+    assert boss.pos == (1, 1)  # one hop through the teleporter link lands directly on the player's cell
+
+
 def test_boss_on_contact_damages_hp_while_idle():
     run = _FakeRun()
     run.build.strength_multiplier = 2.0
