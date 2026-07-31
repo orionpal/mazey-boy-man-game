@@ -26,6 +26,7 @@ display, same pattern as Game/history.py.
 import random
 import time
 from dataclasses import dataclass
+from pathlib import Path
 
 from maze_game.constants import (
     LABYRINTH_TOTAL_MAZES, LABYRINTH_GROUP_SIZE, LABYRINTH_START_TIME,
@@ -37,7 +38,10 @@ from maze_game.constants import (
 from maze_game.maze import generate_maze, farthest_reachable_cell, shortest_path
 from maze_game.player import slide_path
 from maze_game.progression.entities import resolve_contacts
-from maze_game.progression.entities.hazards import spawn_pellets, spawn_enemies, enemy_density_ramp
+from maze_game.progression.entities.hazards import (
+    spawn_pellets, spawn_enemies, enemy_density_ramp,
+    spawn_gold_pellets, load_gold_total, DEFAULT_GOLD_PATH,
+)
 from maze_game.progression.entities.boss import Boss, is_boss_maze, boss_encounter_index
 from maze_game.progression.shop import offer_shop_cards
 from maze_game.progression.shop.perks import Build, Perk
@@ -145,7 +149,7 @@ class LabyrinthRun:
     build and item loadout, group breaks, and pass/fail.
     """
 
-    def __init__(self, seed: int | None = None) -> None:
+    def __init__(self, seed: int | None = None, gold_path: Path | None = None) -> None:
         self.seed = seed if seed is not None else _random_seed()
         self.rng = random.Random(self.seed)
         self.maze_index = 1
@@ -166,6 +170,14 @@ class LabyrinthRun:
         self.last_squeak_at: float | None = None
         self.popups: list[Popup] = []
         self.events: list[str] = []
+        # Gold is a persistent meta-currency, unlike time -- loaded once here
+        # and never reset by restart() (see restart()'s docstring/comment).
+        # DEFAULT_GOLD_PATH is looked up here (not as the parameter's default
+        # value) so tests can monkeypatch it and isolate every LabyrinthRun()
+        # construction from the real on-disk gold.json, same as conftest.py
+        # does for it.
+        self.gold_path = gold_path if gold_path is not None else DEFAULT_GOLD_PATH
+        self.gold = load_gold_total(self.gold_path)
         self._begin_maze()
 
     # ── Public API ────────────────────────────────────────────────────────
@@ -298,6 +310,10 @@ class LabyrinthRun:
         time). Picks a fresh seed by default -- a genuinely new run, not a
         replay -- unless `same_seed` is requested (e.g. retrying the exact
         same layout after a rough death).
+
+        Deliberately does not touch self.gold/self.gold_path -- gold is a
+        persistent meta-currency that survives death, unlike the time
+        resource, which fully resets every run (see docs/progression.md).
         """
         self.seed = self.seed if same_seed else _random_seed()
         self.rng = random.Random(self.seed)
@@ -386,6 +402,7 @@ class LabyrinthRun:
             encounter_index = boss_encounter_index(self.maze_index)
             self.boss = Boss(boss_pos, hp=BOSS_BASE_HP + BOSS_HP_STEP * encounter_index)
             self.pellets = []
+            self.gold_pellets = []
             self.enemies = []
         else:
             self.goal = ctx.goal
@@ -393,6 +410,8 @@ class LabyrinthRun:
             exclude = {START_POS, self.goal} | ctx.reserved
             self.pellets = spawn_pellets(self.grid, exclude, self.build.pellet_frequency_multiplier, rng=self.rng)
             exclude = exclude | {p.pos for p in self.pellets}
+            self.gold_pellets = spawn_gold_pellets(self.grid, exclude, rng=self.rng)
+            exclude = exclude | {p.pos for p in self.gold_pellets}
             if self.maze_index >= ENEMY_UNLOCK_MAZE:
                 self.enemies = spawn_enemies(
                     self.grid, exclude, density_multiplier=enemy_density_ramp(self.maze_index), rng=self.rng,

@@ -12,10 +12,11 @@ from maze_game.constants import (
     PELLET_TIME_VALUE, PELLET_MIN_COUNT, ENEMY_TIME_PENALTY,
     BOSS_INTERVAL, BOSS_BASE_DAMAGE, LABYRINTH_TOTAL_MAZES,
     ENEMY_UNLOCK_MAZE, ENEMY_RAMP_MAZES, ENEMY_RAMP_START_MULTIPLIER,
-    ENEMY_DENSITY, ENEMY_MAX_COUNT, C_PELLET, C_ENEMY,
+    ENEMY_DENSITY, ENEMY_MAX_COUNT, C_PELLET, C_GOLD, C_ENEMY,
 )
 from maze_game.progression.entities.hazards import (
-    Pellet, Enemy, ENEMY_TYPES, spawn_pellets, spawn_enemies, enemy_density_ramp,
+    Pellet, GoldPellet, Enemy, ENEMY_TYPES, spawn_pellets, spawn_enemies, enemy_density_ramp,
+    spawn_gold_pellets, load_gold_total, save_gold_total,
 )
 from maze_game.progression.entities.boss import Boss, is_boss_maze, boss_encounter_index
 from maze_game.progression.shop.perks import Build
@@ -31,11 +32,13 @@ for _y in range(1, 6):
 class _FakeRun:
     """Minimal stand-in for LabyrinthRun -- just enough state for on_contact()."""
 
-    def __init__(self):
+    def __init__(self, gold_path=None):
         self.time = _FakeTimeResource()
         self.build = Build()
         self.popups = []
         self.events = []
+        self.gold = 0
+        self.gold_path = gold_path
 
     def add_popup(self, pos, text, color):
         self.popups.append((pos, text, color))
@@ -79,6 +82,75 @@ def test_pellet_on_contact_appends_the_pellet_sound_event():
     run = _FakeRun()
     Pellet((1, 1)).on_contact(run)
     assert run.events == ["pellet"]
+
+
+# ── GoldPellet ────────────────────────────────────────────────────────────
+
+
+def test_gold_pellet_on_contact_adds_to_the_gold_total(tmp_path):
+    run = _FakeRun(gold_path=tmp_path / "gold.json")
+    GoldPellet((1, 1), value=3).on_contact(run)
+    assert run.gold == 3
+
+
+def test_gold_pellet_on_contact_adds_a_popup_at_its_position(tmp_path):
+    run = _FakeRun(gold_path=tmp_path / "gold.json")
+    GoldPellet((1, 1), value=3).on_contact(run)
+    assert len(run.popups) == 1
+    pos, text, color = run.popups[0]
+    assert pos == (1, 1)
+    assert text == "+3g"
+    assert color == C_GOLD
+
+
+def test_gold_pellet_on_contact_appends_the_gold_sound_event(tmp_path):
+    run = _FakeRun(gold_path=tmp_path / "gold.json")
+    GoldPellet((1, 1)).on_contact(run)
+    assert run.events == ["gold"]
+
+
+def test_gold_pellet_on_contact_persists_the_new_total_to_disk(tmp_path):
+    path = tmp_path / "gold.json"
+    run = _FakeRun(gold_path=path)
+    GoldPellet((1, 1), value=5).on_contact(run)
+    assert load_gold_total(path) == 5
+
+
+def test_spawn_gold_pellets_never_spawns_above_the_chance():
+    rng = random.Random(1)
+    result = spawn_gold_pellets(OPEN_ROOM, exclude=set(), chance=0.0, rng=rng)
+    assert result == []
+
+
+def test_spawn_gold_pellets_always_spawns_exactly_one_below_the_chance():
+    rng = random.Random(1)
+    result = spawn_gold_pellets(OPEN_ROOM, exclude=set(), chance=1.0, rng=rng)
+    assert len(result) == 1
+    assert isinstance(result[0], GoldPellet)
+
+
+def test_spawn_gold_pellets_excludes_given_cells():
+    rng = random.Random(1)
+    exclude = {(x, y) for y in range(1, 6) for x in range(1, 6) if (x, y) != (2, 2)}
+    result = spawn_gold_pellets(OPEN_ROOM, exclude=exclude, chance=1.0, rng=rng)
+    assert len(result) == 1
+    assert result[0].pos == (2, 2)
+
+
+def test_load_gold_total_returns_zero_when_the_file_is_missing(tmp_path):
+    assert load_gold_total(tmp_path / "does_not_exist.json") == 0
+
+
+def test_load_gold_total_returns_zero_when_the_file_is_corrupt(tmp_path):
+    path = tmp_path / "gold.json"
+    path.write_text("not valid json{{{")
+    assert load_gold_total(path) == 0
+
+
+def test_save_and_load_gold_total_round_trips(tmp_path):
+    path = tmp_path / "gold.json"
+    save_gold_total(42, path)
+    assert load_gold_total(path) == 42
 
 
 # ── Enemy ─────────────────────────────────────────────────────────────────

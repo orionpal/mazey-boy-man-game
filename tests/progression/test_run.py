@@ -17,7 +17,7 @@ from maze_game.constants import (
     ENEMY_TIME_PENALTY, SPEED_BONUS_TIME, POPUP_DURATION_SECONDS,
 )
 from maze_game.progression.run import dimensions_for_maze, TimeResource, LabyrinthRun
-from maze_game.progression.entities.hazards import Pellet, Enemy
+from maze_game.progression.entities.hazards import Pellet, GoldPellet, Enemy
 from maze_game.progression.entities.boss import Boss
 from maze_game.progression.shop.perks import ALL_PERKS, Perk
 from maze_game.progression.shop.items import ALL_ITEMS
@@ -29,6 +29,17 @@ CORRIDOR_GRID = [
     [1, 0, 0, 0, 1],
     [1, 1, 1, 1, 1],
 ]
+
+
+@pytest.fixture(autouse=True)
+def _isolate_gold_file(tmp_path, monkeypatch):
+    """
+    Every LabyrinthRun() in this file (there are dozens, unlike Game's
+    single history_path-taking fixture) should never touch the real
+    on-disk gold.json -- patching the module-level default the __init__
+    falls back to isolates all of them at once.
+    """
+    monkeypatch.setattr("maze_game.progression.run.DEFAULT_GOLD_PATH", tmp_path / "gold.json")
 
 
 # ── dimensions_for_maze ───────────────────────────────────────────────────
@@ -120,6 +131,24 @@ def test_pellets_and_enemies_never_spawn_on_start_or_goal(run):
     assert run.goal not in [p.pos for p in run.pellets]
     assert run.player not in [e.pos for e in run.enemies]
     assert run.goal not in [e.pos for e in run.enemies]
+    assert run.player not in [g.pos for g in run.gold_pellets]
+    assert run.goal not in [g.pos for g in run.gold_pellets]
+
+
+def test_gold_pellets_never_overlap_pellets():
+    """Regardless of which spawns first, a gold pellet must never land on the same cell as a time pellet."""
+    for seed in range(20):
+        run = LabyrinthRun(seed=seed)
+        pellet_positions = {p.pos for p in run.pellets}
+        gold_positions = {g.pos for g in run.gold_pellets}
+        assert pellet_positions.isdisjoint(gold_positions)
+
+
+def test_gold_pellets_are_empty_on_a_boss_maze():
+    run = LabyrinthRun()
+    run.maze_index = BOSS_INTERVAL
+    run._begin_maze()
+    assert run.gold_pellets == []
 
 
 def test_enemies_are_empty_before_the_unlock_maze(run):
@@ -271,6 +300,30 @@ def test_restart_resets_time_and_build():
     assert (run.cols, run.rows) == (MIN_DIMENSION, MIN_DIMENSION)
     assert run.time.amount == pytest.approx(LABYRINTH_START_TIME)
     assert run.build.picks == {}
+
+
+# ── Gold (persistent across restart, unlike time) ─────────────────────────
+
+
+def test_gold_starts_at_zero_with_no_prior_save(tmp_path):
+    run = LabyrinthRun(gold_path=tmp_path / "gold.json")
+    assert run.gold == 0
+
+
+def test_gold_is_seeded_from_a_prior_save_on_construction(tmp_path):
+    from maze_game.progression.entities.hazards import save_gold_total
+
+    path = tmp_path / "gold.json"
+    save_gold_total(17, path)
+    run = LabyrinthRun(gold_path=path)
+    assert run.gold == 17
+
+
+def test_restart_does_not_reset_gold():
+    run = LabyrinthRun()
+    run.gold = 5
+    run.restart()
+    assert run.gold == 5
 
 
 def test_completing_the_final_maze_sets_completed_run_not_on_break():
@@ -557,6 +610,7 @@ def _corridor_run() -> LabyrinthRun:
     run.player = (1, 1)
     run.goal = (3, 1)
     run.pellets = []
+    run.gold_pellets = []
     run.enemies = []
     run.boss = None
     return run
@@ -570,6 +624,16 @@ def test_move_collects_a_pellet_along_the_slide_path():
     assert run.player == (3, 1)
     assert run.pellets == []
     assert run.time.amount == pytest.approx(before + 4.0 * run.build.pellet_value_multiplier)
+
+
+def test_move_collects_a_gold_pellet_along_the_slide_path():
+    run = _corridor_run()
+    run.gold_pellets = [GoldPellet((2, 1), value=3)]
+    run.move((1, 0))
+    assert run.player == (3, 1)
+    assert run.gold_pellets == []
+    assert run.gold == 3
+    assert run.events == ["move", "gold"]
 
 
 def test_move_collecting_a_pellet_adds_a_popup_at_its_position():

@@ -115,6 +115,16 @@ STOPWATCH_PAUSE_SECONDS = 5.0  # seconds paused per Stopwatch charge used
 POPUP_DURATION_SECONDS = 1.0
 POPUP_RISE_PIXELS      = 24   # total upward drift over the popup's lifetime
 
+# Gold: a persistent meta-currency, separate from the time resource -- it
+# survives death/restart (loaded once at LabyrinthRun.__init__, saved to
+# disk on every pickup) rather than resetting each run like time does.
+# Collect + display only for now; no spending mechanic yet. Deliberately
+# rare (a maze has a GOLD_SPAWN_CHANCE chance of containing exactly one),
+# unlike time pellets, which scale with maze size -- gold is meant to feel
+# like a special find, not a routine top-up.
+GOLD_PELLET_VALUE = 1
+GOLD_SPAWN_CHANCE = 0.3
+
 # Teleporting squares (progression/augments/teleporters.py): the first maze
 # augment. Pair count and how many of those pairs are load-bearing (the
 # goal is unreachable without using them) both scale with the augment's
@@ -144,6 +154,7 @@ C_PANEL_LINE = (45,  45,  65)
 C_BUTTON    = (35,  60, 100)
 C_BUTTON_HOVER = (55, 90, 140)
 C_PELLET    = (230, 210,  70)
+C_GOLD      = (255, 175,  20)  # warm amber-orange, distinct from C_PELLET's pale yellow
 C_ENEMY     = (200, 60,   60)
 C_BOSS_IDLE = (230, 90,  200)
 C_BOSS_ACTIVE = (120, 40, 110)

@@ -29,7 +29,7 @@ from maze_game.constants import (
     SIDEBAR_W, HUD_HEIGHT, LABYRINTH_TOTAL_MAZES, MAX_ACTIVE_AUGMENTS,
     C_BG, C_WALL, C_FLOOR, C_PLAYER, C_GOAL, C_TEXT, C_DIM, C_FLASH, C_HUD_BG,
     C_PANEL_BG, C_PANEL_LINE, C_BUTTON, C_BUTTON_HOVER,
-    C_PELLET, C_ENEMY, C_BOSS_IDLE, C_BOSS_ACTIVE, C_TELEPORT_PAIRS,
+    C_PELLET, C_GOLD, C_ENEMY, C_BOSS_IDLE, C_BOSS_ACTIVE, C_TELEPORT_PAIRS,
     POPUP_DURATION_SECONDS, POPUP_RISE_PIXELS,
 )
 from maze_game.media import sprites
@@ -147,6 +147,7 @@ class Renderer:
         else:
             self._draw_maze(run.grid, layout)
             self._draw_pellets(run.pellets, layout)
+            self._draw_gold_pellets(run.gold_pellets, layout)
             self._draw_enemies(run.enemies, layout)
             self._draw_teleporters(run.teleporters, layout)
             if run.boss is not None:
@@ -215,6 +216,18 @@ class Renderer:
                 continue
             r = max(1, cell // 5)
             pygame.draw.circle(self.surface, C_PELLET, (ox + x * cell + cell // 2, oy + y * cell + cell // 2), r)
+
+    def _draw_gold_pellets(self, gold_pellets, layout: Layout) -> None:
+        ox, oy = layout.maze_origin
+        cell = layout.cell
+        icon = sprites.get("gold", cell)
+        for gold_pellet in gold_pellets:
+            x, y = gold_pellet.pos
+            if icon is not None:
+                self.surface.blit(icon, (ox + x * cell, oy + y * cell))
+                continue
+            r = max(1, cell // 5)
+            pygame.draw.circle(self.surface, C_GOLD, (ox + x * cell + cell // 2, oy + y * cell + cell // 2), r)
 
     def _draw_enemies(self, enemies, layout: Layout) -> None:
         ox, oy = layout.maze_origin
@@ -298,6 +311,9 @@ class Renderer:
             True, C_DIM,
         )
         self.surface.blit(progress, (layout.hud.x + 10, layout.hud.y + 36))
+
+        gold_label = self.font_small.render(f"{run.gold}g", True, C_GOLD)
+        self.surface.blit(gold_label, (layout.hud.right - gold_label.get_width() - 10, layout.hud.y + 8))
 
     # ── Build sidebar (passive perks) ─────────────────────────────────────
 
