@@ -33,6 +33,14 @@ LABYRINTH_GROUP_SIZE  = 5     # mazes per group; a perk-choice break follows eac
 # that, capped at MAX_DIMENSION (reused from the free-play sidebar bounds
 # above, rather than inventing a separate ceiling).
 
+# Maze augments (progression/augments/): generation-time modifiers (e.g.
+# teleporting squares) offered every AUGMENT_INTERVAL-th maze -- see
+# constants further down for BOSS_INTERVAL/AUGMENT_INTERVAL cadence.
+# Capped at MAX_ACTIVE_AUGMENTS distinct augments active per run; once
+# capped, further picks level up an already-active augment instead (same
+# multiplicative-stacking shape as perks -- see progression/shop/perks.py).
+MAX_ACTIVE_AUGMENTS = 4
+
 # Time is one persistent resource carried across the whole run (rogue-like),
 # not a per-maze budget: it ticks down continuously, pellets add to it,
 # enemies/the boss subtract from it, and it's only reset on death (restart()).
