@@ -11,10 +11,10 @@ writeup; this file is just the quick reference.
 One file per event, named `{event}.wav` or `{event}.ogg`:
 
 ```
-move.wav          teleport.wav       pellet.wav        gold.wav
-enemy_hit.wav      key.wav            wall_break.wav    laser.wav
-stopwatch.wav      squeak.wav         maze_complete.wav speed_bonus.wav
-fail.wav           card_select.wav    menu_move.wav     menu_select.wav
+move.wav          teleport.wav       pellet.wav          gold.wav
+enemy_hit.wav      key.wav            shield_block.wav    maze_complete.wav
+speed_bonus.wav    fail.wav           card_select.wav     menu_move.wav
+menu_select.wav
 ```
 
 Only add the ones you want to test — any event without a matching file

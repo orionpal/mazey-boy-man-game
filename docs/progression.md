@@ -1,16 +1,15 @@
 # Labyrinth Progression Mode
 
 The core loop beyond a single maze: get through 100 mazes, gradually
-bigger, with two break cadences layered on top of each other -- a
-power-up choice (a passive perk or an active Q/W/E/R item) every 5 mazes,
-and a maze-modifier (augment) choice every 10 mazes. A rogue-like resource
-layer sits underneath: time is one persistent budget carried across the
-*whole* run, topped up by pellets and drained by enemies. Implemented in
-`maze_game/progression/` (`run.py`'s
-`LabyrinthRun`, `shop/` for perks and items, `augments/` for maze
-modifiers, `entities/`), playable via `main.py` (this is now the default
-entry point — see the "Renamed" note at the bottom). Everything below is a
-**first guess to playtest**, not a balance pass — the constants live in
+bigger, with two break cadences layered on top of each other -- a passive
+perk choice every 5 mazes, and a maze-modifier (augment) choice every 10
+mazes. A rogue-like resource layer sits underneath: time is one persistent
+budget carried across the *whole* run, topped up by pellets and drained by
+enemies. Implemented in `maze_game/progression/` (`run.py`'s
+`LabyrinthRun`, `shop/` for perks, `augments/` for maze modifiers,
+`entities/`), playable via `main.py` (this is now the default entry point
+— see the "Renamed" note at the bottom). Everything below is a **first
+guess to playtest**, not a balance pass — the constants live in
 `constants.py` under "Labyrinth progression mode" and are meant to move.
 
 ## Dimensions: 9x9 -> 41x41, +2 every 5 mazes
@@ -145,51 +144,42 @@ extra rather than "a big pellet."
 enemy's current position) -- `Enemy.on_contact` already had a `self.pos`
 to pass.
 
-### Perks & items: the shop, chosen every group
+### Perks: the shop, chosen every group
 
-Every group-boundary break (mazes 5, 10, ..., 95) now offers 3 cards drawn
-at random from the combined pool of passive perks and active items
-(`progression/shop/__init__.py::offer_shop_cards()`, `random.sample` of
-`ALL_PERKS + ALL_ITEMS`) instead of a bare "press SPACE to continue" or the
-earlier guaranteed-all-3-perks behaviour — `LabyrinthRun.choose_shop_card()`
-replaced the old `choose_perk()`; picking a card *is* the resume action.
+Every group-boundary break (mazes 5, 10, ..., 95) offers cards drawn at
+random from the perk pool (`progression/shop/__init__.py::offer_shop_cards()`,
+`random.sample` of `ALL_PERKS`, capped at whatever's actually in the pool)
+instead of a bare "press SPACE to continue" — `LabyrinthRun.choose_shop_card()`
+applies the pick; picking a card *is* the resume action.
 
-**Perks** (`progression/shop/perks.py::ALL_PERKS`, unchanged starter set):
-more pellet spawn frequency, more time per pellet. Stacking is explicitly
-**multiplicative** (picking the same perk again
-multiplies its multiplier by its magnitude again), a deliberate rogue-like
-snowball. The accumulated `Build` is reset on death along with the time
-resource (see "Failure" below) and shown in the left sidebar
-(`progression/renderer.py`) as one square per acquired perk with a
-stack-count badge; hovering shows the perk's description.
+Movement is deliberately just arrow keys (plus the hold-SPACE run-to-wall
+combo, see "Movement combos" below) — there is no separate active-item
+system with its own keybinds. `progression/shop/perks.py::ALL_PERKS` holds
+exactly two perks, and stacking is explicitly **additive** (picking the
+same perk again adds another charge/bonus unit, not a multiplier) since
+both grant a count, not a rate:
 
-**Items** (`progression/shop/items.py::ALL_ITEMS`) are active abilities
-bound to fixed Q/W/E/R slots, always drawn in the sidebar below the perk
-squares — empty or filled — so the player can always see what's available
-to acquire, not just what they have:
+- **Bulwark** (`enemy_shield`): each maze, ignore the first N enemy
+  contacts, where N is the perk's level (total times picked).
+  `LabyrinthRun._begin_maze()` refills `shield_charges_remaining` to
+  `Build.enemy_shield_charges_per_maze` every maze; `Enemy.on_contact()`
+  consumes a charge and fully blocks the hit (a "Shielded!" popup, the
+  `shield_block` sound event) before falling back to the normal
+  time-penalty path once charges run out.
+- **Speedrunner** (`gold_rush`): bonus gold on a maze cleared within its
+  par-time threshold, on top of the existing unconditional `SPEED_BONUS_TIME`
+  (see "Feedback popups" above) — the two compound, not replace each other.
+  `LabyrinthRun.update()`'s speed-bonus branch adds `Build.gold_rush_bonus`
+  gold, persists it immediately (same pattern as `GoldPellet.on_contact()`),
+  and shows a second "+Ng" popup alongside the time-bonus one.
 
-- **Q — Wall Breaker**: hold Q + an arrow key to slide as if holding
-  spacebar (ignoring intersections), and if the wall it would stop at
-  isn't a border wall, break through it and keep going. 1 charge per pick.
-- **W — Laser**: fire in all 4 cardinal directions from the player's
-  position (each ray runs to its own wall), destroying any enemy hit. 1
-  charge per pick.
-- **E — Stopwatch**: pause the time resource and block movement for
-  `STOPWATCH_PAUSE_SECONDS` (5.0s). 1 charge per pick — charges are the
-  limited resource, every use pauses the same fixed length (not a
-  duration that scales with picks).
-- **R — Squeaky Toy**: does nothing except flash a "Squeak!"
-  acknowledgment. No charges — unlimited once acquired.
+The accumulated `Build` is reset on death along with the time resource (see
+"Failure" below) and shown in the left sidebar (`progression/renderer.py`)
+as one square per acquired perk with a stack-count badge; hovering shows
+the perk's description.
 
-Unlike perks' shared `EFFECTS` dispatch table, each item's effect is a
-dedicated `LabyrinthRun` method (`_try_break_wall`, `activate_laser`,
-`activate_stopwatch`, `activate_squeaky_toy`) — four genuinely different
-mechanics (grid mutation, enemy removal, a timed pause, nothing) didn't
-have a shared abstraction worth forcing. `Loadout` (`shop/items.py`) tracks
-charges the same shape as `Build` tracks perk picks, reset on death too.
-
-Selectable by arrow keys + space (`LabyrinthRun.move_shop_cursor(delta)`
-moves a wrapping cursor across the 3 cards, `choose_shop_card(shop_cursor)`
+Selectable by arrow keys + space (`LabyrinthRun.move_break_cursor(delta)`
+moves a wrapping cursor across the offered cards, `choose_break_card(break_cursor)`
 confirms it), by number keys 1/2/3, or by clicking a card directly — all
 three land on the same `choose_shop_card(index)` call.
 
@@ -201,8 +191,7 @@ in `choose_shop_card()` once the break ends — otherwise the very next
 started, charging the whole break duration in one lump the instant play
 resumes (this shipped as a bug before being caught in playtesting: it
 looked like "the timer didn't stop for the perk screen," just deferred by
-a frame). The Stopwatch item's pause reuses the exact same
-`TimeResource.resync()` fix in `update()` once its pause elapses.
+a frame).
 
 Measured empirically (30 trials per size, actual `generate_maze` output),
 back when time limits were per-maze-estimated rather than a shared pool —
@@ -261,10 +250,13 @@ that:
   all the way to the next wall (`junction_stop_count=None`).
 
 (An earlier version also had "hold a number key (1-9) + an arrow key" to
-blow through the first N-1 intersections and stop at the Nth — dropped in
-favour of the Q/W/E/R item slots below, freeing the number row for shop-card
-selection instead. `slide_path`'s general `junction_stop_count=N` contract
-still exists and is still tested; it's just no longer bound to a key.)
+blow through the first N-1 intersections and stop at the Nth, and a
+Q/W/E/R active-item system with its own dedicated key handling (a Wall
+Breaker item reused this same `junction_stop_count=None` mechanism plus a
+`break_wall` callback into `slide_path` to open walls mid-slide) — both
+dropped later in favour of keeping player controls to just movement.
+`slide_path`'s general `junction_stop_count=N` contract still exists and
+is still tested; it's just no longer bound to a key.)
 
 This is just `player.slide_path()`'s existing wall-vs-junction stop rule
 generalized to "stop after the Nth junction" instead of hardcoded at the
@@ -273,22 +265,14 @@ straight through, so pellet/enemy contact resolution (which already
 checks every cell in the returned path, not just the final stop) works
 identically for combo moves — a longer path is still just a longer path.
 
-**Wall Breaker (item, Q slot)** reuses the exact same mechanism from the
-other direction: it always slides with `junction_stop_count=None` (as if
-holding spacebar) but additionally passes a `break_wall` callback into
-`slide_path` — when the slide would stop at a wall, the callback gets a
-chance to open it (if it's not a border wall and a charge is available)
-and let the slide continue through. `slide_path` itself stays maze/charge-
-agnostic; `break_wall` owns all of that policy.
-
 ## Groups: seamless within, breaks stack sequentially between
 
 Within a group of 5, finishing a maze immediately starts the next one --
 no pause, matching "they stitch together seamlessly." After the 5th maze
 in a group, `on_break` becomes true (now a computed property --
 `break_kind is not None`): the timer stops advancing and the maze view is
-replaced with 3 shop cards, each a perk or an item (see "Perks & items"
-above) until `choose_break_card(index)` is called (click a card, or 1/2/3
+replaced with shop cards, each a perk (see "Perks: the shop, chosen every
+group" above) until `choose_break_card(index)` is called (click a card, or 1/2/3
 in `main.py`), at which point the chosen card is applied.
 
 That alone is unchanged from before. What's new: a maze index can be a
@@ -299,8 +283,9 @@ builds the ordered list (`["shop", "augment"]` when both apply), and
 `_resume_after_break()` pops one at a time: pick a shop card, and instead
 of immediately starting the next maze, the modifier-choice screen replaces
 it if one is queued; only once the queue is empty does the clock resync
-(**once**, not once per break -- see the resync note in "Perks & items"
-above; the same staleness bug it fixes could otherwise resurface per-break)
+(**once**, not once per break -- see the resync note in "Perks: the shop,
+chosen every group" above; the same staleness bug it fixes could otherwise
+resurface per-break)
 and the next maze actually begin. `choose_shop_card`/`choose_augment_card`
 are the two concrete pick handlers; `choose_break_card`/`move_break_cursor`
 are the kind-agnostic entry points `main.py` and the renderer actually call,
@@ -340,13 +325,15 @@ builds a fresh `Build` and applies each owned upgrade's effect through the
 *exact* `EFFECTS` dict `Build.acquire()` already uses, once per owned
 level. `LabyrinthRun.__init__`/`restart()` call this instead of a bare
 `Build()`, so owned upgrades apply before the run even starts and compound
-underneath whatever gets picked in-run — Prospector's Eye and Rich Vein
-(the in-run pellet-value perk) stack multiplicatively through the same
-`pellet_value_multiplier` field. `Build` gained `enemy_resistance_multiplier`
-for Thick Skin's effect (`Enemy.on_contact` now multiplies its penalty by
-it) — no in-run `Perk` uses that `effect_key` yet, but it lives alongside
-`Build`'s other fields for consistency, same as `pellet_value`/
-`pellet_frequency` already do.
+underneath whatever gets picked in-run. `Build` gained
+`enemy_resistance_multiplier` for Thick Skin's effect (`Enemy.on_contact`
+now multiplies its penalty by it) — no in-run `Perk` uses that
+`effect_key`, but it lives alongside `Build`'s other fields for
+consistency. Same goes for `pellet_value_multiplier`/
+`pellet_frequency_multiplier` (Prospector's Eye still drives the former;
+no in-run perk sets either away from 1.0 anymore since Keen Eye/Rich Vein
+were replaced by Bulwark/Speedrunner, but `spawn_pellets()`/
+`Pellet.on_contact()` still read them directly).
 
 **Persistence**: gold stays owned by `hazards.py`'s existing
 `load_gold_total()`/`save_gold_total()` (`gold.json`) — `MetaProgress`
@@ -397,8 +384,8 @@ levels it up instead of doing nothing (same shape as perk stacking:
 
 **Architecture** (`progression/augments/`): `Augment.apply(ctx)` is the
 only shared hook (deliberately no generic `contact()`/`render()` hook --
-mirrors the existing precedent in `shop/items.py` and `hazards.py` of
-bespoke methods over a forced-fit abstraction). `AugmentContext` bundles
+mirrors the existing precedent in `hazards.py`/`renderer.py` of bespoke
+methods over a forced-fit abstraction). `AugmentContext` bundles
 the mutable state a pipeline pass works against (`grid`, `goal`, `rng`,
 `level`, `reserved` cells, an `extra` dict for augment-specific output).
 `run_pipeline()` applies every active augment in **registry order**
@@ -528,8 +515,9 @@ just once at the end).
   still owns its own renderer/layout.
 - See `docs/planning/future-ideas.md` for a longer backlog of mechanics
   considered but deliberately deferred (stances, limited wall-breaking as a
-  maze-gen requirement, and others now partially overlapping with the
-  Q/W/E/R items above).
+  maze-gen requirement, and others -- an earlier version of this backlog
+  also spawned a Q/W/E/R active-item system, later removed in favour of
+  Bulwark/Speedrunner above).
 
 ## Renamed: this is now the default `main.py`
 

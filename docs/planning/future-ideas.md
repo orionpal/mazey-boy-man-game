@@ -13,21 +13,26 @@ e.g. a movement stance (today's only mode) vs. an action stance. This is
 the main lever for giving the player more to do than just move, without
 adding more permanently-bound keys.
 
-## 2. Active perks -- DONE, see docs/progression.md
+## 2. Active perks -- DONE, then REMOVED, see docs/progression.md
 
 Shipped as the Q/W/E/R item system (`progression/shop/items.py`): Wall
 Breaker, Laser, Stopwatch, Squeaky Toy, each triggered deliberately by the
 player rather than passive, with their own charge-based resource model
-(`Loadout`) sitting alongside passive `Perk`/`Build`. See "Perks & items:
-the shop" in `docs/progression.md`.
+(`Loadout`) sitting alongside passive `Perk`/`Build`. Later removed
+entirely in favour of keeping player controls to just movement (plus the
+hold-SPACE combo) -- the shop's card pool was replaced with two passive
+perks, Bulwark and Speedrunner. See "Perks: the shop, chosen every group"
+in `docs/progression.md`.
 
-## 3. Limited wall-breaking -- DONE, see docs/progression.md
+## 3. Limited wall-breaking -- DONE, then REMOVED, see docs/progression.md
 
 Shipped as the Wall Breaker item (Q slot): 1 charge per pick, breaks one
 non-border wall per activation, persists for the rest of the run (not
 reset until death). Resolved the stop-at-junction interaction by reusing
 `player.slide_path()`'s existing stop rule with a `break_wall` callback
-hook, rather than inventing separate logic.
+hook, rather than inventing separate logic. Removed along with the rest of
+the active-item system (see #2) -- `slide_path()` no longer has a
+`break_wall` hook.
 
 ## 4. Maze generation changes to make wall-breaking mandatory
 

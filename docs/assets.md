@@ -61,10 +61,7 @@ Sound events (`assets/sounds/{event}.wav` or `.ogg`):
 | `gold` | a gold pellet is collected |
 | `enemy_hit` | contact with an enemy |
 | `key` | a key is collected, unlocking its door |
-| `wall_break` | the Wall Breaker item breaks a wall |
-| `laser` | the Laser item is activated |
-| `stopwatch` | the Stopwatch item is activated |
-| `squeak` | the Squeaky Toy item is activated |
+| `shield_block` | Bulwark blocks an enemy contact with a shield charge |
 | `maze_complete` | a maze is cleared (goal reached) |
 | `speed_bonus` | the speed bonus is awarded (alongside `maze_complete`) |
 | `fail` | the run fails (time depleted) |
