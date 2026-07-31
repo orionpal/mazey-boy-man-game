@@ -20,6 +20,7 @@ from maze_game.progression.run import dimensions_for_maze, is_milestone_maze, Ti
 from maze_game.progression.entities.hazards import Pellet, GoldPellet, Enemy
 from maze_game.progression.shop.perks import ALL_PERKS, Perk
 from maze_game.progression.shop.items import ALL_ITEMS
+from maze_game.progression.augments.teleporters import TeleportersAugment
 
 # A trivial straight 3-cell corridor, (1,1)-(2,1)-(3,1), used to drive
 # move() deterministically instead of a randomly-generated maze.
@@ -463,13 +464,18 @@ def test_stacked_breaks_do_not_retroactively_charge_the_combined_break_duration(
     assert run.time.amount == pytest.approx(time_at_break_start, abs=0.05)  # neither stretch was charged
 
 
-def test_repeated_augment_breaks_level_up_the_only_shipped_augment():
+def test_repeated_augment_breaks_level_up_a_single_active_augment(monkeypatch):
     """
-    With ALL_AUGMENTS at its current length of 1 (teleporters), every
-    modifier break necessarily offers a single forced card -- expected
-    graceful degradation, not a bug. Driving all 9 augment breaks in a run
-    (mazes 10..90) should just keep leveling teleporters up.
+    With only one augment registered, every modifier break necessarily
+    offers a single forced card -- expected graceful degradation, not a
+    bug (mirrors ALL_AUGMENTS' real length before Doors & Keys shipped as
+    a second augment). Driving all 9 augment breaks in a run (mazes
+    10..90) should just keep leveling that one augment up. Monkeypatched
+    down to one augment rather than asserting on the current real count,
+    so this keeps testing "repeated picks compose" regardless of how many
+    augments actually exist.
     """
+    monkeypatch.setattr("maze_game.progression.augments.ALL_AUGMENTS", [TeleportersAugment()])
     run = LabyrinthRun()
     for boundary in range(10, 100, 10):
         run.maze_index = boundary

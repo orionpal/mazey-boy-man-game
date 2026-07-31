@@ -36,7 +36,7 @@ from maze_game.constants import (
 )
 from maze_game.maze import bfs_reachable, is_stoppable_cell, farthest_reachable_cell
 from maze_game.progression.augments import Augment, AugmentContext
-from maze_game.progression.augments._movement import pendant_subtree_map, real_move_reachable, _PASSAGE_STEPS
+from maze_game.progression.augments._movement import pendant_subtree_map, real_move_reachable, seal_pocket
 
 
 @dataclass(frozen=True)
@@ -91,19 +91,6 @@ def _teleport_map(pairs: list[TeleporterPair]) -> dict[tuple[int, int], tuple[in
     return tmap
 
 
-def _seal_pocket(grid, blob):
-    """Re-wall every open wall-segment crossing the blob's boundary. Returns a new grid; does not mutate the input."""
-    sealed = [row[:] for row in grid]
-    cols, rows = len(grid[0]), len(grid)
-    for cx, cy in blob:
-        for dx, dy in _PASSAGE_STEPS:
-            nx, ny = cx + dx, cy + dy
-            wx, wy = cx + dx // 2, cy + dy // 2
-            if 0 <= nx < cols and 0 <= ny < rows and (nx, ny) not in blob and sealed[wy][wx] == 0:
-                sealed[wy][wx] = 1
-    return sealed
-
-
 def _place_mandatory_pair(
     ctx: AugmentContext, current_start: tuple[int, int], color_index: int, committed: list[TeleporterPair],
 ) -> TeleporterPair | None:
@@ -128,7 +115,7 @@ def _place_mandatory_pair(
     candidate works out (graceful degradation -- the caller places fewer
     mandatory pairs than the level formula asked for).
     """
-    order, subtree = pendant_subtree_map(ctx.grid, current_start)
+    order, subtree, _parent = pendant_subtree_map(ctx.grid, current_start)
     forbidden = ctx.reserved | {current_start}
     candidates = [c for c in order if c != current_start and c not in forbidden]
     if not candidates:
@@ -157,7 +144,7 @@ def _place_mandatory_pair(
         pool = [c for c in pool if c != chosen]  # don't retry the exact same pocket
         blob = subtree[chosen]
 
-        sealed_grid = _seal_pocket(ctx.grid, blob)
+        sealed_grid = seal_pocket(ctx.grid, blob)
         after = bfs_reachable(sealed_grid, current_start)
         pocket_region = bfs_reachable(sealed_grid, chosen)
 

@@ -159,12 +159,18 @@ def offer_augment_cards(
 ALL_AUGMENTS: list[Augment] = []
 AUGMENTS_BY_ID: dict[str, Augment] = {}
 
-# Deferred import: teleporters.py imports Augment/AugmentContext/ALL_AUGMENTS
-# from this module, so the registration step has to happen down here, after
-# they're defined, not at the top of the file (that would be circular).
+# Deferred import: teleporters.py/doors.py import Augment/AugmentContext/
+# ALL_AUGMENTS from this module, so the registration step has to happen
+# down here, after they're defined, not at the top of the file (that would
+# be circular).
 from maze_game.progression.augments.teleporters import TeleportersAugment  # noqa: E402
+from maze_game.progression.augments.doors import DoorsAugment  # noqa: E402
 
-for _augment in (TeleportersAugment(),):
+# Order matters: DoorsAugment must run after TeleportersAugment -- a door
+# candidate is verified against the maze's already-finalized teleporter
+# map, so a teleporter can never silently bypass a door that looked like a
+# genuine cut vertex under plain grid adjacency (see doors.py).
+for _augment in (TeleportersAugment(), DoorsAugment()):
     ALL_AUGMENTS.append(_augment)
     AUGMENTS_BY_ID[_augment.id] = _augment
 del _augment

@@ -34,10 +34,11 @@ def _passage_neighbors(grid: list[list[int]], cx: int, cy: int) -> list[tuple[in
 def pendant_subtree_map(grid, root):
     """
     BFS spanning tree of the passage-cell graph reachable from `root`.
-    Returns `(order, subtree)`: `order` is the BFS visit order (every
-    node's parent appears before it), `subtree[c]` is `c`'s full descendant
-    closure (itself plus everything whose only tree-path back to `root`
-    passes through it).
+    Returns `(order, subtree, parent)`: `order` is the BFS visit order
+    (every node's parent appears before it), `subtree[c]` is `c`'s full
+    descendant closure (itself plus everything whose only tree-path back
+    to `root` passes through it), `parent[c]` is `c`'s tree parent (`None`
+    for `root`).
 
     This is the key correctness tool for pocket/gate placement: isolating
     `subtree[c]` in its entirety -- not some arbitrary same-size connected
@@ -47,6 +48,14 @@ def pendant_subtree_map(grid, root):
     (only sparse extra edges from `braid()`), so an arbitrary connected
     blob is usually a *bridge* for a large, unrelated part of the maze --
     picking a pendant subtree instead sidesteps that entirely.
+
+    Note this only makes `subtree[c]` a *candidate* isolable region -- a
+    `braid()` loop (or another augment's special edge, e.g. a teleporter)
+    can still connect deep inside it back to the main region via some other
+    crossing than the `parent[c]`-`c` tree edge. Actually isolating it
+    requires re-walling every boundary crossing (see seal_pocket() below),
+    not just blocking `c` itself; see doors.py for the concrete lesson this
+    was learned from.
     """
     parent: dict[tuple[int, int], tuple[int, int] | None] = {root: None}
     order = [root]
@@ -71,7 +80,29 @@ def pendant_subtree_map(grid, root):
             s |= subtree[child]
         subtree[node] = s
 
-    return order, subtree
+    return order, subtree, parent
+
+
+def seal_pocket(grid, blob, keep_open: frozenset = frozenset()):
+    """
+    Re-wall every open wall-segment crossing the blob's boundary, except
+    any wall-midpoint coordinate listed in `keep_open` (e.g. the one
+    crossing a door should stay grid-open through). Returns a new grid;
+    does not mutate the input.
+    """
+    sealed = [row[:] for row in grid]
+    cols, rows = len(grid[0]), len(grid)
+    for cx, cy in blob:
+        for dx, dy in _PASSAGE_STEPS:
+            nx, ny = cx + dx, cy + dy
+            wx, wy = cx + dx // 2, cy + dy // 2
+            if (
+                0 <= nx < cols and 0 <= ny < rows
+                and (nx, ny) not in blob and sealed[wy][wx] == 0
+                and (wx, wy) not in keep_open
+            ):
+                sealed[wy][wx] = 1
+    return sealed
 
 
 def real_move_reachable(grid, start, *, teleport=None, door_locked=None):

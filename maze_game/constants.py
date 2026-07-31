@@ -140,6 +140,22 @@ TELEPORT_POCKET_MIN_SIZE        = 3   # cells sealed off behind one mandatory pa
 TELEPORT_POCKET_MAX_SIZE        = 8
 TELEPORT_PLACEMENT_MAX_ATTEMPTS = 10  # retries per gated pocket before giving up on it (graceful degradation, never a crash/hang)
 
+# Doors & Keys (progression/augments/doors.py): the second maze augment. A
+# locked door blocks progress until its matching key -- placed somewhere
+# reachable before the door -- is collected. Same level-scaling shape as
+# teleporters above (mandatory doors gate the route to the goal;
+# decorative doors gate an optional side pocket of bonus loot), tuned
+# slightly more conservative since a mandatory door is a stronger
+# constraint per pick than a decorative teleporter shortcut.
+DOOR_PAIR_COUNT_BASE        = 2
+DOOR_PAIR_COUNT_STEP        = 1
+DOOR_PAIR_COUNT_MAX         = 5
+DOOR_MANDATORY_COUNT_BASE   = 1
+DOOR_MANDATORY_COUNT_STEP   = 1
+DOOR_FAR_SIDE_MIN_SIZE      = 3   # cells gated behind one mandatory door
+DOOR_FAR_SIDE_MAX_SIZE      = 10
+DOOR_PLACEMENT_MAX_ATTEMPTS = 10  # retries per gated region before giving up on it (graceful degradation, never a crash/hang)
+
 # ── Colours  (R, G, B) ────────────────────────────────────────────────────
 C_BG        = (15,  15,  25)
 C_WALL      = (40,  80, 140)
@@ -158,6 +174,8 @@ C_PELLET    = (230, 210,  70)
 C_GOLD      = (255, 175,  20)  # warm amber-orange, distinct from C_PELLET's pale yellow
 C_ENEMY     = (200, 60,   60)
 C_SPEED_BONUS = (100, 220, 255)  # distinct from C_PELLET, so a maze-clear time bonus reads as its own thing
+C_DOOR_LOCKED   = (140, 40,  40)
+C_DOOR_UNLOCKED = (90, 180,  90)
 
 # Teleporter pairs: each pair drawn in its own colour (cycled by
 # pair.color_index if there are more pairs than colours), so linked cells
@@ -169,4 +187,17 @@ C_TELEPORT_PAIRS = [
     (120, 220, 160),
     (230, 90,  140),
     (210, 210, 90),
+]
+
+# Door/key pairs: each pair drawn in its own colour (cycled by
+# pair.color_index), same pattern as C_TELEPORT_PAIRS, so a key visually
+# matches the door it unlocks. Doors themselves use C_DOOR_LOCKED/
+# C_DOOR_UNLOCKED regardless of pair colour (lock state is the primary
+# signal); this list is only for the still-uncollected key markers.
+C_DOOR_KEY_PAIRS = [
+    (230, 160, 60),
+    (80,  200, 230),
+    (210, 210, 90),
+    (170, 100, 230),
+    (120, 220, 160),
 ]
