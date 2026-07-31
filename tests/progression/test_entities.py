@@ -11,7 +11,7 @@ import pytest
 from maze_game.constants import (
     PELLET_TIME_VALUE, PELLET_MIN_COUNT, ENEMY_TIME_PENALTY,
     ENEMY_UNLOCK_MAZE, ENEMY_RAMP_MAZES, ENEMY_RAMP_START_MULTIPLIER,
-    ENEMY_DENSITY, ENEMY_MAX_COUNT, C_PELLET, C_GOLD, C_ENEMY,
+    ENEMY_DENSITY, ENEMY_MAX_COUNT, C_PELLET, C_GOLD, C_ENEMY, C_SHIELD,
 )
 from maze_game.progression.entities.hazards import (
     Pellet, GoldPellet, Enemy, ENEMY_TYPES, spawn_pellets, spawn_enemies, enemy_density_ramp,
@@ -37,6 +37,7 @@ class _FakeRun:
         self.events = []
         self.gold = 0
         self.gold_path = gold_path
+        self.shield_charges_remaining = 0
 
     def add_popup(self, pos, text, color):
         self.popups.append((pos, text, color))
@@ -184,6 +185,30 @@ def test_enemy_on_contact_appends_the_enemy_hit_sound_event():
     run = _FakeRun()
     Enemy((1, 1)).on_contact(run)
     assert run.events == ["enemy_hit"]
+
+
+def test_enemy_on_contact_consumes_a_shield_charge_and_blocks_the_penalty():
+    run = _FakeRun()
+    run.shield_charges_remaining = 1
+    enemy = Enemy((2, 3))
+    enemy.on_contact(run)
+    assert run.time.amount == pytest.approx(10.0)  # fully blocked, no penalty
+    assert run.shield_charges_remaining == 0
+    assert run.events == ["shield_block"]
+    pos, text, color = run.popups[0]
+    assert pos == (2, 3)
+    assert text == "Shielded!"
+    assert color == C_SHIELD
+
+
+def test_enemy_on_contact_only_blocks_up_to_the_remaining_charges():
+    run = _FakeRun()
+    run.shield_charges_remaining = 1
+    enemy = Enemy((1, 1))
+    enemy.on_contact(run)  # consumes the only charge
+    enemy.on_contact(run)  # no charges left -- normal penalty applies
+    assert run.time.amount == pytest.approx(10.0 - ENEMY_TIME_PENALTY)
+    assert run.events == ["shield_block", "enemy_hit"]
 
 
 def test_enemy_types_registry_contains_the_base_type():

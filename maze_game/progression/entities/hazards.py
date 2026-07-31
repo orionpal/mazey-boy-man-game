@@ -22,7 +22,7 @@ from maze_game.constants import (
     GOLD_PELLET_VALUE, GOLD_SPAWN_CHANCE, C_GOLD,
     ENEMY_TIME_PENALTY, ENEMY_DENSITY, ENEMY_MAX_COUNT,
     ENEMY_UNLOCK_MAZE, ENEMY_RAMP_MAZES, ENEMY_RAMP_START_MULTIPLIER,
-    C_PELLET,
+    C_PELLET, C_SHIELD,
 )
 from maze_game.progression.entities import MazeEntity, apply_time_penalty
 
@@ -67,6 +67,11 @@ class Enemy(MazeEntity):
     penalty: float = ENEMY_TIME_PENALTY
 
     def on_contact(self, run: "LabyrinthRun") -> None:
+        if run.shield_charges_remaining > 0:
+            run.shield_charges_remaining -= 1
+            run.add_popup(self.pos, "Shielded!", C_SHIELD)
+            run.events.append("shield_block")
+            return
         apply_time_penalty(run, self.penalty * run.build.enemy_resistance_multiplier, self.pos)
 
 

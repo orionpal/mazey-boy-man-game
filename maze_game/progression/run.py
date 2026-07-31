@@ -391,6 +391,7 @@ class LabyrinthRun:
         )
         self._maze_started_at = time.monotonic()
         self.finished = False
+        self.shield_charges_remaining = self.build.enemy_shield_charges_per_maze
 
     def _advance(self) -> None:
         if self.maze_index >= LABYRINTH_TOTAL_MAZES:

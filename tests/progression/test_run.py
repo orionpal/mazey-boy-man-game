@@ -176,6 +176,21 @@ def test_starts_at_maze_1_with_min_dimensions_and_full_time(run):
     assert run.build.picks == {}
 
 
+def test_shield_charges_start_at_zero_with_no_bulwark_picked(run):
+    assert run.shield_charges_remaining == 0
+
+
+def test_shield_charges_refill_to_the_build_amount_on_a_new_maze():
+    run = LabyrinthRun()
+    bulwark = next(p for p in ALL_PERKS if p.effect_key == "enemy_shield")
+    run.build.acquire(bulwark)
+    run.build.acquire(bulwark)
+    run.shield_charges_remaining = 0  # simulate having spent both charges
+    run.player = run.goal
+    run.update()  # advances to the next maze, refilling the charge count
+    assert run.shield_charges_remaining == 2
+
+
 def test_update_ticks_the_time_resource(run):
     before = run.time.amount
     time.sleep(0.05)
