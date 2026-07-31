@@ -171,11 +171,18 @@ DOOR_FAR_SIDE_MAX_SIZE      = 10
 DOOR_PLACEMENT_MAX_ATTEMPTS = 10  # retries per gated region before giving up on it (graceful degradation, never a crash/hang)
 
 # ── Colours  (R, G, B) ────────────────────────────────────────────────────
+# Identity colours (player/goal/pellet/gold/enemy/door/speed-bonus) are
+# deliberately spread across distinct hues so entity *families* stay
+# distinguishable at a glance: red = danger (enemy, locked door), green =
+# player-exclusive, yellow/orange = resources (pellet, gold), magenta =
+# the goal (previously red, colliding with enemy/locked-door), teal =
+# unlocked/safe (previously green, colliding with the player). First-pass
+# values, tunable like everything else here -- not a final art pass.
 C_BG        = (15,  15,  25)
 C_WALL      = (40,  80, 140)
 C_FLOOR     = (20,  20,  35)
 C_PLAYER    = (80, 220, 120)
-C_GOAL      = (220, 80,  80)
+C_GOAL      = (230, 90, 200)   # magenta -- was (220,80,80), colliding with C_ENEMY/C_DOOR_LOCKED
 C_TEXT      = (220, 220, 220)
 C_DIM       = (100, 100, 120)
 C_CARD_DESC = (190, 195, 210)  # card/tooltip description text -- brighter than C_DIM, dimmer than C_TEXT, legible against C_BUTTON's blue
@@ -185,23 +192,24 @@ C_PANEL_BG  = (18,  18,  30)
 C_PANEL_LINE = (45,  45,  65)
 C_BUTTON    = (35,  60, 100)
 C_BUTTON_HOVER = (55, 90, 140)
-C_PELLET    = (230, 210,  70)
-C_GOLD      = (255, 175,  20)  # warm amber-orange, distinct from C_PELLET's pale yellow
-C_ENEMY     = (200, 60,   60)
+C_PELLET    = (240, 220,  80)
+C_GOLD      = (255, 150,  30)  # pushed further from C_PELLET's pale yellow than before
+C_ENEMY     = (220, 60,   60)
 C_SPEED_BONUS = (100, 220, 255)  # distinct from C_PELLET, so a maze-clear time bonus reads as its own thing
-C_DOOR_LOCKED   = (140, 40,  40)
-C_DOOR_UNLOCKED = (90, 180,  90)
+C_DOOR_LOCKED   = (170, 70,  40)   # brick -- was (140,40,40), colliding with C_ENEMY/C_GOAL
+C_DOOR_UNLOCKED = (60, 190, 170)   # teal -- was (90,180,90), colliding with C_PLAYER
 
 # Teleporter pairs: each pair drawn in its own colour (cycled by
 # pair.color_index if there are more pairs than colours), so linked cells
-# are visually identifiable as belonging to each other.
+# are visually identifiable as belonging to each other. Blue/purple/teal-
+# leaning, so this palette doesn't alias C_DOOR_KEY_PAIRS below.
 C_TELEPORT_PAIRS = [
-    (80,  200, 230),
-    (230, 160, 60),
-    (170, 100, 230),
-    (120, 220, 160),
-    (230, 90,  140),
-    (210, 210, 90),
+    (80,  160, 230),
+    (170, 90,  230),
+    (90,  220, 190),
+    (230, 130, 230),
+    (120, 140, 230),
+    (60,  200, 220),
 ]
 
 # Door/key pairs: each pair drawn in its own colour (cycled by
@@ -209,10 +217,11 @@ C_TELEPORT_PAIRS = [
 # matches the door it unlocks. Doors themselves use C_DOOR_LOCKED/
 # C_DOOR_UNLOCKED regardless of pair colour (lock state is the primary
 # signal); this list is only for the still-uncollected key markers.
+# Rose/peach/lavender-leaning, so it doesn't alias C_TELEPORT_PAIRS above.
 C_DOOR_KEY_PAIRS = [
-    (230, 160, 60),
-    (80,  200, 230),
-    (210, 210, 90),
-    (170, 100, 230),
-    (120, 220, 160),
+    (230, 170, 190),
+    (140, 200, 230),
+    (200, 150, 255),
+    (255, 190, 140),
+    (170, 220, 140),
 ]
