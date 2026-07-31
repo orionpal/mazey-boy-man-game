@@ -26,7 +26,6 @@ deeper than the last.
 
 from __future__ import annotations
 
-from collections import deque
 from dataclasses import dataclass
 
 from maze_game.constants import (
@@ -36,11 +35,8 @@ from maze_game.constants import (
     TELEPORT_PLACEMENT_MAX_ATTEMPTS,
 )
 from maze_game.maze import bfs_reachable, is_stoppable_cell, farthest_reachable_cell
-from maze_game.player import slide_path
 from maze_game.progression.augments import Augment, AugmentContext
-
-_PASSAGE_STEPS = ((0, -2), (0, 2), (-2, 0), (2, 0))
-_DIRECTIONS = ((0, -1), (0, 1), (-1, 0), (1, 0))
+from maze_game.progression.augments._movement import pendant_subtree_map, real_move_reachable, _PASSAGE_STEPS
 
 
 @dataclass(frozen=True)
@@ -87,99 +83,12 @@ class TeleportersAugment(Augment):
         ctx.extra["teleporters"] = pairs
 
 
-def _passage_neighbors(grid: list[list[int]], cx: int, cy: int) -> list[tuple[int, int]]:
-    """Odd,odd passage-cell neighbours reachable through an open wall-segment midpoint."""
-    cols, rows = len(grid[0]), len(grid)
-    neighbours = []
-    for dx, dy in _PASSAGE_STEPS:
-        nx, ny = cx + dx, cy + dy
-        wx, wy = cx + dx // 2, cy + dy // 2
-        if 0 <= nx < cols and 0 <= ny < rows and grid[wy][wx] == 0:
-            neighbours.append((nx, ny))
-    return neighbours
-
-
-def _pendant_subtree_map(grid, root):
-    """
-    BFS spanning tree of the passage-cell graph reachable from `root`.
-    Returns `(order, subtree)`: `order` is the BFS visit order (every
-    node's parent appears before it), `subtree[c]` is `c`'s full descendant
-    closure (itself plus everything whose only tree-path back to `root`
-    passes through it).
-
-    This is the key correctness tool for pocket placement: sealing off
-    `subtree[c]` in its entirety -- not some arbitrary same-size connected
-    blob -- is guaranteed not to disconnect anything *outside* it, since by
-    definition every cell outside `subtree[c]` still has its own tree-path
-    to `root` that never touches `c`. A maze is close to a spanning tree
-    (only sparse extra edges from `braid()`), so an arbitrary connected
-    blob is usually a *bridge* for a large, unrelated part of the maze --
-    picking a pendant subtree instead sidesteps that entirely.
-    """
-    parent: dict[tuple[int, int], tuple[int, int] | None] = {root: None}
-    order = [root]
-    queue: deque[tuple[int, int]] = deque([root])
-    while queue:
-        cx, cy = queue.popleft()
-        for n in _passage_neighbors(grid, cx, cy):
-            if n not in parent:
-                parent[n] = (cx, cy)
-                order.append(n)
-                queue.append(n)
-
-    children: dict[tuple[int, int], list[tuple[int, int]]] = {c: [] for c in order}
-    for c, p in parent.items():
-        if p is not None:
-            children[p].append(c)
-
-    subtree: dict[tuple[int, int], set[tuple[int, int]]] = {}
-    for node in reversed(order):  # children always appear after their parent in BFS order
-        s = {node}
-        for child in children[node]:
-            s |= subtree[child]
-        subtree[node] = s
-
-    return order, subtree
-
-
 def _teleport_map(pairs: list[TeleporterPair]) -> dict[tuple[int, int], tuple[int, int]]:
     tmap: dict[tuple[int, int], tuple[int, int]] = {}
     for pair in pairs:
         tmap[pair.a] = pair.b
         tmap[pair.b] = pair.a
     return tmap
-
-
-def _real_move_reachable(grid, start, tmap):
-    """
-    BFS over the *real* movement-state graph: from each position, the only
-    next positions are wherever a real player.slide_path() call (with the
-    teleport map wired in, exactly as LabyrinthRun.move() does) lands in
-    each of the 4 directions. This is the ground truth for "can the player
-    actually get there" -- plain grid-adjacency reachability (bfs_reachable,
-    or shortest_path's extra_edges) treats a teleporter as an *optional*
-    extra edge, but in real play entering one is *never* optional: it fires
-    unconditionally and overrides whatever direction the player intended. A
-    pad placed on what would otherwise be a load-bearing junction can look
-    perfectly connected to a naive check and still make the maze unsolvable
-    by forcibly redirecting the player away from it every time they
-    approach -- this walks the same state graph slide_path()/move() actually
-    produces, so it can't be fooled by that.
-    """
-    teleport = lambda x, y: tmap.get((x, y))
-    seen = {start}
-    frontier = [start]
-    while frontier:
-        pos = frontier.pop()
-        for direction in _DIRECTIONS:
-            moved = slide_path(grid, pos, direction, teleport=teleport)
-            if not moved:
-                continue
-            new_pos = moved[-1]
-            if new_pos not in seen:
-                seen.add(new_pos)
-                frontier.append(new_pos)
-    return seen
 
 
 def _seal_pocket(grid, blob):
@@ -206,7 +115,7 @@ def _place_mandatory_pair(
     return a TeleporterPair linking a stoppable entrance (main region) to a
     stoppable exit (pocket interior).
 
-    Before committing, verifies with `_real_move_reachable` (using
+    Before committing, verifies with `real_move_reachable` (using
     `committed`'s teleporters plus this tentative one) that the exit is
     actually reachable from the *true* start via real moves -- the
     entrance cell forces an unconditional redirect the instant it's
@@ -219,7 +128,7 @@ def _place_mandatory_pair(
     candidate works out (graceful degradation -- the caller places fewer
     mandatory pairs than the level formula asked for).
     """
-    order, subtree = _pendant_subtree_map(ctx.grid, current_start)
+    order, subtree = pendant_subtree_map(ctx.grid, current_start)
     forbidden = ctx.reserved | {current_start}
     candidates = [c for c in order if c != current_start and c not in forbidden]
     if not candidates:
@@ -267,7 +176,7 @@ def _place_mandatory_pair(
         tentative_tmap[entrance] = exit_cell
         tentative_tmap[exit_cell] = entrance
 
-        if exit_cell not in _real_move_reachable(sealed_grid, ctx.start, tentative_tmap):
+        if exit_cell not in real_move_reachable(sealed_grid, ctx.start, teleport=lambda x, y: tentative_tmap.get((x, y))):
             continue  # this entrance forces a redirect that breaks solvability elsewhere -- try a different pocket
 
         ctx.grid = sealed_grid
@@ -283,7 +192,7 @@ def _place_decorative_pairs(
     """
     Purely optional shortcuts: both endpoints stoppable, non-reserved cells
     within the still-reachable main region. Each candidate pair is verified
-    with `_real_move_reachable` before committing -- a decorative pad is
+    with `real_move_reachable` before committing -- a decorative pad is
     just as capable of forcing an unwanted redirect through a load-bearing
     junction as a mandatory entrance is, and since decoratives are supposed
     to be purely optional, one that breaks the route to the goal is
@@ -309,7 +218,7 @@ def _place_decorative_pairs(
             tentative_tmap[a] = b
             tentative_tmap[b] = a
 
-            if ctx.goal not in _real_move_reachable(ctx.grid, ctx.start, tentative_tmap):
+            if ctx.goal not in real_move_reachable(ctx.grid, ctx.start, teleport=lambda x, y: tentative_tmap.get((x, y))):
                 continue  # this pair would cut off the route to the goal -- try a different pair
 
             candidates = [c for c in candidates if c not in (a, b)]
