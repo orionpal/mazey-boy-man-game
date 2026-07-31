@@ -23,7 +23,7 @@ from pygame._sdl2.video import Window
 
 from maze_game.constants import FPS
 from maze_game.menu import MainMenu
-from maze_game.menu_renderer import MenuRenderer
+from maze_game.menu.renderer import MenuRenderer
 from maze_game.progression.app import run_labyrinth
 from maze_game.freeplay.app import run_freeplay
 

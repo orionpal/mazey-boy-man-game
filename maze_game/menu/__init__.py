@@ -1,9 +1,10 @@
 """
-menu.py
--------
+menu/__init__.py
+-----------------
 The main-menu state: pick between the timed labyrinth run and the untimed
 free-play ("Relax") mode. Pure state, no pygame dependency -- same pattern
-as freeplay/game.py::Game and progression/run.py::LabyrinthRun.
+as freeplay/game.py::Game and progression/run.py::LabyrinthRun. Drawing
+lives in menu/renderer.py, mirroring the freeplay/progression package shape.
 """
 
 # (mode key used by main.py's dispatch, display label). Order is the

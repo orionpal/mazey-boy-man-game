@@ -1,10 +1,10 @@
 """
-menu_renderer.py
-----------------
+menu/renderer.py
+-----------------
 Drawing for the main menu -- a title plus the two mode options from
-menu.py, cursor/hover-highlighted. Its own small fixed window size,
-independent of either game mode's layout (which only get sized once a
-mode -- and therefore a maze -- actually exists).
+menu/__init__.py, cursor/hover-highlighted. Its own small fixed window
+size, independent of either game mode's layout (which only get sized once
+a mode -- and therefore a maze -- actually exists).
 """
 
 import pygame
