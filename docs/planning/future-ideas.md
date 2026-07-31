@@ -43,6 +43,10 @@ typically have banked by maze N."
 
 ## 5. Trap doors, puzzle elements, collectors, portals, false wall
 
+Doors/keys -- DONE, see docs/progression.md and progression/augments/doors.py.
+The rest of this bucket (puzzle elements, collectors, portals, false walls)
+is still pure backlog.
+
 ## 6. Maze augments -- IN PROGRESS, see docs/progression.md and docs/maze-generation.md
 
 A pool of generation-time maze modifiers, chosen every `AUGMENT_INTERVAL`
@@ -65,6 +69,11 @@ Starting list:
   Level 1 places a handful of pairs with one mandatory; higher levels add
   more pairs and make more of them mandatory, each nested one pocket deeper
   than the last.
+- **Doors & Keys -- SHIPPED second**, `progression/augments/doors.py`. A
+  locked door blocks progress until its matching key (reachable before the
+  door) is collected. Same rigor as teleporters -- seals a pocket's whole
+  boundary except the door's own entrance, verifies solvability via a full
+  sequential-unlock simulation -- but as a *gate* instead of a *shortcut*.
 - **Multi-level mazes** -- not started. Named extension point in the
   registry; no generation logic exists yet.
 - **Shifting maze** -- not started.

@@ -60,6 +60,7 @@ Sound events (`assets/sounds/{event}.wav` or `.ogg`):
 | `pellet` | a time pellet is collected |
 | `gold` | a gold pellet is collected |
 | `enemy_hit` | contact with an enemy |
+| `key` | a key is collected, unlocking its door |
 | `wall_break` | the Wall Breaker item breaks a wall |
 | `laser` | the Laser item is activated |
 | `stopwatch` | the Stopwatch item is activated |
@@ -80,10 +81,15 @@ Icon names (`assets/icons/{name}.png`):
 | `pellet` | a time pellet |
 | `gold` | a gold pellet |
 | `enemy` | an enemy |
+| `door_locked` | a locked door |
+| `door_unlocked` | a door whose key has been collected |
+| `key` | a still-uncollected key |
 
 Not covered: teleporter pads (their per-pair colour coding *is* the visual
 language; a single named icon doesn't fit that) and popups (text, not
-icon-appropriate). Both are easy to extend into this same system later if
+icon-appropriate). Doors/keys get named icons for lock state, but which
+key matches which door is still colour-only, same reasoning as
+teleporters -- both are easy to extend into this same system later if
 that changes.
 
 See `assets/README.md` for the short version.

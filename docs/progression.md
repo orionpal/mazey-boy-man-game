@@ -375,11 +375,9 @@ a post-process, not a change to the generator's own interface.
 
 `offer_augment_cards()` mirrors `offer_shop_cards()`'s sampling shape:
 below the cap, prefer offering not-yet-active augments (topped up with
-active ones if too few new ones exist to fill the offer — true immediately,
-since `ALL_AUGMENTS` currently has just the one shipped augment, so every
-modifier break necessarily shows a single forced card until more augments
-are built); at or above the cap, every offer is drawn only from the active
-set, so a pick always levels one up.
+active ones if too few new ones exist to fill the offer); at or above the
+cap, every offer is drawn only from the active set, so a pick always levels
+one up.
 
 ### Teleporting squares (`progression/augments/teleporters.py`)
 
@@ -416,19 +414,65 @@ from it on every approach (found by an end-to-end test that walks the
 *actual* movement-state graph, not just checking fine-grained cell
 reachability — the exact class of bug this project has hit before with
 `farthest_reachable_cell`, see "Bug: forced stops at junctions" above).
-Fixed with `_real_move_reachable()`: a BFS over the real
-`player.slide_path()`-produced state graph, used to verify — and
-reject-and-retry against a different pocket/pad placement if it fails —
-every mandatory *and* decorative pad before committing it. This is the
-concrete first application of the "generate, then BFS-connectivity-check,
-retry/patch on failure" pattern `docs/maze-generation.md` anticipated would
-eventually be needed for topology-changing tiles.
+Fixed with `real_move_reachable()` (now in the shared
+`progression/augments/_movement.py`, promoted there once a second augment
+needed the same technique): a BFS over the real `player.slide_path()`-
+produced state graph, used to verify — and reject-and-retry against a
+different pocket/pad placement if it fails — every mandatory *and*
+decorative pad before committing it. This is the concrete first
+application of the "generate, then BFS-connectivity-check, retry/patch on
+failure" pattern `docs/maze-generation.md` anticipated would eventually be
+needed for topology-changing tiles.
 
 `slide_path()` resolves a teleport by stopping immediately at the linked
 cell (no momentum carried through) — the same "you always land exactly on
 a stopping cell" model already used for junctions, and it trivially avoids
 needing extra state to guard against bouncing back and forth through a
 pair.
+
+### Doors & Keys (`progression/augments/doors.py`)
+
+The second augment, shipped alongside teleporting squares: a locked door
+blocks progress until its matching key — placed somewhere reachable
+*before* the door — is collected, unlocking it permanently for the rest of
+the maze. Same rigor and much of the same machinery as teleporters (level
+scaling, pendant-subtree pocket selection, real-move verification), but as
+a *gate* instead of a *shortcut*, which turned out to need two fixes
+teleporters never had to make.
+
+**A locked door's own cell stays grid-open, gated only behaviorally.**
+`player.slide_path()` gained a `door_locked` hook, checked the same way
+`teleport` already is, that stops the slide one cell short — exactly like
+an unbreakable wall — without ever mutating `grid[y][x]`. This means
+`shortest_path()`/`farthest_reachable_cell()`/`bfs_reachable()` all keep
+treating a door cell as ordinarily passable, with zero special-casing —
+sidestepping the exact class of crash a real-wall door would risk
+(`shortest_path()` finding no path to a target that's genuinely
+unreachable before any key is collected, the same bug class recently fixed
+for the now-removed boss's pathing).
+
+**But a single gated cell alone isn't a reliable cut vertex.** `braid()`
+adds loop-forming extra edges by design, and one very often bypasses a
+lone gated cell — found the hard way, as this augment's own test suite
+failing at a 100% rate before the fix. So placement physically re-walls
+the *entire* boundary of the chosen pocket (`seal_pocket()`, the same
+technique teleporters uses for its sealed pockets) except the one crossing
+into the door cell itself, which stays open. That crossing becomes the
+sole way in or out once sealed, so behaviorally gating just that one
+(still grid-open) cell now genuinely gates the whole pocket.
+
+**Multi-door placement needs a *joint* solvability check, not pairwise
+ones.** A subtler bug survived the fixes above: sealing a *later* door's
+pocket boundary could, in rare cases, sever the *only* remaining path to
+an *earlier* door's key (a `braid()` loop that used to route through
+territory that's now sealed off). Checking "is the goal still reachable
+with just this one door locked" missed it, since that check never
+re-examined earlier doors' keys. Fixed with `sequentially_reachable()`: a
+full simulation that starts with every door in the maze locked, repeatedly
+collects whatever key becomes reachable and unlocks its door, and repeats
+until nothing more unlocks — the actual ground-truth "can the player
+finish this maze" answer, verified after *every* placement attempt (not
+just once at the end).
 
 ## Not built yet (deliberately out of scope for this first pass)
 

@@ -2,8 +2,8 @@
 renderer.py
 -----------
 All pygame drawing code for the labyrinth progression mode: the maze,
-pellets/enemies/teleporter pads, HUD (time resource + maze/group
-progress + seed), the left sidebar (acquired perks, the 4 fixed Q/W/E/R
+pellets/enemies/teleporter pads/doors and keys, HUD (time resource +
+maze/group progress + seed), the left sidebar (acquired perks, the 4 fixed Q/W/E/R
 item slots, and up to MAX_ACTIVE_AUGMENTS maze-modifier slots -- perks/items
 always draw their entire static catalog filled-or-not, augments draw only
 as many slots as can ever be simultaneously active), and the break-card
@@ -29,7 +29,7 @@ from maze_game.constants import (
     SIDEBAR_W, HUD_HEIGHT, LABYRINTH_TOTAL_MAZES, MAX_ACTIVE_AUGMENTS,
     C_BG, C_WALL, C_FLOOR, C_PLAYER, C_GOAL, C_TEXT, C_DIM, C_FLASH, C_HUD_BG,
     C_PANEL_BG, C_PANEL_LINE, C_BUTTON, C_BUTTON_HOVER,
-    C_PELLET, C_GOLD, C_ENEMY, C_TELEPORT_PAIRS,
+    C_PELLET, C_GOLD, C_ENEMY, C_TELEPORT_PAIRS, C_DOOR_LOCKED, C_DOOR_UNLOCKED, C_DOOR_KEY_PAIRS,
     POPUP_DURATION_SECONDS, POPUP_RISE_PIXELS,
 )
 from maze_game.media import sprites
@@ -150,6 +150,7 @@ class Renderer:
             self._draw_gold_pellets(run.gold_pellets, layout)
             self._draw_enemies(run.enemies, layout)
             self._draw_teleporters(run.teleporters, layout)
+            self._draw_doors_and_keys(run, layout)
             self._draw_goal(run.goal, layout)
             self._draw_player(run.player, layout)
             self._draw_squeak(run, layout)
@@ -250,6 +251,37 @@ class Renderer:
             for x, y in (pair.a, pair.b):
                 rect = pygame.Rect(ox + x * cell + pad, oy + y * cell + pad, cell - 2 * pad, cell - 2 * pad)
                 pygame.draw.rect(self.surface, colour, rect, width=max(2, cell // 8))
+
+    def _draw_doors_and_keys(self, run: LabyrinthRun, layout: Layout) -> None:
+        ox, oy = layout.maze_origin
+        cell = layout.cell
+
+        locked_icon = sprites.get("door_locked", cell)
+        unlocked_icon = sprites.get("door_unlocked", cell)
+        for pair in run.doors:
+            x, y = pair.door
+            locked = pair.door in run._locked_doors
+            icon = locked_icon if locked else unlocked_icon
+            if icon is not None:
+                self.surface.blit(icon, (ox + x * cell, oy + y * cell))
+                continue
+            pad = max(1, cell // 6)
+            colour = C_DOOR_LOCKED if locked else C_DOOR_UNLOCKED
+            pygame.draw.rect(
+                self.surface, colour,
+                pygame.Rect(ox + x * cell + pad, oy + y * cell + pad, cell - 2 * pad, cell - 2 * pad),
+            )
+
+        key_icon = sprites.get("key", cell)
+        pair_colour = {pair.door: C_DOOR_KEY_PAIRS[pair.color_index % len(C_DOOR_KEY_PAIRS)] for pair in run.doors}
+        for key in run.keys:
+            x, y = key.pos
+            if key_icon is not None:
+                self.surface.blit(key_icon, (ox + x * cell, oy + y * cell))
+                continue
+            colour = pair_colour.get(key.door_cell, C_DOOR_KEY_PAIRS[0])
+            r = max(1, cell // 5)
+            pygame.draw.circle(self.surface, colour, (ox + x * cell + cell // 2, oy + y * cell + cell // 2), r)
 
     def _draw_squeak(self, run: LabyrinthRun, layout: Layout) -> None:
         if run.last_squeak_at is None or time.monotonic() - run.last_squeak_at > SQUEAK_FLASH_SECONDS:
