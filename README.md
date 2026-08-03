@@ -61,7 +61,7 @@ No need to have Python/pip installed to just play it — [PyInstaller](https://p
 
 ```bash
 pip install pyinstaller
-pyinstaller --onefile --name maze-game main.py
+pyinstaller --onefile --name maze-game --add-data "assets:assets" main.py
 ```
 
 (Swap `main.py` for `mvp_main.py` in that command to package free-play mode instead.)
