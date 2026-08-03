@@ -164,12 +164,15 @@ AUGMENTS_BY_ID: dict[str, Augment] = {}
 # be circular).
 from maze_game.progression.augments.teleporters import TeleportersAugment  # noqa: E402
 from maze_game.progression.augments.doors import DoorsAugment  # noqa: E402
+from maze_game.progression.augments.multi_level import MultiLevelAugment  # noqa: E402
 
 # Order matters: DoorsAugment must run after TeleportersAugment -- a door
 # candidate is verified against the maze's already-finalized teleporter
 # map, so a teleporter can never silently bypass a door that looked like a
-# genuine cut vertex under plain grid adjacency (see doors.py).
-for _augment in (TeleportersAugment(), DoorsAugment()):
+# genuine cut vertex under plain grid adjacency (see doors.py). MultiLevelAugment
+# must run after both -- a floor candidate is verified against the maze's
+# already-finalized teleporter map *and* door/key state (see multi_level.py).
+for _augment in (TeleportersAugment(), DoorsAugment(), MultiLevelAugment()):
     ALL_AUGMENTS.append(_augment)
     AUGMENTS_BY_ID[_augment.id] = _augment
 del _augment

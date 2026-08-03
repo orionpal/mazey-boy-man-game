@@ -176,6 +176,7 @@ class LabyrinthRun:
         self.time = TimeResource(LABYRINTH_START_TIME)
         self.augment_build = AugmentBuild()
         self.teleporters: list = []
+        self.floors: list = []
         self._teleport_map: dict[tuple[int, int], tuple[int, int]] = {}
         self.doors: list = []
         self.keys: list = []
@@ -323,6 +324,7 @@ class LabyrinthRun:
         self.build = self.meta_progress.seed_build()  # reseeded, not reset to a plain Build() -- owned upgrades persist across restarts
         self.augment_build = AugmentBuild()
         self.teleporters = []
+        self.floors = []
         self._teleport_map = {}
         self.doors = []
         self.keys = []
@@ -373,6 +375,14 @@ class LabyrinthRun:
         for pair in self.teleporters:
             self._teleport_map[pair.a] = pair.b
             self._teleport_map[pair.b] = pair.a
+
+        # Stairs (multi-level mazes) are mechanically identical to a
+        # teleporter pair -- fold them into the same map so slide_path()'s
+        # existing `teleport` hook drives both without any new code path.
+        self.floors = ctx.extra.get("floors", [])
+        for link in self.floors:
+            self._teleport_map[link.down] = link.up
+            self._teleport_map[link.up] = link.down
 
         self.doors = ctx.extra.get("doors", [])
         self._locked_doors = {pair.door for pair in self.doors}
