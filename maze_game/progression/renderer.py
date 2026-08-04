@@ -2,7 +2,7 @@
 renderer.py
 -----------
 All pygame drawing code for the labyrinth progression mode: the maze,
-pellets/hazards/teleporter pads/doors and keys, HUD (time resource +
+pellets/hazards/teleporter pads/stairs/doors and keys, HUD (time resource +
 maze/group progress + seed), the left sidebar (acquired perks, and up to
 MAX_ACTIVE_AUGMENTS maze-modifier slots -- perks draw their entire static
 catalog filled-or-not, augments draw only as many slots as can ever be
@@ -30,7 +30,7 @@ from maze_game.constants import (
     C_BG, C_WALL, C_FLOOR, C_PLAYER, C_GOAL, C_TEXT, C_DIM, C_CARD_DESC, C_FLASH, C_HUD_BG,
     C_PANEL_BG, C_PANEL_LINE, C_BUTTON, C_BUTTON_HOVER,
     C_PELLET, C_GOLD, C_HAZARD, C_TELEPORT_PAIRS, C_DOOR_LOCKED, C_DOOR_UNLOCKED, C_DOOR_KEY_PAIRS,
-    C_SPEED_BONUS,
+    C_SPEED_BONUS, C_STAIRS_PAIRS,
     POPUP_DURATION_SECONDS, POPUP_RISE_PIXELS,
 )
 from maze_game.media import sprites
@@ -151,6 +151,7 @@ class Renderer:
             self._draw_gold_pellets(run.gold_pellets, layout)
             self._draw_hazards(run.hazards, layout)
             self._draw_teleporters(run.teleporters, layout)
+            self._draw_floors(run.floors, layout)
             self._draw_doors_and_keys(run, layout)
             self._draw_goal(run.goal, layout)
             self._draw_player(run.player, layout)
@@ -251,6 +252,37 @@ class Renderer:
             for x, y in (pair.a, pair.b):
                 rect = pygame.Rect(ox + x * cell + pad, oy + y * cell + pad, cell - 2 * pad, cell - 2 * pad)
                 pygame.draw.rect(self.surface, colour, rect, width=max(2, cell // 8))
+
+    def _draw_floors(self, floors, layout: Layout) -> None:
+        """
+        Stairs pairs (multi_level.py). Mechanically identical to a
+        teleporter pair, but drawn as chevrons -- pointing down at the
+        entrance cell, up at the arrival cell inside the recarved floor --
+        instead of teleporters' square outline, so the two augments read as
+        visually distinct even when both are active. Mandatory floors (the
+        ones the goal placement actually requires walking through, see
+        multi_level.py's "Forced-use guarantee") draw filled; decorative
+        floors draw as an outline only, echoing locked/unlocked door's
+        solid-vs-lighter convention for "must interact" vs "optional".
+        """
+        ox, oy = layout.maze_origin
+        cell = layout.cell
+        pad = max(1, cell // 5)
+        down_icon = sprites.get("stairs_down", cell)
+        up_icon = sprites.get("stairs_up", cell)
+        for link in floors:
+            colour = C_STAIRS_PAIRS[link.color_index % len(C_STAIRS_PAIRS)]
+            width = 0 if link.mandatory else max(2, cell // 8)
+            for (x, y), icon, apex_up in ((link.down, down_icon, False), (link.up, up_icon, True)):
+                if icon is not None:
+                    self.surface.blit(icon, (ox + x * cell, oy + y * cell))
+                    continue
+                cx, cy = ox + x * cell, oy + y * cell
+                if apex_up:
+                    points = [(cx + pad, cy + cell - pad), (cx + cell - pad, cy + cell - pad), (cx + cell // 2, cy + pad)]
+                else:
+                    points = [(cx + pad, cy + pad), (cx + cell - pad, cy + pad), (cx + cell // 2, cy + cell - pad)]
+                pygame.draw.polygon(self.surface, colour, points, width=width)
 
     def _draw_doors_and_keys(self, run: LabyrinthRun, layout: Layout) -> None:
         ox, oy = layout.maze_origin
@@ -412,6 +444,14 @@ class Renderer:
         pygame.draw.rect(self.surface, C_TELEPORT_PAIRS[0], pygame.Rect(x, y, swatch, swatch), width=3)
         self.surface.blit(self.font_small.render("Teleporter", True, C_TEXT), (x + swatch + 10, y + 1))
         self.surface.blit(self.font_small.render("(linked pads match)", True, C_DIM), (x, y + 24))
+        y += LEGEND_ROW_HEIGHT + 20
+
+        pygame.draw.polygon(
+            self.surface, C_STAIRS_PAIRS[0],
+            [(x, y + swatch), (x + swatch, y + swatch), (x + swatch // 2, y)],
+        )
+        self.surface.blit(self.font_small.render("Stairs", True, C_TEXT), (x + swatch + 10, y + 1))
+        self.surface.blit(self.font_small.render("(linked pads match; solid = mandatory)", True, C_DIM), (x, y + 24))
         y += LEGEND_ROW_HEIGHT + 20
 
         pygame.draw.circle(self.surface, C_DOOR_KEY_PAIRS[0], (x + swatch // 2, y + swatch // 2), swatch // 2)
