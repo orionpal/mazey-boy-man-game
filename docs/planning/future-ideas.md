@@ -79,8 +79,15 @@ Starting list:
   door) is collected. Same rigor as teleporters -- seals a pocket's whole
   boundary except the door's own entrance, verifies solvability via a full
   sequential-unlock simulation -- but as a *gate* instead of a *shortcut*.
-- **Multi-level mazes** -- not started. Named extension point in the
-  registry; no generation logic exists yet.
+- **Multi-level mazes** -- shipped (`progression/augments/multi_level.py`).
+  A pocket is sealed and its own interior recarved from scratch, linked to
+  the parent region by two one-way stairs warps (up: entrance ->
+  floor_start; down: a separately placed floor_exit -> return_landing).
+  Same rigor as teleporters/doors -- pendant-subtree pocket selection,
+  full sequential-unlock verification -- plus a per-floor camera crop
+  (`renderer.py`) so a floor renders at full-viewport scale instead of its
+  real tiny footprint. See `docs/progression.md`'s "Multi-Level Mazes"
+  section.
 - **Shifting maze** -- not started.
 - **Reverse controls** -- not started.
 - **Lights out** -- not started.

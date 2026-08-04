@@ -28,8 +28,8 @@ def _multi_level_augment():
 def _stairs_map(floors):
     tmap = {}
     for link in floors:
-        tmap[link.down] = link.up
-        tmap[link.up] = link.down
+        tmap[link.entrance] = link.floor_start
+        tmap[link.floor_exit] = link.return_landing
     return tmap
 
 
@@ -85,10 +85,10 @@ def test_goal_is_unreachable_without_stairs_but_reachable_with_them():
 
 def test_goal_is_unreachable_skipping_even_one_mandatory_floors_stairs():
     """A stronger version of the core guarantee at higher levels: locking out
-    any single mandatory floor's `down` cell (as if the player refused to
+    any single mandatory floor's `entrance` (as if the player refused to
     use it) must make the goal unreachable, proving every mandatory floor
     -- not just the deepest one -- sits on the only path to the goal."""
-    rng = random.Random(4242)
+    rng = random.Random(3)
     grid = generate_maze(25, 25, rng=rng)
     ctx = _run_multi_level_at_level(grid, level=3, seed_rng=rng)
     mandatory = [f for f in ctx.extra["floors"] if f.mandatory]
@@ -97,13 +97,14 @@ def test_goal_is_unreachable_skipping_even_one_mandatory_floors_stairs():
     full_tmap = _full_teleport_map(ctx)
     for skip in mandatory:
         tmap = dict(full_tmap)
-        del tmap[skip.down]
-        del tmap[skip.up]
+        del tmap[skip.entrance]
+        del tmap[skip.floor_exit]
         reachable = sequentially_reachable(
             ctx.grid, (1, 1), ctx.extra.get("doors", []), teleport=lambda x, y: tmap.get((x, y)),
         )
         assert ctx.goal not in reachable, (
-            f"goal still reachable while floor {skip.floor}'s stairs ({skip.down}<->{skip.up}) are disabled"
+            f"goal still reachable while floor {skip.floor}'s stairs "
+            f"({skip.entrance}->{skip.floor_start}) are disabled"
         )
 
 
@@ -140,10 +141,32 @@ def test_stairs_cells_never_overlap_start_goal_or_each_other():
 
     all_cells = []
     for link in ctx.extra["floors"]:
-        all_cells.extend([link.down, link.up])
+        all_cells.extend([link.entrance, link.floor_start, link.floor_exit, link.return_landing])
     assert (1, 1) not in all_cells
     assert ctx.goal not in all_cells
     assert len(all_cells) == len(set(all_cells))  # no duplicates
+
+
+def test_entrance_and_return_landing_are_distinct_parent_cells():
+    """
+    The asymmetric-stairs guarantee: a floor's up-marker (entrance) and
+    down-marker (return_landing) are both real, distinct, stoppable parent
+    cells -- not the same round-trip cell -- and return_landing on its own
+    (never having taken floor_exit) has no special effect, matching a
+    plain grid cell until the floor's own down-stairs are actually used.
+    """
+    rng = random.Random(2024)
+    grid = generate_maze(21, 21, rng=rng)
+    ctx = _run_multi_level_at_level(grid, level=1, seed_rng=rng)
+    assert ctx.extra["floors"], "expected at least one floor at level 1"
+
+    for link in ctx.extra["floors"]:
+        assert link.entrance != link.return_landing
+        assert link.floor_start != link.floor_exit
+        tmap = _stairs_map(ctx.extra["floors"])
+        # return_landing is only ever a *value* in the map (a destination),
+        # never a key -- stepping onto it isn't itself a trigger.
+        assert link.return_landing not in tmap
 
 
 # ── Determinism ───────────────────────────────────────────────────────────
@@ -189,6 +212,17 @@ def test_multi_level_composes_with_teleporters_and_doors_without_a_bypass():
     (registry order: teleporters, doors, multi_level -- exactly as in
     play). Neither an existing teleporter nor an existing door should let
     the player bypass a mandatory floor's sealed boundary, and vice versa.
+
+    This only checks the goal is reachable with everything intact -- the
+    weaker property that did NOT catch the real "last augment to run wins
+    ownership of ctx.goal" composability bug (see augments/__init__.py's
+    AugmentContext docstring and docs/progression.md's Multi-Level Mazes
+    section). test_composition.py's
+    test_all_three_augments_together_all_gate_the_goal() is the strengthened
+    version of this exact scenario: it additionally proves disabling any
+    *one* augment's mandatory content, with the other two left fully
+    intact, breaks solvability -- the property that actually would have
+    caught that bug.
     """
     from maze_game.progression.augments.doors import DoorsAugment  # noqa: F401 (imported for clarity)
     from maze_game.progression.augments.teleporters import TeleportersAugment  # noqa: F401

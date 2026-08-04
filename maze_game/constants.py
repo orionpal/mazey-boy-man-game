@@ -197,6 +197,11 @@ MULTI_LEVEL_MANDATORY_COUNT_STEP   = 1
 MULTI_LEVEL_FLOOR_MIN_SIZE         = 4   # cells recarved into one floor's own footprint
 MULTI_LEVEL_FLOOR_MAX_SIZE         = 12
 MULTI_LEVEL_PLACEMENT_MAX_ATTEMPTS = 10  # retries per floor before giving up on it (graceful degradation, never a crash/hang)
+# Soft preference radius (Chebyshev distance, in cells) for picking a
+# floor's return_landing near its entrance, so the two markers read as a
+# related pair in the parent maze rather than being scattered arbitrarily
+# far apart -- falls back to any valid candidate if nothing qualifies.
+MULTI_LEVEL_RETURN_NEAR_RADIUS      = 6
 
 # ── Colours  (R, G, B) ────────────────────────────────────────────────────
 # Identity colours (player/goal/pellet/gold/hazard/door/speed-bonus) are

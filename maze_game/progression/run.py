@@ -178,6 +178,13 @@ class LabyrinthRun:
         self.teleporters: list = []
         self.floors: list = []
         self._teleport_map: dict[tuple[int, int], tuple[int, int]] = {}
+        # Which floor(s) the player is currently "inside", nearest first --
+        # a stack, not a single value, since a mandatory floor can nest
+        # inside another (see multi_level.py), so leaving floor 2 must
+        # return to floor 1's own view, not straight to the top-level maze.
+        # Only ever touched by move() (push on a floor's floor_start,
+        # pop on its return_landing) and reset by _begin_maze()/restart().
+        self._floor_stack: list = []
         self.doors: list = []
         self.keys: list = []
         self._locked_doors: set[tuple[int, int]] = set()
@@ -263,6 +270,22 @@ class LabyrinthRun:
         teleported = len(path) >= 2 and self._teleport_map.get(path[-2]) == path[-1]
         self.events.append("teleport" if teleported else "move")
         self.player = path[-1]
+
+        # Floor-stack bookkeeping: only a floor's own floor_start/
+        # return_landing push/pop it (checked by identity against
+        # self.floors, not "any teleport fired" -- a plain teleporter pad
+        # never touches this), so the renderer's camera (current_view_bounds
+        # below) knows whether to show the top-level maze or crop to a
+        # floor's own footprint. Popping checks specifically the *current*
+        # top-of-stack's own return_landing, not any floor's, so leaving a
+        # nested floor 2 correctly returns to floor 1's view, not straight
+        # to the top level.
+        entered_floor = next((link for link in self.floors if link.floor_start == self.player), None)
+        if entered_floor is not None:
+            self._floor_stack.append(entered_floor)
+        elif self._floor_stack and self._floor_stack[-1].return_landing == self.player:
+            self._floor_stack.pop()
+
         resolve_contacts(self, path)
 
     def move_break_cursor(self, delta: int) -> None:
@@ -326,6 +349,7 @@ class LabyrinthRun:
         self.teleporters = []
         self.floors = []
         self._teleport_map = {}
+        self._floor_stack = []
         self.doors = []
         self.keys = []
         self._locked_doors = set()
@@ -343,6 +367,27 @@ class LabyrinthRun:
     @property
     def total_groups(self) -> int:
         return -(-LABYRINTH_TOTAL_MAZES // LABYRINTH_GROUP_SIZE)  # ceil division
+
+    @property
+    def current_view_bounds(self) -> tuple[int, int, int, int] | None:
+        """
+        None at top level (the renderer shows the whole grid, as always);
+        otherwise the (min_x, min_y, width, height) bounding box of the
+        floor the player is currently on (the top of _floor_stack, for
+        correctly un-nesting a floor placed inside another) -- see
+        renderer.py's Layout, which crops/scales the maze viewport to this
+        box so a floor reads as a genuinely different, full-scale place
+        instead of squeezed into its real, tiny footprint alongside the
+        much bigger parent maze.
+        """
+        if not self._floor_stack:
+            return None
+        blob = self._floor_stack[-1].blob
+        xs = [x for x, _y in blob]
+        ys = [y for _x, y in blob]
+        min_x, max_x = min(xs), max(xs)
+        min_y, max_y = min(ys), max(ys)
+        return min_x, min_y, max_x - min_x + 1, max_y - min_y + 1
 
     # ── Private helpers ───────────────────────────────────────────────────
 
@@ -376,20 +421,35 @@ class LabyrinthRun:
             self._teleport_map[pair.a] = pair.b
             self._teleport_map[pair.b] = pair.a
 
-        # Stairs (multi-level mazes) are mechanically identical to a
-        # teleporter pair -- fold them into the same map so slide_path()'s
-        # existing `teleport` hook drives both without any new code path.
+        # Stairs (multi-level mazes) are two one-way warps -- entrance ->
+        # floor_start going up, floor_exit -> return_landing coming back
+        # down, which need not be the same cell pair -- but mechanically
+        # each is still just an ordinary entry in the same map a real
+        # teleporter uses, so slide_path()'s existing `teleport` hook
+        # drives both without any new code path. floor_start/return_landing
+        # are deliberately never map *keys*: stepping onto them is just
+        # ordinary movement, only entrance/floor_exit trigger a warp.
         self.floors = ctx.extra.get("floors", [])
+        self._floor_stack = []
         for link in self.floors:
-            self._teleport_map[link.down] = link.up
-            self._teleport_map[link.up] = link.down
+            self._teleport_map[link.entrance] = link.floor_start
+            self._teleport_map[link.floor_exit] = link.return_landing
 
         self.doors = ctx.extra.get("doors", [])
         self._locked_doors = {pair.door for pair in self.doors}
         self.keys = [Key(pair.key, door_cell=pair.door) for pair in self.doors]
 
         self.goal = ctx.goal
-        exclude = {START_POS, self.goal} | ctx.reserved
+        # A floor's whole blob is reserved (protects it from being
+        # clobbered by another augment's later placement -- see
+        # multi_level.py), but that's a placement-safety concern, not a
+        # spawn-eligibility one: carve the floor interiors back out so
+        # pellets/hazards/gold can land inside them too, not just their
+        # four special stairs cells.
+        floor_interior: set[tuple[int, int]] = set()
+        for link in self.floors:
+            floor_interior |= link.blob - {link.entrance, link.floor_start, link.floor_exit, link.return_landing}
+        exclude = ({START_POS, self.goal} | ctx.reserved) - floor_interior
         self.pellets = spawn_pellets(self.grid, exclude, self.build.pellet_frequency_multiplier, rng=self.rng)
         exclude = exclude | {p.pos for p in self.pellets}
         self.gold_pellets = spawn_gold_pellets(self.grid, exclude, rng=self.rng)

@@ -8,11 +8,23 @@ then discarded and recarved from scratch (_recarve_blob()), rather than
 reusing whatever generate_maze() originally carved there. That's the one
 thing this augment adds that teleporters/doors don't: a floor reads as a
 genuinely different level, not the parent maze's leftover interior wearing
-a new coat of paint. Linked back to the region above by a "stairs" pair --
-mechanically identical to a teleporter pair (step on either cell, warp to
-its partner, stop immediately; see player.slide_path()'s existing
-`teleport` hook, reused as-is) -- so no new engine mechanic is needed, only
-a different name/render for the same warp.
+a new coat of paint. (progression/renderer.py additionally crops the
+camera to a floor's own bounding box while the player is on it, so it also
+*renders* at full-viewport scale instead of squeezed into its real small
+footprint -- see renderer.py's Layout docstring.)
+
+Linked back to the region above by TWO one-way warps, not one bidirectional
+pair -- `entrance` (parent cell) -> `floor_start` (floor cell) going up,
+and a *separately placed* `floor_exit` (floor cell) -> `return_landing`
+(parent cell) coming back down, which need not be anywhere near `entrance`.
+Both parent-side cells (`entrance` and `return_landing`) are rendered from
+the moment the floor exists, before the player has ever taken the stairs,
+so there's always a way to see where a floor's down-stairs will let you
+back out, not just where its up-stairs are. Mechanically this is still
+just two ordinary entries in the same `_teleport_map` a real teleporter
+uses (see player.slide_path()'s existing `teleport` hook) -- nothing in
+that hook requires a pair to be symmetric, so no new engine mechanic is
+needed for the asymmetry, only two map entries instead of one.
 
 Level scaling: level 1 recarves a couple of floors with one mandatory;
 higher levels add more floors and make more of them mandatory (see
@@ -42,15 +54,23 @@ anything *inside* the pocket's own interior.
 **Forced-use guarantee.** A mandatory floor's pocket is sealed with *no*
 kept-open crossing at all (unlike doors.py's seal_pocket(..., keep_open=)),
 so plain grid adjacency (bfs_reachable/shortest_path) can never reach past
-its boundary -- the stairs pair is the *only* way in, exactly like a
-teleporter's mandatory pocket. The goal itself is then relocated
-(farthest_reachable_cell) into the deepest mandatory floor's own recarved
-interior once every mandatory floor is placed, so finishing the maze is
-only possible by walking onto every mandatory floor's `down` stairs in
-turn. See tests/progression/augments/test_multi_level.py's
-"forced-use" tests for the bfs_reachable()-must-fail /
-sequentially_reachable()-must-succeed pair that proves this, mirroring the
-same standard doors.py's own test suite holds itself to.
+its boundary -- `entrance` is the *only* way in, exactly like a
+teleporter's mandatory pocket. This module composes with the other two via
+the shared ctx.frontier (see augments/__init__.py's AugmentContext
+docstring): a mandatory floor's own search is rooted at ctx.frontier (not
+ctx.start), and advances ctx.frontier to `floor_start` on success, so
+whatever runs next in the pipeline nests its own mandatory content behind
+this floor too, instead of independently claiming the goal and silently
+orphaning it (a real bug the frontier mechanism fixes -- see
+docs/progression.md's Multi-Level Mazes section). The final goal is placed
+once, centrally, in run_pipeline()'s _finalize_goal(), only after every
+active augment's mandatory content -- across all three augments, in
+whatever combination the player picked -- has been folded into the
+frontier chain. See tests/progression/augments/test_multi_level.py's
+"forced-use" tests and test_composition.py for the
+bfs_reachable()-must-fail / sequentially_reachable()-must-succeed pairs
+that prove this, mirroring the same standard doors.py's own test suite
+holds itself to.
 """
 
 from __future__ import annotations
@@ -61,11 +81,11 @@ from maze_game.constants import (
     MULTI_LEVEL_FLOOR_COUNT_BASE, MULTI_LEVEL_FLOOR_COUNT_STEP, MULTI_LEVEL_FLOOR_COUNT_MAX,
     MULTI_LEVEL_MANDATORY_COUNT_BASE, MULTI_LEVEL_MANDATORY_COUNT_STEP,
     MULTI_LEVEL_FLOOR_MIN_SIZE, MULTI_LEVEL_FLOOR_MAX_SIZE,
-    MULTI_LEVEL_PLACEMENT_MAX_ATTEMPTS,
+    MULTI_LEVEL_PLACEMENT_MAX_ATTEMPTS, MULTI_LEVEL_RETURN_NEAR_RADIUS,
 )
-from maze_game.maze import is_stoppable_cell, farthest_reachable_cell, bfs_reachable
-from maze_game.progression.augments import Augment, AugmentContext
-from maze_game.progression.augments._movement import pendant_subtree_map, seal_pocket
+from maze_game.maze import is_stoppable_cell
+from maze_game.progression.augments import Augment, AugmentContext, nested_local_forbidden
+from maze_game.progression.augments._movement import pendant_subtree_map, real_move_reachable, seal_pocket
 from maze_game.progression.augments.doors import sequentially_reachable
 
 _PASSAGE_STEPS = ((0, -2), (0, 2), (-2, 0), (2, 0))
@@ -74,16 +94,26 @@ _PASSAGE_STEPS = ((0, -2), (0, 2), (-2, 0), (2, 0))
 @dataclass(frozen=True)
 class FloorLink:
     """
-    A stairs pair linking a cell in the shallower region (`down`) to a cell
-    inside the recarved floor it leads to (`up`). `floor` is the 1-based
-    nesting depth of the floor `up` sits on.
+    Two one-way stairs warps linking a parent region to a recarved floor:
+    `entrance` (parent cell) -> `floor_start` (floor cell) going up, and
+    `floor_exit` (floor cell) -> `return_landing` (parent cell) coming back
+    down. `return_landing` is deliberately a *different* parent cell than
+    `entrance` in general (see module docstring) -- both are placed and
+    rendered together so the player can see, before ever taking the
+    stairs, both where a floor's entrance is and where its exit will let
+    them back out. `blob` is the floor's own cell set (used by
+    renderer.py to crop the camera to it). `floor` is the 1-based nesting
+    depth of the floor `floor_start` sits on.
     """
 
-    down: tuple[int, int]
-    up: tuple[int, int]
+    entrance: tuple[int, int]
+    floor_start: tuple[int, int]
+    floor_exit: tuple[int, int]
+    return_landing: tuple[int, int]
     mandatory: bool
     color_index: int
     floor: int
+    blob: frozenset[tuple[int, int]]
 
 
 class MultiLevelAugment(Augment):
@@ -107,7 +137,7 @@ class MultiLevelAugment(Augment):
         doors = ctx.extra.get("doors", [])
 
         floors: list[FloorLink] = []
-        current_start = ctx.start
+        current_start = ctx.frontier
         for depth in range(1, mandatory_count + 1):
             link = _place_floor(
                 ctx, current_start, tmap, doors,
@@ -116,11 +146,16 @@ class MultiLevelAugment(Augment):
             if link is None:
                 break  # graceful degradation -- fewer mandatory floors than the formula asked for
             floors.append(link)
-            current_start = link.up
+            # _place_floor() already advanced ctx.frontier to floor_start
+            # for a mandatory floor -- root the next one there, nesting it
+            # inside this floor's own recarved interior.
+            current_start = ctx.frontier
 
-        if floors:
-            ctx.goal = farthest_reachable_cell(ctx.grid, current_start)
-
+        # Decoratives are optional side content in the broadly-reachable
+        # main region, so they're deliberately rooted at ctx.start (the
+        # full main region), not ctx.frontier (the mandatory chain's own,
+        # narrower end) -- mirrors teleporters.py's own decoratives, which
+        # root at bfs_reachable(ctx.grid, ctx.start) for the same reason.
         decorative_count = floor_count - len(floors)
         for i in range(decorative_count):
             link = _place_floor(
@@ -206,20 +241,32 @@ def _place_floor(
     to the smallest subtree at least that big, same fallback shape as
     teleporters._place_mandatory_pair), whose closure contains no
     already-reserved cell, seal its boundary, recarve its interior from
-    scratch, and link it to `current_start`'s region with a stairs pair --
-    verified with the full sequentially_reachable() (folding in every
-    already-placed door's key-collection order and every teleporter link)
-    before committing, the same standard doors.py's own placement holds
-    itself to.
+    scratch, and link it to `current_start`'s region with TWO one-way
+    stairs warps -- an up trip (entrance -> floor_start) and a separately
+    placed down trip (floor_exit -> return_landing) -- each verified with
+    the full sequentially_reachable() (folding in every already-placed
+    door's key-collection order and every teleporter/floor link) before
+    committing, the same standard doors.py's own placement holds itself to.
 
-    Mutates ctx.grid/ctx.reserved in place on success. Returns None if no
-    candidate works out (graceful degradation).
+    On success for a *mandatory* floor, advances ctx.frontier to
+    floor_start, so whatever the pipeline places next nests behind this
+    floor too (see augments/__init__.py's AugmentContext docstring).
+    Mutates ctx.grid/ctx.reserved(/ctx.frontier) in place on success.
+    Returns None if no candidate works out (graceful degradation).
     """
     order, subtree, _parent = pendant_subtree_map(ctx.grid, current_start)
-    forbidden = ctx.reserved | {current_start}
+    local_forbidden = nested_local_forbidden(ctx, current_start)
+    avoid = local_forbidden if local_forbidden is not None else ctx.reserved
+    # nested_local_forbidden() only knows about ctx.extra["floors"], which
+    # this augment's own apply() doesn't write until every floor in this
+    # call is placed -- fold in `committed` (this call's own already-placed
+    # floors) directly so a still-in-progress mandatory chain can't
+    # re-select or recarve over one of its own earlier links' cells.
+    for link in committed:
+        avoid = avoid | {link.entrance, link.floor_start, link.floor_exit, link.return_landing}
     candidates = [
         c for c in order
-        if c != current_start and c not in forbidden and not (subtree[c] & ctx.reserved)
+        if c != current_start and c not in avoid and not (subtree[c] & avoid)
     ]
     if not candidates:
         return None
@@ -238,6 +285,11 @@ def _place_floor(
         smallest = min(len(subtree[c]) for c in big_enough)
         pool = [c for c in big_enough if len(subtree[c]) == smallest]
 
+    base_tmap = dict(tmap)
+    for link in committed:
+        base_tmap[link.entrance] = link.floor_start
+        base_tmap[link.floor_exit] = link.return_landing
+
     for _ in range(MULTI_LEVEL_PLACEMENT_MAX_ATTEMPTS):
         if not pool:
             return None
@@ -248,30 +300,61 @@ def _place_floor(
         sealed_grid = seal_pocket(ctx.grid, blob)
         floor_grid = _recarve_blob(sealed_grid, blob, ctx.rng)
 
-        after = bfs_reachable(floor_grid, current_start)
-        down_candidates = [c for c in after if c not in ctx.reserved and is_stoppable_cell(floor_grid, *c)]
-        up_candidates = [c for c in blob if c not in ctx.reserved and is_stoppable_cell(floor_grid, *c)]
-        if not down_candidates or not up_candidates:
+        # Plain grid adjacency alone isn't enough here: a door is a
+        # behavioral gate, not a real wall (see doors.py's own docstring),
+        # so if current_start sits behind an already-placed mandatory door,
+        # bfs_reachable() would happily walk straight back through that
+        # (grid-open) door cell and discover the near side too -- letting
+        # `entrance` land somewhere that doesn't actually require the door
+        # at all, defeating the nesting this whole chain relies on. Locking
+        # every already-placed mandatory door for this one lookup confines
+        # `after` to the region genuinely nested behind whatever's already
+        # been established, mirroring _finalize_goal()'s same concern.
+        mandatory_door_cells = {pair.door for pair in doors if pair.mandatory}
+        after = real_move_reachable(floor_grid, current_start, door_locked=lambda x, y: (x, y) in mandatory_door_cells)
+        entrance_candidates = [c for c in after if c not in avoid and is_stoppable_cell(floor_grid, *c)]
+        floor_start_candidates = [c for c in blob if c not in avoid and is_stoppable_cell(floor_grid, *c)]
+        if not entrance_candidates or not floor_start_candidates:
             continue
 
-        down = ctx.rng.choice(down_candidates)
-        up = ctx.rng.choice(up_candidates)
+        entrance = ctx.rng.choice(entrance_candidates)
+        floor_start = ctx.rng.choice(floor_start_candidates)
 
-        tentative_tmap = dict(tmap)
-        for link in committed:
-            tentative_tmap[link.down] = link.up
-            tentative_tmap[link.up] = link.down
-        tentative_tmap[down] = up
-        tentative_tmap[up] = down
+        up_tmap = dict(base_tmap)
+        up_tmap[entrance] = floor_start
+        up_reachable = sequentially_reachable(floor_grid, ctx.start, doors, teleport=lambda x, y: up_tmap.get((x, y)))
+        if floor_start not in up_reachable or ctx.frontier not in up_reachable:
+            continue  # this pocket -- or its entrance -- broke solvability somewhere; try another
 
-        reachable = sequentially_reachable(
-            floor_grid, ctx.start, doors, teleport=lambda x, y: tentative_tmap.get((x, y)),
-        )
-        if up not in reachable or ctx.goal not in reachable:
-            continue  # this stairs pair -- or sealing its pocket -- broke solvability somewhere; try another
+        # Up trip is sound; now place the separate down trip. floor_exit
+        # must differ from floor_start, return_landing from entrance --
+        # they don't need to be reachable from each other via any
+        # particular path, just both need to genuinely exist.
+        floor_exit_candidates = [c for c in floor_start_candidates if c != floor_start]
+        return_landing_candidates = [c for c in entrance_candidates if c != entrance]
+        if not floor_exit_candidates or not return_landing_candidates:
+            continue  # not enough distinct stoppable cells for a separate down trip; try a different pocket
+
+        floor_exit = ctx.rng.choice(floor_exit_candidates)
+        near = [
+            c for c in return_landing_candidates
+            if max(abs(c[0] - entrance[0]), abs(c[1] - entrance[1])) <= MULTI_LEVEL_RETURN_NEAR_RADIUS
+        ]
+        return_landing = ctx.rng.choice(near if near else return_landing_candidates)
+
+        full_tmap = dict(up_tmap)
+        full_tmap[floor_exit] = return_landing
+        reachable = sequentially_reachable(floor_grid, ctx.start, doors, teleport=lambda x, y: full_tmap.get((x, y)))
+        if floor_start not in reachable or ctx.frontier not in reachable:
+            continue  # adding the down trip somehow broke something already established; try again
 
         ctx.grid = floor_grid
-        ctx.reserved |= blob | {down, up}
-        return FloorLink(down=down, up=up, mandatory=mandatory, color_index=color_index, floor=depth)
+        ctx.reserved |= blob | {entrance, floor_start, floor_exit, return_landing}
+        if mandatory:
+            ctx.frontier = floor_start
+        return FloorLink(
+            entrance=entrance, floor_start=floor_start, floor_exit=floor_exit, return_landing=return_landing,
+            mandatory=mandatory, color_index=color_index, floor=depth, blob=frozenset(blob),
+        )
 
     return None

@@ -106,6 +106,87 @@ def test_run_pipeline_sets_level_before_each_apply(monkeypatch):
     assert seen_levels == [3]
 
 
+# ── ctx.frontier / _finalize_goal (composability, see docs/progression.md) ──
+
+
+def test_frontier_seeded_at_start(monkeypatch):
+    seen_frontier = []
+
+    class _FrontierRecordingAugment(Augment):
+        id = "recorder"
+        name = "recorder"
+        description = ""
+
+        def apply(self, ctx):
+            seen_frontier.append(ctx.frontier)
+
+    aug = _FrontierRecordingAugment()
+    monkeypatch.setattr(augments_module, "ALL_AUGMENTS", [aug])
+    build = AugmentBuild()
+    build.acquire(aug)
+
+    grid = [[1, 1, 1], [1, 0, 1], [1, 1, 1]]
+    run_pipeline(grid, 3, 3, (1, 1), (1, 1), build, random.Random(1))
+
+    assert seen_frontier == [(1, 1)]
+
+
+def test_frontier_threads_from_one_augment_to_the_next(monkeypatch):
+    seen_frontier = []
+
+    class _FirstAugment(Augment):
+        id = "first"
+        name = "first"
+        description = ""
+
+        def apply(self, ctx):
+            ctx.frontier = (9, 9)  # pretend this augment placed mandatory content ending here
+
+    class _SecondAugment(Augment):
+        id = "second"
+        name = "second"
+        description = ""
+
+        def apply(self, ctx):
+            seen_frontier.append(ctx.frontier)
+
+    monkeypatch.setattr(augments_module, "ALL_AUGMENTS", [_FirstAugment(), _SecondAugment()])
+    build = AugmentBuild()
+    build.acquire(_FirstAugment())
+    build.acquire(_SecondAugment())
+
+    grid = [[1, 1, 1], [1, 0, 1], [1, 1, 1]]
+    run_pipeline(grid, 3, 3, (1, 1), (1, 1), build, random.Random(1))
+
+    # The second augment must see the FIRST augment's advanced frontier,
+    # not ctx.start -- this is the exact mechanism that fixes multiple
+    # active augments each independently (and silently) overwriting the
+    # goal instead of nesting behind each other's mandatory content.
+    assert seen_frontier == [(9, 9)]
+
+
+def test_finalize_goal_is_a_noop_when_nothing_advances_the_frontier(monkeypatch):
+    class _NoopAugment(Augment):
+        id = "noop"
+        name = "noop"
+        description = ""
+
+        def apply(self, ctx):
+            pass  # never touches ctx.frontier
+
+    aug = _NoopAugment()
+    monkeypatch.setattr(augments_module, "ALL_AUGMENTS", [aug])
+    build = AugmentBuild()
+    build.acquire(aug)
+
+    grid = [[1, 1, 1], [1, 0, 1], [1, 1, 1]]
+    ctx = run_pipeline(grid, 3, 3, (1, 1), (2, 1), build, random.Random(1))
+
+    # No augment advanced ctx.frontier past ctx.start, so _finalize_goal()
+    # must leave the caller's own plain-default goal exactly as passed in.
+    assert ctx.goal == (2, 1)
+
+
 # ── offer_augment_cards ──────────────────────────────────────────────────
 
 

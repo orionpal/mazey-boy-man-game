@@ -105,6 +105,50 @@ def seal_pocket(grid, blob, keep_open: frozenset = frozenset()):
     return sealed
 
 
+def farthest_within(grid, start, allowed):
+    """
+    Plain grid-adjacency BFS from `start`, confined to cells in `allowed`.
+    "Farthest" here means last-visited in BFS order, mirroring
+    maze.farthest_reachable_cell's own idiom.
+
+    Used by augments/__init__.py::_finalize_goal() to place the goal once
+    every active augment's mandatory content has been folded into
+    ctx.frontier: `allowed` is first computed via a real, sequentially-
+    consistent simulation (doors.py's sequentially_reachable(), rooted at
+    the *true* start -- safe from the leak below since nothing there is
+    rooted at a link's own endpoint), and this function only needs to
+    measure distance *within* that already-correct set, not determine
+    reachability itself.
+
+    Deliberately plain grid adjacency, not a second real-move walk from
+    `start` (== ctx.frontier): a real-move search *rooted at* a mandatory
+    teleporter/floor link's own endpoint can step onto that same link from
+    a different direction mid-search and immediately warp back out through
+    it (bidirectional pairs) -- or, for a mandatory door, would need to
+    treat the door as unlocked to even start meaningfully, both routes
+    discovering the vast, unrelated region outside the pocket the
+    mandatory chain just sealed off and silently defeating the whole
+    forced-use guarantee. Filtering plain grid adjacency by `allowed`
+    membership sidesteps this entirely -- it can only ever mark cells the
+    already-correct simulation independently proved reachable, and doors'
+    own behavioral (grid-open) gating is exactly why `allowed` is needed at
+    all here, not real wall connectivity alone (real walls, e.g. a sealed
+    teleporter/floor pocket boundary, already confine plain adjacency
+    correctly on their own).
+    """
+    seen = {start}
+    queue: deque[tuple[int, int]] = deque([start])
+    farthest = start
+    while queue:
+        pos = queue.popleft()
+        farthest = pos
+        for n in _passage_neighbors(grid, *pos):
+            if n in allowed and n not in seen:
+                seen.add(n)
+                queue.append(n)
+    return farthest
+
+
 def real_move_reachable(grid, start, *, teleport=None, door_locked=None):
     """
     BFS over the *real* movement-state graph: from each position, the only

@@ -22,6 +22,16 @@ Level scaling: level 1 places a handful of pairs with only one mandatory;
 higher levels add more pairs and make more of them mandatory (see
 TELEPORT_* constants), each successive mandatory pair nested one pocket
 deeper than the last.
+
+Composes with other augments via the shared ctx.frontier (see
+augments/__init__.py's AugmentContext docstring): this module's mandatory
+chain is rooted at ctx.frontier (not ctx.start), and advances ctx.frontier
+to its own chain's end when it places at least one mandatory pair --
+it no longer claims the maze's goal for itself (that used to be a real
+bug: whichever goal-claiming augment ran last silently orphaned every
+earlier one's mandatory content -- see docs/progression.md's Multi-Level
+Mazes section). Final goal placement happens once, centrally, in
+run_pipeline()'s _finalize_goal(), after every active augment has run.
 """
 
 from __future__ import annotations
@@ -34,8 +44,8 @@ from maze_game.constants import (
     TELEPORT_POCKET_MIN_SIZE, TELEPORT_POCKET_MAX_SIZE,
     TELEPORT_PLACEMENT_MAX_ATTEMPTS,
 )
-from maze_game.maze import bfs_reachable, is_stoppable_cell, farthest_reachable_cell
-from maze_game.progression.augments import Augment, AugmentContext
+from maze_game.maze import bfs_reachable, is_stoppable_cell
+from maze_game.progression.augments import Augment, AugmentContext, nested_local_forbidden
 from maze_game.progression.augments._movement import pendant_subtree_map, real_move_reachable, seal_pocket
 
 
@@ -66,7 +76,7 @@ class TeleportersAugment(Augment):
         )
 
         pairs: list[TeleporterPair] = []
-        current_start = ctx.start
+        current_start = ctx.frontier
         for i in range(mandatory_count):
             pair = _place_mandatory_pair(ctx, current_start, color_index=i, committed=pairs)
             if pair is None:
@@ -75,7 +85,7 @@ class TeleportersAugment(Augment):
             current_start = pair.b
 
         if pairs:
-            ctx.goal = farthest_reachable_cell(ctx.grid, current_start)
+            ctx.frontier = current_start  # nest whatever runs next in the pipeline behind this chain too
 
         decorative_count = pair_count - len(pairs)
         pairs.extend(_place_decorative_pairs(ctx, decorative_count, start_index=len(pairs), committed=pairs))
@@ -116,7 +126,8 @@ def _place_mandatory_pair(
     mandatory pairs than the level formula asked for).
     """
     order, subtree, _parent = pendant_subtree_map(ctx.grid, current_start)
-    forbidden = ctx.reserved | {current_start}
+    local_forbidden = nested_local_forbidden(ctx, current_start)
+    forbidden = {current_start} | (local_forbidden if local_forbidden is not None else ctx.reserved)
     candidates = [c for c in order if c != current_start and c not in forbidden]
     if not candidates:
         return None
@@ -205,8 +216,8 @@ def _place_decorative_pairs(
             tentative_tmap[a] = b
             tentative_tmap[b] = a
 
-            if ctx.goal not in real_move_reachable(ctx.grid, ctx.start, teleport=lambda x, y: tentative_tmap.get((x, y))):
-                continue  # this pair would cut off the route to the goal -- try a different pair
+            if ctx.frontier not in real_move_reachable(ctx.grid, ctx.start, teleport=lambda x, y: tentative_tmap.get((x, y))):
+                continue  # this pair would cut off the mandatory chain established so far -- try a different pair
 
             candidates = [c for c in candidates if c not in (a, b)]
             ctx.reserved.add(a)

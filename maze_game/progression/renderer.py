@@ -78,12 +78,32 @@ def _wrap_text(font: pygame.font.Font, text: str, max_width: int) -> list[str]:
 
 
 class Layout:
-    """Computed rects for the current cols/rows -- shared by draw() and progression/app.py::run_labyrinth()'s click handling."""
+    """
+    Computed rects for the current cols/rows -- shared by draw() and
+    progression/app.py::run_labyrinth()'s click handling.
 
-    def __init__(self, cols: int, rows: int) -> None:
-        self.cell = max(1, MAZE_AREA_SIZE // max(cols, rows))
-        self.maze_w = cols * self.cell
-        self.maze_h = rows * self.cell
+    `view_bounds`, if given, is a (min_x, min_y, width, height) grid-cell
+    bounding box (see LabyrinthRun.current_view_bounds) the maze area
+    should crop and scale to instead of the full cols x rows grid -- how a
+    multi-level maze's floor (progression/augments/multi_level.py) renders
+    at full-viewport scale while the player is on it, instead of squeezed
+    into its real, tiny footprint alongside the much bigger parent maze.
+    `view_origin` is what every draw method subtracts from a cell's raw
+    (x, y) before multiplying by `cell`; (0, 0) when there's no active view,
+    so callers never need a None-check.
+    """
+
+    def __init__(self, cols: int, rows: int, view_bounds: tuple[int, int, int, int] | None = None) -> None:
+        if view_bounds is not None:
+            min_x, min_y, view_w, view_h = view_bounds
+        else:
+            min_x, min_y, view_w, view_h = 0, 0, cols, rows
+        self.view_origin = (min_x, min_y)
+        self.view_w = view_w
+        self.view_h = view_h
+        self.cell = max(1, MAZE_AREA_SIZE // max(view_w, view_h))
+        self.maze_w = view_w * self.cell
+        self.maze_h = view_h * self.cell
         self.window_h = MAZE_AREA_SIZE + HUD_HEIGHT
         self.window_w = SIDEBAR_W + MAZE_AREA_SIZE + SIDEBAR_W
 
@@ -119,6 +139,17 @@ class Layout:
             for i in range(MAX_ACTIVE_AUGMENTS)
         ]
 
+    def cell_px(self, x: int, y: int) -> tuple[int, int]:
+        """Screen-space pixel top-left corner for grid cell (x, y) -- every draw method's single source of truth for placing a cell, accounting for both the maze's fixed screen offset and the active view crop (view_origin)."""
+        ox, oy = self.maze_origin
+        origin_x, origin_y = self.view_origin
+        return ox + (x - origin_x) * self.cell, oy + (y - origin_y) * self.cell
+
+    def in_view(self, x: int, y: int) -> bool:
+        """Whether grid cell (x, y) falls within the active view crop (always True when there's no crop -- view_origin is (0, 0) and view_w/view_h are the full grid)."""
+        origin_x, origin_y = self.view_origin
+        return origin_x <= x < origin_x + self.view_w and origin_y <= y < origin_y + self.view_h
+
 
 class Renderer:
     def __init__(self, surface: pygame.Surface) -> None:
@@ -139,7 +170,11 @@ class Renderer:
     # ── Public API ────────────────────────────────────────────────────────
 
     def draw(self, run: LabyrinthRun) -> None:
-        layout = Layout(run.cols, run.rows)
+        # current_view_bounds is None at top level, or a floor's own
+        # bounding box while the player is on it (see LabyrinthRun's
+        # docstring) -- either way Layout() handles cropping/scaling the
+        # maze area to it, everything below just draws in grid coordinates.
+        layout = Layout(run.cols, run.rows, view_bounds=run.current_view_bounds)
         mouse_pos = pygame.mouse.get_pos()
 
         self.surface.fill(C_BG)
@@ -177,99 +212,120 @@ class Renderer:
     # ── Maze / entities ──────────────────────────────────────────────────
 
     def _draw_maze(self, grid, layout: Layout) -> None:
-        ox, oy = layout.maze_origin
         cell = layout.cell
-        for row in range(len(grid)):
-            for col in range(len(grid[0])):
+        origin_x, origin_y = layout.view_origin
+        for row in range(origin_y, origin_y + layout.view_h):
+            for col in range(origin_x, origin_x + layout.view_w):
                 colour = C_WALL if grid[row][col] == 1 else C_FLOOR
-                pygame.draw.rect(self.surface, colour, pygame.Rect(ox + col * cell, oy + row * cell, cell, cell))
+                px, py = layout.cell_px(col, row)
+                pygame.draw.rect(self.surface, colour, pygame.Rect(px, py, cell, cell))
 
     def _draw_goal(self, goal, layout: Layout) -> None:
-        ox, oy = layout.maze_origin
         cell = layout.cell
         gx, gy = goal
+        if not layout.in_view(gx, gy):
+            return
+        px, py = layout.cell_px(gx, gy)
         icon = sprites.get("goal", cell)
         if icon is not None:
-            self.surface.blit(icon, (ox + gx * cell, oy + gy * cell))
+            self.surface.blit(icon, (px, py))
             return
         pad = max(1, cell // 7)
-        pygame.draw.ellipse(self.surface, C_GOAL, pygame.Rect(ox + gx * cell + pad, oy + gy * cell + pad, cell - 2 * pad, cell - 2 * pad))
+        pygame.draw.ellipse(self.surface, C_GOAL, pygame.Rect(px + pad, py + pad, cell - 2 * pad, cell - 2 * pad))
 
     def _draw_player(self, player, layout: Layout) -> None:
-        ox, oy = layout.maze_origin
         cell = layout.cell
-        px, py = player
+        px_cell, py_cell = player
+        if not layout.in_view(px_cell, py_cell):
+            return
+        px, py = layout.cell_px(px_cell, py_cell)
         icon = sprites.get("player", cell)
         if icon is not None:
-            self.surface.blit(icon, (ox + px * cell, oy + py * cell))
+            self.surface.blit(icon, (px, py))
             return
-        center = (ox + px * cell + cell // 2, oy + py * cell + cell // 2)
+        center = (px + cell // 2, py + cell // 2)
         radius = max(1, cell // 2 - 3)
         pygame.draw.circle(self.surface, C_PLAYER, center, radius)
         draw_smiley_face(self.surface, C_BG, center, radius)
 
     def _draw_pellets(self, pellets, layout: Layout) -> None:
-        ox, oy = layout.maze_origin
         cell = layout.cell
         icon = sprites.get("pellet", cell)
         for pellet in pellets:
             x, y = pellet.pos
+            if not layout.in_view(x, y):
+                continue
+            px, py = layout.cell_px(x, y)
             if icon is not None:
-                self.surface.blit(icon, (ox + x * cell, oy + y * cell))
+                self.surface.blit(icon, (px, py))
                 continue
             r = max(1, cell // 5)
-            pygame.draw.circle(self.surface, C_PELLET, (ox + x * cell + cell // 2, oy + y * cell + cell // 2), r)
+            pygame.draw.circle(self.surface, C_PELLET, (px + cell // 2, py + cell // 2), r)
 
     def _draw_gold_pellets(self, gold_pellets, layout: Layout) -> None:
-        ox, oy = layout.maze_origin
         cell = layout.cell
         icon = sprites.get("gold", cell)
         for gold_pellet in gold_pellets:
             x, y = gold_pellet.pos
+            if not layout.in_view(x, y):
+                continue
+            px, py = layout.cell_px(x, y)
             if icon is not None:
-                self.surface.blit(icon, (ox + x * cell, oy + y * cell))
+                self.surface.blit(icon, (px, py))
                 continue
             r = max(1, cell // 5)
-            pygame.draw.circle(self.surface, C_GOLD, (ox + x * cell + cell // 2, oy + y * cell + cell // 2), r)
+            pygame.draw.circle(self.surface, C_GOLD, (px + cell // 2, py + cell // 2), r)
 
     def _draw_hazards(self, hazards, layout: Layout) -> None:
-        ox, oy = layout.maze_origin
         cell = layout.cell
         pad = max(1, cell // 5)
         icon = sprites.get("hazard", cell)
         for hazard in hazards:
             x, y = hazard.pos
+            if not layout.in_view(x, y):
+                continue
+            px, py = layout.cell_px(x, y)
             if icon is not None:
-                self.surface.blit(icon, (ox + x * cell, oy + y * cell))
+                self.surface.blit(icon, (px, py))
                 continue
             pygame.draw.rect(
                 self.surface, C_HAZARD,
-                pygame.Rect(ox + x * cell + pad, oy + y * cell + pad, cell - 2 * pad, cell - 2 * pad),
+                pygame.Rect(px + pad, py + pad, cell - 2 * pad, cell - 2 * pad),
             )
 
     def _draw_teleporters(self, teleporters, layout: Layout) -> None:
-        ox, oy = layout.maze_origin
         cell = layout.cell
         pad = max(1, cell // 5)
         for pair in teleporters:
             colour = C_TELEPORT_PAIRS[pair.color_index % len(C_TELEPORT_PAIRS)]
             for x, y in (pair.a, pair.b):
-                rect = pygame.Rect(ox + x * cell + pad, oy + y * cell + pad, cell - 2 * pad, cell - 2 * pad)
+                if not layout.in_view(x, y):
+                    continue
+                px, py = layout.cell_px(x, y)
+                rect = pygame.Rect(px + pad, py + pad, cell - 2 * pad, cell - 2 * pad)
                 pygame.draw.rect(self.surface, colour, rect, width=max(2, cell // 8))
 
     def _draw_floors(self, floors, layout: Layout) -> None:
         """
-        Stairs pairs (multi_level.py). Mechanically identical to a
-        teleporter pair, but drawn as chevrons -- pointing down at the
-        entrance cell, up at the arrival cell inside the recarved floor --
-        instead of teleporters' square outline, so the two augments read as
-        visually distinct even when both are active. Mandatory floors (the
-        ones the goal placement actually requires walking through, see
+        Stairs links (multi_level.py) -- FOUR cells per link, not two: the
+        parent-side pair (entrance, where stepping in warps up into the
+        floor; return_landing, where the floor's own down-stairs let you
+        back out -- may be a different cell than entrance, see
+        multi_level.py's module docstring) both draw a downward chevron
+        ("stairs_down": this is a doorway down into the floor), and the
+        floor-side pair (floor_start, floor_exit) both draw an upward one
+        ("stairs_up": this connects back to the surface) -- all FOUR drawn
+        unconditionally, in and out of view, so a floor's entrance and its
+        (possibly distant) return_landing are both visible together in the
+        parent maze before the player has ever taken the stairs, and the
+        floor's own pair are visible once cropped into it. Chevrons, not
+        teleporters' square outline, so the two augments read as visually
+        distinct even when both are active. Mandatory floors (the ones the
+        goal placement actually requires walking through, see
         multi_level.py's "Forced-use guarantee") draw filled; decorative
         floors draw as an outline only, echoing locked/unlocked door's
         solid-vs-lighter convention for "must interact" vs "optional".
         """
-        ox, oy = layout.maze_origin
         cell = layout.cell
         pad = max(1, cell // 5)
         down_icon = sprites.get("stairs_down", cell)
@@ -277,63 +333,78 @@ class Renderer:
         for link in floors:
             colour = C_STAIRS_PAIRS[link.color_index % len(C_STAIRS_PAIRS)]
             width = 0 if link.mandatory else max(2, cell // 8)
-            for (x, y), icon, apex_up in ((link.down, down_icon, False), (link.up, up_icon, True)):
-                if icon is not None:
-                    self.surface.blit(icon, (ox + x * cell, oy + y * cell))
+            markers = (
+                (link.entrance, down_icon, False),
+                (link.return_landing, down_icon, False),
+                (link.floor_start, up_icon, True),
+                (link.floor_exit, up_icon, True),
+            )
+            for (x, y), icon, apex_up in markers:
+                if not layout.in_view(x, y):
                     continue
-                cx, cy = ox + x * cell, oy + y * cell
+                px, py = layout.cell_px(x, y)
+                if icon is not None:
+                    self.surface.blit(icon, (px, py))
+                    continue
                 if apex_up:
-                    points = [(cx + pad, cy + cell - pad), (cx + cell - pad, cy + cell - pad), (cx + cell // 2, cy + pad)]
+                    points = [(px + pad, py + cell - pad), (px + cell - pad, py + cell - pad), (px + cell // 2, py + pad)]
                 else:
-                    points = [(cx + pad, cy + pad), (cx + cell - pad, cy + pad), (cx + cell // 2, cy + cell - pad)]
+                    points = [(px + pad, py + pad), (px + cell - pad, py + pad), (px + cell // 2, py + cell - pad)]
                 pygame.draw.polygon(self.surface, colour, points, width=width)
 
     def _draw_doors_and_keys(self, run: LabyrinthRun, layout: Layout) -> None:
-        ox, oy = layout.maze_origin
         cell = layout.cell
 
         locked_icon = sprites.get("door_locked", cell)
         unlocked_icon = sprites.get("door_unlocked", cell)
         for pair in run.doors:
             x, y = pair.door
+            if not layout.in_view(x, y):
+                continue
+            px, py = layout.cell_px(x, y)
             locked = pair.door in run._locked_doors
             icon = locked_icon if locked else unlocked_icon
             if icon is not None:
-                self.surface.blit(icon, (ox + x * cell, oy + y * cell))
+                self.surface.blit(icon, (px, py))
                 continue
             pad = max(1, cell // 6)
             colour = C_DOOR_LOCKED if locked else C_DOOR_UNLOCKED
             pygame.draw.rect(
                 self.surface, colour,
-                pygame.Rect(ox + x * cell + pad, oy + y * cell + pad, cell - 2 * pad, cell - 2 * pad),
+                pygame.Rect(px + pad, py + pad, cell - 2 * pad, cell - 2 * pad),
             )
 
         key_icon = sprites.get("key", cell)
         pair_colour = {pair.door: C_DOOR_KEY_PAIRS[pair.color_index % len(C_DOOR_KEY_PAIRS)] for pair in run.doors}
         for key in run.keys:
             x, y = key.pos
+            if not layout.in_view(x, y):
+                continue
+            px, py = layout.cell_px(x, y)
             if key_icon is not None:
-                self.surface.blit(key_icon, (ox + x * cell, oy + y * cell))
+                self.surface.blit(key_icon, (px, py))
                 continue
             colour = pair_colour.get(key.door_cell, C_DOOR_KEY_PAIRS[0])
             r = max(1, cell // 5)
-            pygame.draw.circle(self.surface, colour, (ox + x * cell + cell // 2, oy + y * cell + cell // 2), r)
+            pygame.draw.circle(self.surface, colour, (px + cell // 2, py + cell // 2), r)
 
     def _draw_popups(self, run: LabyrinthRun, layout: Layout) -> None:
         """Floating "+Xs"/"-Xs" labels for pellet/hazard/speed-bonus time changes -- rises and fades out over its lifetime."""
-        ox, oy = layout.maze_origin
         cell = layout.cell
         now = time.monotonic()
         for popup in run.popups:
             age = now - popup.created_at
             if age >= POPUP_DURATION_SECONDS:
                 continue
+            x, y = popup.pos
+            if not layout.in_view(x, y):
+                continue
             progress = age / POPUP_DURATION_SECONDS
             rise = int(POPUP_RISE_PIXELS * progress)
-            x, y = popup.pos
             label = self.font_small.render(popup.text, True, popup.color)
-            px = ox + x * cell + cell // 2 - label.get_width() // 2
-            py = oy + y * cell - cell // 2 - rise
+            cell_x, cell_y = layout.cell_px(x, y)
+            px = cell_x + cell // 2 - label.get_width() // 2
+            py = cell_y - cell // 2 - rise
             self.surface.blit(label, (px, py))
 
     # ── HUD ──────────────────────────────────────────────────────────────

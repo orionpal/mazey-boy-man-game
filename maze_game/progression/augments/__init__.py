@@ -40,6 +40,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from maze_game.constants import MAX_ACTIVE_AUGMENTS
+from maze_game.progression.augments._movement import farthest_within
 
 AUGMENT_CARDS_OFFERED = 3  # mirrors shop/__init__.py::SHOP_CARDS_OFFERED
 
@@ -58,13 +59,29 @@ class Augment:
 @dataclass
 class AugmentContext:
     """
-    Mutable bundle threaded through the augment pipeline. `grid`/`goal` may
-    be reassigned by an augment's apply() (e.g. teleporters seals off part
-    of the grid and moves the goal into the sealed pocket) -- later
-    augments in the pipeline must treat these as already-possibly-mutated,
-    not the raw generate_maze() output. `reserved` accumulates cells any
-    augment has claimed (teleporter pads, sealed-pocket boundaries, ...) so
-    later augments and entity spawning (pellets/hazards) can avoid them.
+    Mutable bundle threaded through the augment pipeline. `grid` may be
+    reassigned by an augment's apply() (e.g. teleporters seals off part of
+    the grid) -- later augments in the pipeline must treat it as
+    already-possibly-mutated, not the raw generate_maze() output.
+    `reserved` accumulates cells any augment has claimed (teleporter pads,
+    sealed-pocket boundaries, ...) so later augments and entity spawning
+    (pellets/hazards) can avoid them.
+
+    `goal` is NOT meant to be reassigned by an individual augment anymore
+    (see `frontier` below and `_finalize_goal()`) -- it starts as the plain
+    generate_maze() default and is only ever overwritten once, centrally,
+    after every augment has run.
+
+    `frontier` is the shared "current end of the mandatory chain" every
+    augment's mandatory-content placement must both read (as its own
+    search root, instead of `start`) and advance (to wherever its own
+    mandatory chain ends) before returning. This is what makes multiple
+    active augments' mandatory content compose into ONE nested critical
+    path instead of each independently claiming the goal and silently
+    orphaning whichever augment didn't run last (a real bug this field
+    fixes -- see docs/progression.md's Multi-Level Mazes section and
+    tests/progression/augments/test_composition.py). Starts at `start`;
+    staying there means no augment has placed mandatory content yet.
     """
 
     grid: list[list[int]]
@@ -76,6 +93,7 @@ class AugmentContext:
     level: int = 0
     reserved: set[tuple[int, int]] = field(default_factory=set)
     extra: dict[str, Any] = field(default_factory=dict)
+    frontier: tuple[int, int] | None = None
 
 
 class AugmentBuild:
@@ -112,19 +130,161 @@ def run_pipeline(
     Apply every active augment (level > 0) in ALL_AUGMENTS *registry order*
     -- not pick order -- to the generated maze. Registry order is a hard
     contract: every augment's apply() must assume any earlier augment in
-    ALL_AUGMENTS may have already mutated ctx.grid/ctx.goal/ctx.reserved,
+    ALL_AUGMENTS may have already mutated ctx.grid/ctx.reserved/ctx.frontier,
     and must fold its own effect on top rather than starting from a
-    pristine grid.
+    pristine grid. An augment that places mandatory content must root its
+    own search at ctx.frontier (not ctx.start) and advance ctx.frontier to
+    wherever its own mandatory chain ends -- see AugmentContext's docstring.
+    Final goal placement happens once, centrally, after the whole loop
+    (_finalize_goal()), not inside any individual augment.
     """
     ctx = AugmentContext(grid=grid, cols=cols, rows=rows, start=start, goal=goal, rng=rng)
     ctx.reserved = {start, goal}
+    ctx.frontier = start
     for augment in ALL_AUGMENTS:
         level = build.level_of(augment.id)
         if level <= 0:
             continue
         ctx.level = level
         augment.apply(ctx)
+    _finalize_goal(ctx)
     return ctx
+
+
+def _finalize_goal(ctx: AugmentContext) -> None:
+    """
+    Runs once, after every active augment's mandatory content has been
+    folded into ctx.frontier -- moves goal placement out of individual
+    augments (which used to independently overwrite ctx.goal, silently
+    orphaning whichever one didn't run last) into one shared step, so the
+    final goal structurally requires the *entire* accumulated gauntlet
+    regardless of which augments are active or what order they ran in.
+
+    Deliberately a no-op when ctx.frontier is still ctx.start (nobody
+    placed mandatory content): preserves the caller's own plain
+    farthest_reachable_cell default (see run.py::_begin_maze()) exactly,
+    rather than silently switching goal-distance metrics for mazes this
+    fix doesn't need to touch.
+
+    Computes the *real*, sequentially-consistent reachable set once (via
+    doors.py's own sequentially_reachable(), the same ground-truth check
+    every augment's own placement already trusts -- rooted at ctx.start,
+    not ctx.frontier, so a mandatory link's own reverse route can't leak
+    the search back outside the pocket it just sealed the way rooting
+    *at* ctx.frontier would), then finds the farthest cell *from
+    ctx.frontier* within that set, minus every mandatory trigger cell
+    (_mandatory_gate_cells()) -- via plain grid adjacency
+    (farthest_within()), deliberately not a second real-move walk. See
+    both helpers' docstrings for why: a mandatory teleporter pair is
+    bidirectional and a mandatory door cell is grid-open once its key is
+    (correctly) found, so plain "was this ever reachable" membership alone
+    isn't enough to stop the search walking back out the same way it came
+    in and discovering the unrelated near side.
+    """
+    if ctx.frontier == ctx.start:
+        return
+    from maze_game.progression.augments.doors import sequentially_reachable  # deferred: doors.py imports this module
+
+    tmap = _combined_teleport_map(ctx)
+    doors = ctx.extra.get("doors", [])
+    reachable = sequentially_reachable(ctx.grid, ctx.start, doors, teleport=lambda x, y: tmap.get((x, y)))
+    search_allowed = reachable - _mandatory_gate_cells(ctx)
+    ctx.goal = farthest_within(ctx.grid, ctx.frontier, search_allowed)
+
+
+def nested_local_forbidden(ctx: AugmentContext, current_start: tuple[int, int]) -> set[tuple[int, int]] | None:
+    """
+    None if `current_start` sits in the openly-reachable main region (not
+    yet nested inside any sealed pocket) -- callers should fall back to
+    their usual ctx.reserved-based candidate filtering in that case, which
+    legitimately needs to reject a candidate that would overlap ANY
+    already-placed, separate pocket's entire footprint.
+
+    Otherwise (current_start already sits inside a sealed pocket -- this is
+    how a mandatory chain nests deeper, within one augment's own chain or
+    across augments), returns the much narrower set candidates should
+    avoid: every individual already-placed special cell (teleporter
+    entrance/exit, door/key, floor entrance/floor_start/floor_exit/
+    return_landing) -- NOT the enclosing pocket's entire blob.
+
+    Why the distinction matters: ctx.reserved deliberately includes a
+    sealed/recarved pocket's *entire* cell closure (not just its special
+    cells), so that a *separate*, non-nested placement elsewhere can never
+    overlap it. But that same blanket set, applied to a search already
+    rooted *inside* that pocket, would reject every single candidate --
+    the whole point of nesting is to further subdivide that same,
+    already-isolated interior, not avoid it. A pocket's own boundary
+    already topologically confines a nested pendant_subtree_map() search to
+    just its interior (nothing outside is plain-grid reachable from
+    inside a sealed pocket), so the only genuine remaining risk is
+    colliding with -- or, for a *recarving* placement like multi_level.py's,
+    silently rewriting the walls around -- a specific cell some other
+    already-placed pair/link is relying on, which is exactly what this
+    narrower set protects against.
+    """
+    # current_start == ctx.start is always the open main region, never a
+    # sealed pocket's interior -- even though ctx.start itself is always a
+    # member of ctx.reserved (seeded there by run_pipeline() so no augment
+    # ever claims it as one of its own special cells), which would
+    # otherwise falsely trip the "nested" branch on literally the very
+    # first placement of a run and let it use the far-too-narrow local
+    # exclusion set instead of the full ctx.reserved check it actually
+    # needs at that point.
+    if current_start == ctx.start or current_start not in ctx.reserved:
+        return None
+    cells: set[tuple[int, int]] = set()
+    for pair in ctx.extra.get("teleporters", []):
+        cells.add(pair.a)
+        cells.add(pair.b)
+    for pair in ctx.extra.get("doors", []):
+        cells.add(pair.door)
+        cells.add(pair.key)
+    for link in ctx.extra.get("floors", []):
+        cells.add(link.entrance)
+        cells.add(link.floor_start)
+        cells.add(link.floor_exit)
+        cells.add(link.return_landing)
+    return cells
+
+
+def _combined_teleport_map(ctx: AugmentContext) -> dict[tuple[int, int], tuple[int, int]]:
+    """Every teleporter pair and floor stairs link placed so far, folded into one map -- see _movement.py's slide_path(teleport=...) hook."""
+    tmap: dict[tuple[int, int], tuple[int, int]] = {}
+    for pair in ctx.extra.get("teleporters", []):
+        tmap[pair.a] = pair.b
+        tmap[pair.b] = pair.a
+    for link in ctx.extra.get("floors", []):
+        tmap[link.entrance] = link.floor_start
+        tmap[link.floor_exit] = link.return_landing
+    return tmap
+
+
+def _mandatory_gate_cells(ctx: AugmentContext) -> set[tuple[int, int]]:
+    """
+    Every cell that's a *mandatory* teleporter/door/floor trigger -- used by
+    _finalize_goal() to keep its frontier-rooted farthest-cell search from
+    walking back out through one of them. Re-crossing any of these can't
+    reveal new territory (the player already necessarily used it to reach
+    ctx.frontier), but leaving one open to the search would let it discover
+    the vast, unrelated region on the near side of the mandatory chain,
+    silently defeating the whole forced-use guarantee. Decorative triggers
+    are never excluded -- they don't sit on a sealed boundary (see
+    teleporters.py/doors.py/multi_level.py's own decorative-placement
+    docstrings), so re-crossing one is never a leak.
+    """
+    cells: set[tuple[int, int]] = set()
+    for pair in ctx.extra.get("teleporters", []):
+        if pair.mandatory:
+            cells.add(pair.a)
+            cells.add(pair.b)
+    for link in ctx.extra.get("floors", []):
+        if link.mandatory:
+            cells.add(link.entrance)
+            cells.add(link.floor_exit)
+    for pair in ctx.extra.get("doors", []):
+        if pair.mandatory:
+            cells.add(pair.door)
+    return cells
 
 
 def offer_augment_cards(
