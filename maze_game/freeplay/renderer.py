@@ -18,6 +18,7 @@ from maze_game.constants import (
     C_PANEL_BG, C_PANEL_LINE, C_BUTTON, C_BUTTON_HOVER,
 )
 from maze_game.media import sprites
+from maze_game.media.shapes import draw_smiley_face
 
 BUTTON_SIZE = 28
 LEFT_CONTENT_HEIGHT = 260   # height needed for the (fixed) left sidebar controls
@@ -141,12 +142,10 @@ class Renderer:
         if icon is not None:
             self.surface.blit(icon, (ox + px * CELL, oy + py * CELL))
             return
-        pygame.draw.circle(
-            self.surface,
-            C_PLAYER,
-            (ox + px * CELL + CELL // 2, oy + py * CELL + CELL // 2),
-            CELL // 2 - 3,
-        )
+        center = (ox + px * CELL + CELL // 2, oy + py * CELL + CELL // 2)
+        radius = CELL // 2 - 3
+        pygame.draw.circle(self.surface, C_PLAYER, center, radius)
+        draw_smiley_face(self.surface, C_BG, center, radius)
 
     def _draw_hud(self, elapsed, best_time, finished, layout: Layout) -> None:
         pygame.draw.rect(self.surface, C_HUD_BG, layout.hud)

@@ -34,6 +34,7 @@ from maze_game.constants import (
     POPUP_DURATION_SECONDS, POPUP_RISE_PIXELS,
 )
 from maze_game.media import sprites
+from maze_game.media.shapes import draw_smiley_face
 from maze_game.progression.shop.perks import ALL_PERKS
 from maze_game.progression.augments import AUGMENTS_BY_ID
 from maze_game.progression.run import LabyrinthRun
@@ -201,7 +202,10 @@ class Renderer:
         if icon is not None:
             self.surface.blit(icon, (ox + px * cell, oy + py * cell))
             return
-        pygame.draw.circle(self.surface, C_PLAYER, (ox + px * cell + cell // 2, oy + py * cell + cell // 2), max(1, cell // 2 - 3))
+        center = (ox + px * cell + cell // 2, oy + py * cell + cell // 2)
+        radius = max(1, cell // 2 - 3)
+        pygame.draw.circle(self.surface, C_PLAYER, center, radius)
+        draw_smiley_face(self.surface, C_BG, center, radius)
 
     def _draw_pellets(self, pellets, layout: Layout) -> None:
         ox, oy = layout.maze_origin
