@@ -18,8 +18,8 @@ from maze_game.constants import (
 from maze_game.progression.run import dimensions_for_maze, is_milestone_maze, TimeResource, LabyrinthRun
 from maze_game.progression.entities.hazards import Pellet, GoldPellet, Hazard, load_gold_total
 from maze_game.progression.shop.perks import ALL_PERKS, Perk
-from maze_game.progression.augments.teleporters import TeleportersAugment
-from maze_game.progression.augments.doors import DoorKeyPair, Key
+from maze_game.progression.augments.gating.teleporters import TeleportersAugment
+from maze_game.progression.augments.gating.doors import DoorKeyPair, Key
 
 # A trivial straight 3-cell corridor, (1,1)-(2,1)-(3,1), used to drive
 # move() deterministically instead of a randomly-generated maze.

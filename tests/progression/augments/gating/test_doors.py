@@ -18,9 +18,9 @@ from maze_game.constants import (
 )
 from maze_game.maze import generate_maze, farthest_reachable_cell
 from maze_game.progression.augments import AugmentBuild, run_pipeline, ALL_AUGMENTS
-from maze_game.progression.augments._movement import real_move_reachable
-from maze_game.progression.augments.doors import DoorsAugment, sequentially_reachable
-from maze_game.progression.augments.teleporters import TeleportersAugment
+from maze_game.progression.augments.gating._movement import real_move_reachable
+from maze_game.progression.augments.gating.doors import DoorsAugment, sequentially_reachable
+from maze_game.progression.augments.gating.teleporters import TeleportersAugment
 
 
 def _doors_augment():

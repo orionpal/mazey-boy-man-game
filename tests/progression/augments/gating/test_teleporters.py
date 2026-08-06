@@ -17,7 +17,7 @@ from maze_game.constants import (
 from maze_game.maze import generate_maze, farthest_reachable_cell, bfs_reachable, is_stoppable_cell
 from maze_game.player import slide_path
 from maze_game.progression.augments import AugmentBuild, run_pipeline, ALL_AUGMENTS
-from maze_game.progression.augments.teleporters import TeleportersAugment
+from maze_game.progression.augments.gating.teleporters import TeleportersAugment
 
 
 def _teleporters_augment():

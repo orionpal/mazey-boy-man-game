@@ -18,8 +18,8 @@ import random
 
 from maze_game.maze import farthest_reachable_cell, generate_maze
 from maze_game.progression.augments import ALL_AUGMENTS, AugmentBuild, run_pipeline
-from maze_game.progression.augments._movement import real_move_reachable
-from maze_game.progression.augments.doors import sequentially_reachable
+from maze_game.progression.augments.gating._movement import real_move_reachable
+from maze_game.progression.augments.gating.doors import sequentially_reachable
 
 SEEDS = range(15)
 SIZE = 25

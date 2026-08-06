@@ -46,7 +46,7 @@ AUGMENT_CARDS_OFFERED = 3  # mirrors shop/__init__.py::SHOP_CARDS_OFFERED
 
 
 class Augment:
-    """Base for a maze-generation-time modifier. Concrete augments live in sibling modules (e.g. teleporters.py)."""
+    """Base for a maze-generation-time modifier. Concrete augments live in gating/ or runtime/ (see those packages' docstrings)."""
 
     id: str
     name: str
@@ -81,7 +81,7 @@ class AugmentContext:
     orphaning whichever augment didn't run last (a real bug this field
     fixes -- see docs/progression.md's "Composing multiple augments'
     mandatory content" section and
-    tests/progression/augments/test_composition.py). Starts at `start`;
+    tests/progression/augments/gating/test_composition.py). Starts at `start`;
     staying there means no augment has placed mandatory content yet.
     """
 
@@ -288,12 +288,11 @@ def offer_augment_cards(
 ALL_AUGMENTS: list[Augment] = []
 AUGMENTS_BY_ID: dict[str, Augment] = {}
 
-# Deferred import: teleporters.py/doors.py import Augment/AugmentContext/
-# ALL_AUGMENTS from this module, so the registration step has to happen
-# down here, after they're defined, not at the top of the file (that would
-# be circular).
-from maze_game.progression.augments.teleporters import TeleportersAugment  # noqa: E402
-from maze_game.progression.augments.doors import DoorsAugment  # noqa: E402
+# Deferred import: gating/teleporters.py and gating/doors.py both import
+# Augment/AugmentContext/ALL_AUGMENTS from this module, so the registration
+# step has to happen down here, after they're defined, not at the top of
+# the file (that would be circular).
+from maze_game.progression.augments.gating import DoorsAugment, TeleportersAugment  # noqa: E402
 
 # Order matters: DoorsAugment must run after TeleportersAugment -- a door
 # candidate is verified against the maze's already-finalized teleporter

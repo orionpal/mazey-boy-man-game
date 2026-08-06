@@ -47,7 +47,7 @@ from maze_game.progression.entities.hazards import (
 )
 from maze_game.progression.shop import offer_shop_cards
 from maze_game.progression.augments import AugmentBuild, run_pipeline, offer_augment_cards
-from maze_game.progression.augments.doors import Key
+from maze_game.progression.augments.gating.doors import Key
 from maze_game.progression.meta import MetaProgress, DEFAULT_META_UPGRADES_PATH
 
 START_POS: tuple[int, int] = (1, 1)

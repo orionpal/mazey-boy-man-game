@@ -47,7 +47,7 @@ from maze_game.constants import (
 )
 from maze_game.maze import bfs_reachable, is_stoppable_cell
 from maze_game.progression.augments import Augment, AugmentContext, nested_local_forbidden
-from maze_game.progression.augments._movement import pendant_subtree_map, real_move_reachable, seal_pocket
+from maze_game.progression.augments.gating._movement import pendant_subtree_map, real_move_reachable, seal_pocket
 
 
 @dataclass(frozen=True)

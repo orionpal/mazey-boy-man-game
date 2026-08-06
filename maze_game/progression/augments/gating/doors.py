@@ -75,7 +75,7 @@ from maze_game.constants import (
 )
 from maze_game.maze import is_stoppable_cell
 from maze_game.progression.augments import Augment, AugmentContext, nested_local_forbidden
-from maze_game.progression.augments._movement import pendant_subtree_map, real_move_reachable, seal_pocket
+from maze_game.progression.augments.gating._movement import pendant_subtree_map, real_move_reachable, seal_pocket
 from maze_game.progression.entities import MazeEntity
 
 if TYPE_CHECKING:
@@ -175,7 +175,7 @@ def sequentially_reachable(
     actually get to." This is the ground-truth solvability check both
     placement functions below verify every candidate against, and
     (imported directly, not re-derived) what tests/progression/augments/
-    test_doors.py's own end-to-end tests use too.
+    gating/test_doors.py's own end-to-end tests use too.
     """
     locked = {pair.door for pair in doors}
     key_owner = {pair.key: pair.door for pair in doors}
