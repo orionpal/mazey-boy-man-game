@@ -14,12 +14,17 @@ from maze_game.constants import (
     MILESTONE_INTERVAL, MILESTONE_DIMENSION_BOOST, MILESTONE_MAX_DIMENSION,
     LABYRINTH_GROUP_SIZE, LABYRINTH_TOTAL_MAZES, LABYRINTH_START_TIME,
     HAZARD_TIME_PENALTY, SPEED_BONUS_TIME, POPUP_DURATION_SECONDS,
+    ROTATE_INTERVAL_BASE_SECONDS,
 )
-from maze_game.progression.run import dimensions_for_maze, is_milestone_maze, TimeResource, LabyrinthRun
+from maze_game.progression.run import (
+    dimensions_for_maze, is_milestone_maze, TimeResource, LabyrinthRun,
+    TeleportAnimation, RotationTimer,
+)
 from maze_game.progression.entities.hazards import Pellet, GoldPellet, Hazard, load_gold_total
 from maze_game.progression.shop.perks import ALL_PERKS, Perk
 from maze_game.progression.augments.gating.teleporters import TeleportersAugment
-from maze_game.progression.augments.gating.doors import DoorKeyPair, Key
+from maze_game.progression.augments.gating.doors import DoorKeyPair, Key, DoorsAugment
+from maze_game.progression.augments.runtime.rotation import RotatingMazeAugment, rotate_cell_cw
 
 # A trivial straight 3-cell corridor, (1,1)-(2,1)-(3,1), used to drive
 # move() deterministically instead of a randomly-generated maze.
@@ -846,6 +851,148 @@ def test_restart_clears_events():
     assert run.events != []
     run.restart()
     assert run.events == []
+
+
+# ── Rotating maze augment ────────────────────────────────────────────────
+
+
+def _rotating_run(seed: int = 1) -> LabyrinthRun:
+    run = LabyrinthRun(seed=seed)
+    run.augment_build.acquire(RotatingMazeAugment())
+    run._begin_maze()
+    return run
+
+
+def test_rotation_timer_ticks_down_by_real_elapsed_time():
+    timer = RotationTimer(10.0)
+    timer._last_tick -= 0.05  # simulate 0.05s having passed
+    timer.tick()
+    assert timer.remaining == pytest.approx(9.95, abs=0.02)
+
+
+def test_update_rotates_the_maze_once_the_timer_expires():
+    run = _rotating_run()
+    before_grid = [row[:] for row in run.grid]
+    run.rotation_timer.remaining = -0.01  # force expiry on the next tick
+    run.update()
+    assert run.grid != before_grid
+    # Timer reset to (roughly) a fresh interval, not left at/below zero.
+    assert run.rotation_timer.remaining > 0
+
+
+def test_update_does_not_rotate_when_the_augment_is_inactive():
+    run = LabyrinthRun(seed=1)
+    run._begin_maze()
+    before_grid = [row[:] for row in run.grid]
+    run.rotation_timer.remaining = -100.0  # would clearly have fired if active
+    run.update()
+    assert run.grid == before_grid
+
+
+def test_update_does_not_tick_the_rotation_timer_while_on_break():
+    run = _rotating_run()
+    run.break_kind = "shop"  # force on_break without going through the real flow
+    run.rotation_timer.remaining = 1.0
+    run.rotation_timer._last_tick -= 30.0  # simulate 30s having passed
+    run.update()
+    assert run.rotation_timer.remaining == 1.0  # untouched -- update() gates on on_break before ticking anything
+
+
+def test_resuming_after_a_break_does_not_retroactively_rotate():
+    """
+    Regression test for the same staleness bug class TimeResource.resync()
+    already fixed once (see test_choosing_a_perk_does_not_retroactively_charge_the_break_duration):
+    without RotationTimer.resync() in _resume_after_break(), the timer's
+    tick reference point goes stale for the whole break, so the very next
+    tick() after resuming would compute a huge elapsed delta and fire a
+    rotation (or several) the instant play resumes.
+    """
+    run = _rotating_run()
+    for _ in range(LABYRINTH_GROUP_SIZE):
+        run.player = run.goal
+        run.update()
+    assert run.on_break is True
+
+    run.rotation_timer.remaining = 1.5
+    run.rotation_timer._last_tick -= 30.0  # simulate 30s spent on the break screen
+    run.choose_shop_card(0)
+    assert run.rotation_timer.remaining == 1.5  # resync alone changes nothing yet
+
+    before_grid = [row[:] for row in run.grid]
+    run.update()  # the first frame after resuming
+    assert run.rotation_timer.remaining == pytest.approx(1.5, abs=0.05)
+    assert run.grid == before_grid  # no runaway rotation triggered by the stale gap
+
+
+def test_rotate_maze_transforms_every_entity_family_consistently():
+    run = LabyrinthRun(seed=7)
+    run.augment_build.acquire(TeleportersAugment())
+    run.augment_build.acquire(DoorsAugment())
+    run.augment_build.acquire(RotatingMazeAugment())
+    run._begin_maze()
+    assert run.teleporters and run.doors  # otherwise this test proves nothing
+
+    n = run.cols
+    before_player = run.player
+    before_goal = run.goal
+    before_teleporters = list(run.teleporters)
+    before_doors = list(run.doors)
+    before_locked = set(run._locked_doors)
+
+    run._rotate_maze()
+
+    assert run.player == rotate_cell_cw(before_player, n)
+    assert run.goal == rotate_cell_cw(before_goal, n)
+    assert [p.a for p in run.teleporters] == [rotate_cell_cw(p.a, n) for p in before_teleporters]
+    assert [p.b for p in run.teleporters] == [rotate_cell_cw(p.b, n) for p in before_teleporters]
+    assert [d.door for d in run.doors] == [rotate_cell_cw(d.door, n) for d in before_doors]
+    assert [d.key for d in run.doors] == [rotate_cell_cw(d.key, n) for d in before_doors]
+    assert run._locked_doors == {rotate_cell_cw(c, n) for c in before_locked}
+    # _teleport_map rebuilt consistently with the rotated teleporters list.
+    for pair in run.teleporters:
+        assert run._teleport_map[pair.a] == pair.b
+        assert run._teleport_map[pair.b] == pair.a
+
+
+def test_rotate_maze_is_the_identity_after_four_rotations():
+    run = _rotating_run(seed=3)
+    before_grid = [row[:] for row in run.grid]
+    before_player = run.player
+    for _ in range(4):
+        run._rotate_maze()
+    assert run.grid == before_grid
+    assert run.player == before_player
+
+
+def test_rotate_maze_clears_any_in_flight_teleport_animation():
+    run = _rotating_run()
+    run.teleport_animation = TeleportAnimation(run.player, run.player, time.monotonic())
+    run._rotate_maze()
+    assert run.teleport_animation is None
+
+
+def test_rotation_warning_active_flips_true_within_the_lead_time():
+    from maze_game.constants import ROTATE_WARNING_LEAD_SECONDS
+
+    run = _rotating_run()
+    run.rotation_timer.remaining = ROTATE_WARNING_LEAD_SECONDS + 1.0
+    assert run.rotation_warning_active is False
+    run.rotation_timer.remaining = ROTATE_WARNING_LEAD_SECONDS - 0.1
+    assert run.rotation_warning_active is True
+
+
+def test_rotation_warning_active_is_always_false_when_the_augment_is_inactive():
+    run = LabyrinthRun(seed=1)
+    run._begin_maze()
+    run.rotation_timer.remaining = 0.0  # would be well within the warning window if active
+    assert run.rotation_warning_active is False
+
+
+def test_restart_resets_the_rotation_timer():
+    run = _rotating_run()
+    run.rotation_timer.remaining = -5.0
+    run.restart()
+    assert run.rotation_timer.remaining == pytest.approx(ROTATE_INTERVAL_BASE_SECONDS, abs=0.05)
 
 
 # ── Popups ────────────────────────────────────────────────────────────────

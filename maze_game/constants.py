@@ -189,6 +189,21 @@ DOOR_FAR_SIDE_MIN_SIZE      = 3   # cells gated behind one mandatory door
 DOOR_FAR_SIDE_MAX_SIZE      = 10
 DOOR_PLACEMENT_MAX_ATTEMPTS = 10  # retries per gated region before giving up on it (graceful degradation, never a crash/hang)
 
+# Rotating maze (progression/augments/runtime/rotation.py): the whole grid
+# rotates 90 degrees clockwise on a fixed timer, with a warning arrow
+# shortly before each rotation fires. Purely a runtime effect (no
+# generation-time apply()) -- a rigid rotation of the grid + every entity
+# position together is an isometry, so unlike every gating/ augment it
+# needs no forced-use/solvability verification at all. Higher levels
+# rotate faster (down to a floor, so it never becomes literally
+# unplayable); the warning lead time deliberately stays flat across levels
+# rather than also shrinking, to avoid compounding two
+# disorientation-increasing changes into one.
+ROTATE_INTERVAL_BASE_SECONDS = 2.0
+ROTATE_INTERVAL_STEP_SECONDS = -0.3   # faster per level above 1
+ROTATE_INTERVAL_MIN_SECONDS  = 1.0
+ROTATE_WARNING_LEAD_SECONDS  = 0.75   # the warning arrow shows for this long before each rotation
+
 # ── Colours  (R, G, B) ────────────────────────────────────────────────────
 # Identity colours (player/goal/pellet/gold/hazard/door/speed-bonus) are
 # deliberately spread across distinct hues so entity *families* stay
@@ -218,6 +233,7 @@ C_SPEED_BONUS = (100, 220, 255)  # distinct from C_PELLET, so a maze-clear time 
 C_DOOR_LOCKED   = (170, 70,  40)   # brick -- was (140,40,40), colliding with C_HAZARD/C_GOAL
 C_DOOR_UNLOCKED = (60, 190, 170)   # teal -- was (90,180,90), colliding with C_PLAYER
 C_SHIELD        = (190, 210, 230)  # pale blue/silver -- Bulwark's "Shielded!" popup, distinct from C_HAZARD's red
+C_ROTATE_WARNING = (255, 200, 60)  # the rotating maze augment's pre-rotation warning arrow -- close to C_FLASH's urgency yellow
 
 # Teleporter pairs: each pair drawn in its own colour (cycled by
 # pair.color_index if there are more pairs than colours), so linked cells

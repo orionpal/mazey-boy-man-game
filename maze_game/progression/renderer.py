@@ -30,7 +30,7 @@ from maze_game.constants import (
     C_BG, C_WALL, C_FLOOR, C_PLAYER, C_GOAL, C_TEXT, C_DIM, C_CARD_DESC, C_FLASH, C_HUD_BG,
     C_PANEL_BG, C_PANEL_LINE, C_BUTTON, C_BUTTON_HOVER,
     C_PELLET, C_GOLD, C_HAZARD, C_TELEPORT_PAIRS, C_DOOR_LOCKED, C_DOOR_UNLOCKED, C_DOOR_KEY_PAIRS,
-    C_SPEED_BONUS,
+    C_SPEED_BONUS, C_ROTATE_WARNING,
     POPUP_DURATION_SECONDS, POPUP_RISE_PIXELS,
     ZIP_ANIMATION_DURATION_SECONDS,
 )
@@ -181,6 +181,8 @@ class Renderer:
             self._draw_popups(run, layout)
 
         self._draw_hud(run, layout)
+        if run.rotation_warning_active:
+            self._draw_rotation_warning(layout)
         self._draw_build_sidebar(run.build, layout, mouse_pos)
         self._draw_augment_sidebar(run.augment_build, layout, mouse_pos)
         self._draw_legend(layout)
@@ -347,6 +349,20 @@ class Renderer:
         gold_label = self.font_small.render(f"{run.gold}g", True, C_GOLD)
         self.surface.blit(gold_label, (layout.hud.right - gold_label.get_width() - 10, layout.hud.y + 8))
 
+    def _draw_rotation_warning(self, layout: Layout) -> None:
+        """A little arrow, plus label, warning the player a maze rotation is about to fire -- see run.rotation_warning_active."""
+        cx = layout.hud.centerx
+        cy = layout.hud.y + layout.hud.height // 2
+        size = 12
+        icon = sprites.get("rotate_warning", size * 2)
+        if icon is not None:
+            self.surface.blit(icon, (cx - size, cy - size))
+        else:
+            points = [(cx - size, cy - size), (cx - size, cy + size), (cx + size, cy)]
+            pygame.draw.polygon(self.surface, C_ROTATE_WARNING, points)
+        label = self.font_small.render("ROTATING!", True, C_ROTATE_WARNING)
+        self.surface.blit(label, (cx + size + 10, cy - label.get_height() // 2))
+
     # ── Build sidebar (passive perks) ─────────────────────────────────────
 
     def _draw_build_sidebar(self, build, layout: Layout, mouse_pos) -> None:
@@ -422,6 +438,7 @@ class Renderer:
             (C_DOOR_LOCKED, "square", "Locked Door"),
             (C_DOOR_UNLOCKED, "square", "Unlocked Door"),
             (C_SPEED_BONUS, "square", "Speed Bonus"),
+            (C_ROTATE_WARNING, "triangle", "Rotation Warning"),
         ]
 
         x = layout.right.x + 16
@@ -430,6 +447,8 @@ class Renderer:
         for colour, shape, label in entries:
             if shape == "circle":
                 pygame.draw.circle(self.surface, colour, (x + swatch // 2, y + swatch // 2), swatch // 2)
+            elif shape == "triangle":
+                pygame.draw.polygon(self.surface, colour, [(x, y), (x, y + swatch), (x + swatch, y + swatch // 2)])
             else:
                 pygame.draw.rect(self.surface, colour, pygame.Rect(x, y, swatch, swatch))
             self.surface.blit(self.font_small.render(label, True, C_TEXT), (x + swatch + 10, y + 1))

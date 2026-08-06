@@ -38,6 +38,8 @@ from maze_game.constants import (
     SPEED_BONUS_TIME, SPEED_BONUS_SECONDS_PER_CELL,
     POPUP_DURATION_SECONDS, C_SPEED_BONUS, C_GOLD,
     ZIP_ANIMATION_DURATION_SECONDS,
+    ROTATE_INTERVAL_BASE_SECONDS, ROTATE_INTERVAL_STEP_SECONDS, ROTATE_INTERVAL_MIN_SECONDS,
+    ROTATE_WARNING_LEAD_SECONDS,
 )
 from maze_game.maze import generate_maze, farthest_reachable_cell, shortest_path
 from maze_game.player import slide_path
@@ -48,8 +50,12 @@ from maze_game.progression.entities.hazards import (
 )
 from maze_game.progression.shop import offer_shop_cards
 from maze_game.progression.augments import AugmentBuild, run_pipeline, offer_augment_cards
-from maze_game.progression.augments.gating.doors import Key
+from maze_game.progression.augments.gating.doors import Key, DoorKeyPair
+from maze_game.progression.augments.gating.teleporters import TeleporterPair
+from maze_game.progression.augments.runtime.rotation import rotate_cell_cw, rotate_grid_cw
 from maze_game.progression.meta import MetaProgress, DEFAULT_META_UPGRADES_PATH
+
+ROTATING_MAZE_ID = "rotating_maze"
 
 START_POS: tuple[int, int] = (1, 1)
 
@@ -169,6 +175,38 @@ class TimeResource:
         return self.amount <= 0.0
 
 
+class RotationTimer:
+    """
+    Counts down to the rotating maze augment's next rotation. Deliberately
+    mirrors TimeResource's tick()/resync() shape exactly, not a fresh
+    design -- TimeResource needed resync() specifically to avoid charging
+    an entire break's duration in one lump the instant ticking resumes
+    (see TimeResource.resync()'s docstring); reusing the identical shape
+    avoids reintroducing that same staleness bug in a second,
+    differently-coded timer.
+    """
+
+    def __init__(self, interval: float) -> None:
+        self.remaining = interval
+        self._last_tick = time.monotonic()
+
+    def tick(self) -> None:
+        now = time.monotonic()
+        self.remaining -= now - self._last_tick
+        self._last_tick = now
+
+    def resync(self) -> None:
+        self._last_tick = time.monotonic()
+
+
+def _rotation_interval_for_level(level: int) -> float:
+    """Higher levels rotate faster, down to a floor so it never becomes literally unplayable -- see ROTATE_* constants."""
+    return max(
+        ROTATE_INTERVAL_MIN_SECONDS,
+        ROTATE_INTERVAL_BASE_SECONDS + ROTATE_INTERVAL_STEP_SECONDS * (level - 1),
+    )
+
+
 class LabyrinthRun:
     """
     Owns the full progression state machine: current maze, the persistent
@@ -201,6 +239,7 @@ class LabyrinthRun:
         self.break_cursor = 0
         self.popups: list[Popup] = []
         self.teleport_animation: TeleportAnimation | None = None
+        self.rotation_timer = RotationTimer(ROTATE_INTERVAL_BASE_SECONDS)
         self.events: list[str] = []
         # Gold is a persistent meta-currency, unlike time -- loaded once here
         # and never reset by restart() (see restart()'s docstring/comment).
@@ -237,6 +276,12 @@ class LabyrinthRun:
         if self.on_break or self.failed or self.completed_run or self.finished:
             return
         self.time.tick()
+        rotation_level = self.augment_build.level_of(ROTATING_MAZE_ID)
+        if rotation_level > 0:
+            self.rotation_timer.tick()
+            if self.rotation_timer.remaining <= 0:
+                self._rotate_maze()
+                self.rotation_timer.remaining = _rotation_interval_for_level(rotation_level)
         if self.time.depleted:
             self.failed = True
             self.events.append("fail")
@@ -340,6 +385,7 @@ class LabyrinthRun:
         self.break_cursor = 0
         self.popups = []
         self.teleport_animation = None
+        self.rotation_timer = RotationTimer(ROTATE_INTERVAL_BASE_SECONDS)
         self.events = []
         self.time = TimeResource(LABYRINTH_START_TIME)
         self.build = self.meta_progress.seed_build()  # reseeded, not reset to a plain Build() -- owned upgrades persist across restarts
@@ -363,6 +409,14 @@ class LabyrinthRun:
     @property
     def total_groups(self) -> int:
         return -(-LABYRINTH_TOTAL_MAZES // LABYRINTH_GROUP_SIZE)  # ceil division
+
+    @property
+    def rotation_warning_active(self) -> bool:
+        """True while the rotating maze augment's warning arrow should show, shortly before each rotation fires."""
+        return (
+            self.augment_build.level_of(ROTATING_MAZE_ID) > 0
+            and self.rotation_timer.remaining <= ROTATE_WARNING_LEAD_SECONDS
+        )
 
     # ── Private helpers ───────────────────────────────────────────────────
 
@@ -420,6 +474,64 @@ class LabyrinthRun:
         self.finished = False
         self.shield_charges_remaining = self.build.hazard_shield_charges_per_maze
 
+    def _rotate_maze(self) -> None:
+        """
+        Rotate the grid and every entity position 90 degrees clockwise
+        together, atomically -- see rotation.py's module docstring for why
+        this is a genuine isometry (same maze, differently oriented) and
+        needs no solvability re-verification.
+
+        Relies on every maze this game generates being square
+        (dimensions_for_maze() guarantees cols == rows) -- asserted here
+        rather than silently corrupting state if that guarantee is ever
+        broken by a future change.
+
+        self._par_seconds is deliberately left untouched: hop-count between
+        two rotated cells over a rotated grid is provably identical to the
+        pre-rotation hop count (it's an isometry), so there's nothing to
+        recompute.
+        """
+        assert self.cols == self.rows
+        n = self.cols
+        rot = lambda cell: rotate_cell_cw(cell, n)
+
+        self.grid = rotate_grid_cw(self.grid)
+        self.player = rot(self.player)
+        self.goal = rot(self.goal)
+
+        for entity in (*self.pellets, *self.gold_pellets, *self.hazards):
+            entity.pos = rot(entity.pos)
+        for key in self.keys:
+            key.pos = rot(key.pos)
+            key.door_cell = rot(key.door_cell)
+        for popup in self.popups:
+            popup.pos = rot(popup.pos)
+
+        self.teleporters = [
+            TeleporterPair(a=rot(pair.a), b=rot(pair.b), mandatory=pair.mandatory, color_index=pair.color_index)
+            for pair in self.teleporters
+        ]
+        self._teleport_map = {}
+        for pair in self.teleporters:
+            self._teleport_map[pair.a] = pair.b
+            self._teleport_map[pair.b] = pair.a
+
+        # _locked_doors is a set of door *cells* -- rotate it by mapping
+        # each old door's pre-rotation cell to its (already-rotated)
+        # replacement, preserving lock state across the transform.
+        rotated_by_old_door = {pair.door: rot(pair.door) for pair in self.doors}
+        still_locked = {rotated_by_old_door[door] for door in self._locked_doors}
+        self.doors = [
+            DoorKeyPair(door=rot(pair.door), key=rot(pair.key), mandatory=pair.mandatory, color_index=pair.color_index)
+            for pair in self.doors
+        ]
+        self._locked_doors = still_locked
+
+        # A <150ms animation window against a >=1s rotation interval
+        # essentially never overlaps in practice; clearing is simpler than
+        # reasoning about rotating an in-flight interpolation.
+        self.teleport_animation = None
+
     def _advance(self) -> None:
         if self.maze_index >= LABYRINTH_TOTAL_MAZES:
             self.completed_run = True
@@ -450,5 +562,6 @@ class LabyrinthRun:
             return
         self.break_kind = None
         self.time.resync()  # the break(s) paused the clock; don't charge their duration on the next tick()
+        self.rotation_timer.resync()  # same staleness class as self.time above, same fix
         self.maze_index += 1
         self._begin_maze()  # seamless when no break was due -- no pause within a group

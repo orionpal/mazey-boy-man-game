@@ -24,13 +24,10 @@ run, all composing through the same pipeline.
 Deliberately no generic contact()/render() hook here -- mirrors the
 project's existing precedent (hazards.py/renderer.py: bespoke draw
 methods, not a generic dispatch). Augment.apply() is the only shared
-hook; an augment's run-time
-behaviour (e.g. teleporters.py's contact effect) wires directly into
-player.slide_path()/progression/renderer.py instead.
-
-NOTE: with ALL_AUGMENTS currently holding just the one shipped augment
-(teleporters), every modifier break necessarily offers a single forced
-card until more augments are built -- expected, not a bug.
+generation-time hook; an augment's run-time behaviour (e.g. teleporters.py's
+contact effect, or a runtime/ augment's entirely-apply()-free effect --
+see that package's docstring) wires directly into
+player.slide_path()/progression/run.py/progression/renderer.py instead.
 """
 
 from __future__ import annotations
@@ -293,12 +290,15 @@ AUGMENTS_BY_ID: dict[str, Augment] = {}
 # step has to happen down here, after they're defined, not at the top of
 # the file (that would be circular).
 from maze_game.progression.augments.gating import DoorsAugment, TeleportersAugment  # noqa: E402
+from maze_game.progression.augments.runtime import RotatingMazeAugment  # noqa: E402
 
-# Order matters: DoorsAugment must run after TeleportersAugment -- a door
-# candidate is verified against the maze's already-finalized teleporter
-# map, so a teleporter can never silently bypass a door that looked like a
-# genuine cut vertex under plain grid adjacency (see doors.py).
-for _augment in (TeleportersAugment(), DoorsAugment()):
+# Order matters for the gating/ pair: DoorsAugment must run after
+# TeleportersAugment -- a door candidate is verified against the maze's
+# already-finalized teleporter map, so a teleporter can never silently
+# bypass a door that looked like a genuine cut vertex under plain grid
+# adjacency (see doors.py). runtime/ augments have a no-op apply(), so
+# their position in this tuple doesn't affect generation at all.
+for _augment in (TeleportersAugment(), DoorsAugment(), RotatingMazeAugment()):
     ALL_AUGMENTS.append(_augment)
     AUGMENTS_BY_ID[_augment.id] = _augment
 del _augment
