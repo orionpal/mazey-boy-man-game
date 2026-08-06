@@ -6,11 +6,13 @@ metrics, no display needed.
 """
 
 import pygame
+import pytest
 
-from maze_game.progression.renderer import Layout, MAZE_AREA_SIZE, _wrap_text
+from maze_game.progression.renderer import Layout, MAZE_AREA_SIZE, _wrap_text, animated_player_position
+from maze_game.progression.run import TeleportAnimation
 from maze_game.progression.shop.perks import ALL_PERKS
 from maze_game.progression.augments import ALL_AUGMENTS
-from maze_game.constants import SIDEBAR_W, HUD_HEIGHT
+from maze_game.constants import SIDEBAR_W, HUD_HEIGHT, ZIP_ANIMATION_DURATION_SECONDS
 
 
 def test_window_size_is_static_regardless_of_maze_dimensions():
@@ -140,3 +142,35 @@ def test_wrap_text_fits_every_card_name():
         lines = _wrap_text(font, card.name, card_w - 24)
         for line in lines:
             assert font.size(line)[0] <= card_w - 24
+
+
+# ── animated_player_position (zip animation) ───────────────────────────────
+
+
+class _StubRun:
+    """Just enough of LabyrinthRun's shape for animated_player_position()."""
+
+    def __init__(self, player, teleport_animation=None):
+        self.player = player
+        self.teleport_animation = teleport_animation
+
+
+def test_animated_player_position_is_just_player_pos_with_no_animation():
+    run = _StubRun(player=(5, 5))
+    assert animated_player_position(run, now=100.0) == (5, 5)
+
+
+def test_animated_player_position_interpolates_partway_through_the_window():
+    anim = TeleportAnimation(from_cell=(2, 1), to_cell=(8, 1), started_at=100.0)
+    run = _StubRun(player=(8, 1), teleport_animation=anim)
+    halfway = 100.0 + ZIP_ANIMATION_DURATION_SECONDS / 2
+    x, y = animated_player_position(run, now=halfway)
+    assert x == pytest.approx(5.0)  # halfway between 2 and 8
+    assert y == pytest.approx(1.0)
+
+
+def test_animated_player_position_falls_back_to_player_pos_once_expired():
+    anim = TeleportAnimation(from_cell=(2, 1), to_cell=(8, 1), started_at=100.0)
+    run = _StubRun(player=(8, 1), teleport_animation=anim)
+    after = 100.0 + ZIP_ANIMATION_DURATION_SECONDS + 1.0
+    assert animated_player_position(run, now=after) == (8, 1)

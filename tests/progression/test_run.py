@@ -768,6 +768,31 @@ def test_moving_through_a_teleporter_appends_the_teleport_event_not_move():
     assert run.events == ["teleport"]
 
 
+def test_moving_through_a_teleporter_starts_a_teleport_animation():
+    run = _teleport_run()
+    run.move((1, 0))
+    assert run.teleport_animation is not None
+    assert run.teleport_animation.from_cell == (2, 1)  # the teleporter's entrance
+    assert run.teleport_animation.to_cell == (3, 1)  # its exit, == run.player
+
+
+def test_an_ordinary_move_does_not_start_a_teleport_animation():
+    run = _corridor_run()
+    run.move((1, 0))
+    assert run.teleport_animation is None
+
+
+def test_teleport_animation_expires_after_its_duration():
+    from maze_game.constants import ZIP_ANIMATION_DURATION_SECONDS
+
+    run = _teleport_run()
+    run.move((1, 0))
+    assert run.teleport_animation is not None
+    run.teleport_animation.started_at -= ZIP_ANIMATION_DURATION_SECONDS + 0.1  # simulate time passing
+    run.update()
+    assert run.teleport_animation is None
+
+
 
 
 DOOR_GRID = [
@@ -840,6 +865,14 @@ def test_restart_clears_popups():
     assert run.popups != []
     run.restart()
     assert run.popups == []
+
+
+def test_restart_clears_teleport_animation():
+    run = _teleport_run()
+    run.move((1, 0))
+    assert run.teleport_animation is not None
+    run.restart()
+    assert run.teleport_animation is None
 
 
 # ── move() combo pass-through (junction_stop_count) ──────────────────────

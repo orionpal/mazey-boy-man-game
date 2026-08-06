@@ -126,6 +126,15 @@ GOLD_RUSH_BONUS_PER_LEVEL      = 1  # Speedrunner: bonus gold on an under-par cl
 POPUP_DURATION_SECONDS = 1.0
 POPUP_RISE_PIXELS      = 24   # total upward drift over the popup's lifetime
 
+# A teleport hop is the one genuinely discontinuous player move (an
+# ordinary slide already reads as continuous, one grid-cell-to-the-next
+# movement) -- renderer._draw_player() linearly interpolates the on-screen
+# position over this short window instead of an instant snap, purely
+# presentational (LabyrinthRun.player's actual grid position updates
+# instantly in move(), unaffected). Deliberately quick: a "zip", not a
+# real animation.
+ZIP_ANIMATION_DURATION_SECONDS = 0.12
+
 # Gold: a persistent meta-currency, separate from the time resource -- it
 # survives death/restart (loaded once at LabyrinthRun.__init__, saved to
 # disk on every pickup) rather than resetting each run like time does.

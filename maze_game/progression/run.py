@@ -37,6 +37,7 @@ from maze_game.constants import (
     AUGMENT_INTERVAL, HAZARD_UNLOCK_MAZE,
     SPEED_BONUS_TIME, SPEED_BONUS_SECONDS_PER_CELL,
     POPUP_DURATION_SECONDS, C_SPEED_BONUS, C_GOLD,
+    ZIP_ANIMATION_DURATION_SECONDS,
 )
 from maze_game.maze import generate_maze, farthest_reachable_cell, shortest_path
 from maze_game.player import slide_path
@@ -61,6 +62,21 @@ class Popup:
     text: str
     color: tuple[int, int, int]
     created_at: float
+
+
+@dataclass
+class TeleportAnimation:
+    """
+    A short visual "zip" from one cell to the next, purely presentational
+    (see ZIP_ANIMATION_DURATION_SECONDS) -- renderer._draw_player()
+    interpolates the on-screen position between from_cell/to_cell over the
+    animation window; LabyrinthRun.player itself already updated instantly
+    in move(), unaffected by this.
+    """
+
+    from_cell: tuple[int, int]
+    to_cell: tuple[int, int]
+    started_at: float
 
 # Breaks should always coincide with (or be subsumed by) the group cadence,
 # so a modifier or milestone maze is never a total surprise with zero
@@ -184,6 +200,7 @@ class LabyrinthRun:
         self.augment_choices: list | None = None
         self.break_cursor = 0
         self.popups: list[Popup] = []
+        self.teleport_animation: TeleportAnimation | None = None
         self.events: list[str] = []
         # Gold is a persistent meta-currency, unlike time -- loaded once here
         # and never reset by restart() (see restart()'s docstring/comment).
@@ -215,6 +232,8 @@ class LabyrinthRun:
         """Advance the timer and check win/timeout. Call once per frame."""
         now = time.monotonic()
         self.popups = [p for p in self.popups if now - p.created_at < POPUP_DURATION_SECONDS]
+        if self.teleport_animation is not None and now - self.teleport_animation.started_at >= ZIP_ANIMATION_DURATION_SECONDS:
+            self.teleport_animation = None
         if self.on_break or self.failed or self.completed_run or self.finished:
             return
         self.time.tick()
@@ -261,6 +280,8 @@ class LabyrinthRun:
         # (see player.py), so this pair is the exact, sufficient signature.
         teleported = len(path) >= 2 and self._teleport_map.get(path[-2]) == path[-1]
         self.events.append("teleport" if teleported else "move")
+        if teleported:
+            self.teleport_animation = TeleportAnimation(path[-2], path[-1], time.monotonic())
         self.player = path[-1]
         resolve_contacts(self, path)
 
@@ -318,6 +339,7 @@ class LabyrinthRun:
         self.augment_choices = None
         self.break_cursor = 0
         self.popups = []
+        self.teleport_animation = None
         self.events = []
         self.time = TimeResource(LABYRINTH_START_TIME)
         self.build = self.meta_progress.seed_build()  # reseeded, not reset to a plain Build() -- owned upgrades persist across restarts

@@ -32,6 +32,7 @@ from maze_game.constants import (
     C_PELLET, C_GOLD, C_HAZARD, C_TELEPORT_PAIRS, C_DOOR_LOCKED, C_DOOR_UNLOCKED, C_DOOR_KEY_PAIRS,
     C_SPEED_BONUS,
     POPUP_DURATION_SECONDS, POPUP_RISE_PIXELS,
+    ZIP_ANIMATION_DURATION_SECONDS,
 )
 from maze_game.media import sprites
 from maze_game.media.shapes import draw_smiley_face
@@ -75,6 +76,28 @@ def _wrap_text(font: pygame.font.Font, text: str, max_width: int) -> list[str]:
     if current:
         lines.append(current)
     return lines
+
+
+def animated_player_position(run: LabyrinthRun, now: float) -> tuple[float, float]:
+    """
+    Where to draw the player this frame, in grid-cell units (not yet scaled
+    to pixels) -- run.player itself if no zip animation is in flight or it's
+    already expired, otherwise linearly interpolated between the
+    animation's from_cell/to_cell. Exposed as a standalone, pygame-free
+    function (mirroring Layout's own pattern) so the interpolation math is
+    testable without a real surface.
+    """
+    px, py = run.player
+    anim = run.teleport_animation
+    if anim is None:
+        return px, py
+    age = now - anim.started_at
+    if age >= ZIP_ANIMATION_DURATION_SECONDS:
+        return px, py
+    t = max(0.0, min(1.0, age / ZIP_ANIMATION_DURATION_SECONDS))
+    fx, fy = anim.from_cell
+    tx, ty = anim.to_cell
+    return fx + (tx - fx) * t, fy + (ty - fy) * t
 
 
 class Layout:
@@ -154,7 +177,7 @@ class Renderer:
             self._draw_teleporters(run.teleporters, layout)
             self._draw_doors_and_keys(run, layout)
             self._draw_goal(run.goal, layout)
-            self._draw_player(run.player, layout)
+            self._draw_player(run, layout)
             self._draw_popups(run, layout)
 
         self._draw_hud(run, layout)
@@ -194,10 +217,10 @@ class Renderer:
         pad = max(1, cell // 7)
         pygame.draw.ellipse(self.surface, C_GOAL, pygame.Rect(ox + gx * cell + pad, oy + gy * cell + pad, cell - 2 * pad, cell - 2 * pad))
 
-    def _draw_player(self, player, layout: Layout) -> None:
+    def _draw_player(self, run: LabyrinthRun, layout: Layout) -> None:
         ox, oy = layout.maze_origin
         cell = layout.cell
-        px, py = player
+        px, py = animated_player_position(run, time.monotonic())
         icon = sprites.get("player", cell)
         if icon is not None:
             self.surface.blit(icon, (ox + px * cell, oy + py * cell))
