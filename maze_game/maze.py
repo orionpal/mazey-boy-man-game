@@ -231,7 +231,10 @@ def bfs_reachable(grid: list[list[int]], start: tuple[int, int]) -> set[tuple[in
 
 
 def farthest_reachable_cell(
-    grid: list[list[int]], start: tuple[int, int]
+    grid: list[list[int]],
+    start: tuple[int, int],
+    extra_edges: dict[tuple[int, int], tuple[int, int]] | None = None,
+    candidates: set[tuple[int, int]] | None = None,
 ) -> tuple[int, int]:
     """
     BFS from `start`; return the *reachable-via-sliding* passage cell with
@@ -247,6 +250,21 @@ def farthest_reachable_cell(
     fix). BFS still visits every cell in the usual non-decreasing-distance
     order; this just restricts which visited cell counts as a candidate
     "farthest" answer to ones the sliding mechanic can actually stop on.
+
+    `extra_edges` adds non-grid traversable edges on top of ordinary
+    4-directional adjacency (see `shortest_path`'s identical parameter) --
+    lets goal placement account for teleporter shortcuts instead of only
+    ever seeing plain grid distance.
+
+    `candidates`, if given, further restricts which visited cell can be
+    picked as "farthest" to this set (on top of the stoppable-cell rule
+    above) -- used to confine goal placement to cells behind an augment's
+    mandatory chain, without also restricting *traversal* to that set (the
+    BFS still walks the whole grid; only the answer is filtered). Confining
+    traversal itself was tried and rejected: restricted to only stoppable
+    cells, the single-hop adjacency graph is almost entirely disconnected,
+    so the walk could barely leave its starting pocket regardless of the
+    maze's actual size.
     """
     cols = len(grid[0])
     rows = len(grid)
@@ -258,10 +276,13 @@ def farthest_reachable_cell(
 
     while queue:
         cx, cy = queue.popleft()
-        if _open_neighbour_count(grid, cx, cy) != 2:
+        if _open_neighbour_count(grid, cx, cy) != 2 and (candidates is None or (cx, cy) in candidates):
             farthest = (cx, cy)
-        for dx, dy in ((0, 1), (0, -1), (1, 0), (-1, 0)):
-            nx, ny = cx + dx, cy + dy
+        neighbours = [(cx + dx, cy + dy) for dx, dy in ((0, 1), (0, -1), (1, 0), (-1, 0))]
+        linked = (extra_edges or {}).get((cx, cy))
+        if linked is not None:
+            neighbours.append(linked)
+        for nx, ny in neighbours:
             if (
                 0 <= nx < cols
                 and 0 <= ny < rows

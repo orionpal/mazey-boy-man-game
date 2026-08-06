@@ -165,26 +165,35 @@ def test_frontier_threads_from_one_augment_to_the_next(monkeypatch):
     assert seen_frontier == [(9, 9)]
 
 
-def test_finalize_goal_is_a_noop_when_nothing_advances_the_frontier(monkeypatch):
+def test_finalize_goal_places_the_real_farthest_cell_even_when_nothing_is_mandatory(monkeypatch):
     class _NoopAugment(Augment):
         id = "noop"
         name = "noop"
         description = ""
 
         def apply(self, ctx):
-            pass  # never touches ctx.frontier
+            pass  # never touches ctx.frontier -- no mandatory content placed
 
     aug = _NoopAugment()
     monkeypatch.setattr(augments_module, "ALL_AUGMENTS", [aug])
     build = AugmentBuild()
     build.acquire(aug)
 
-    grid = [[1, 1, 1], [1, 0, 1], [1, 1, 1]]
-    ctx = run_pipeline(grid, 3, 3, (1, 1), (2, 1), build, random.Random(1))
+    # A straight corridor: start at one end, only the far end is stoppable
+    # (a dead end, 1 open neighbour) -- every cell in between has exactly 2.
+    grid = [
+        [1, 1, 1, 1, 1, 1, 1],
+        [1, 0, 0, 0, 0, 0, 1],
+        [1, 1, 1, 1, 1, 1, 1],
+    ]
+    ctx = run_pipeline(grid, 7, 3, (1, 1), (1, 1), build, random.Random(1))
 
-    # No augment advanced ctx.frontier past ctx.start, so _finalize_goal()
-    # must leave the caller's own plain-default goal exactly as passed in.
-    assert ctx.goal == (2, 1)
+    # _finalize_goal() now runs unconditionally (no early-return when
+    # nothing advanced ctx.frontier) -- with no mandatory content,
+    # ctx.extra["mandatory_gated_cells"] is empty, so this degrades to
+    # plain farthest-stoppable-cell placement from ctx.start, same metric
+    # the no-augment default already used, not a special-cased no-op.
+    assert ctx.goal == (5, 1)
 
 
 # ── offer_augment_cards ──────────────────────────────────────────────────

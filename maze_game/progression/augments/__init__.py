@@ -40,7 +40,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from maze_game.constants import MAX_ACTIVE_AUGMENTS
-from maze_game.progression.augments._movement import farthest_within
+from maze_game.maze import farthest_reachable_cell
 
 AUGMENT_CARDS_OFFERED = 3  # mirrors shop/__init__.py::SHOP_CARDS_OFFERED
 
@@ -161,36 +161,44 @@ def _finalize_goal(ctx: AugmentContext) -> None:
     final goal structurally requires the *entire* accumulated gauntlet
     regardless of which augments are active or what order they ran in.
 
-    Deliberately a no-op when ctx.frontier is still ctx.start (nobody
-    placed mandatory content): preserves the caller's own plain
-    farthest_reachable_cell default (see run.py::_begin_maze()) exactly,
-    rather than silently switching goal-distance metrics for mazes this
-    fix doesn't need to touch.
+    Runs unconditionally, even when nothing placed mandatory content
+    (ctx.frontier == ctx.start) -- in that case ctx.extra["mandatory_gated_cells"]
+    is empty, so this degrades to plain teleporter-aware farthest-cell
+    placement from ctx.start, same as the no-augment default but now also
+    accounting for decorative teleporter shortcuts.
 
-    Computes the *real*, sequentially-consistent reachable set once (via
-    doors.py's own sequentially_reachable(), the same ground-truth check
-    every augment's own placement already trusts -- rooted at ctx.start,
-    not ctx.frontier, so a mandatory link's own reverse route can't leak
-    the search back outside the pocket it just sealed the way rooting
-    *at* ctx.frontier would), then finds the farthest cell *from
-    ctx.frontier* within that set, minus every mandatory trigger cell
-    (_mandatory_gate_cells()) -- via plain grid adjacency
-    (farthest_within()), deliberately not a second real-move walk. See
-    both helpers' docstrings for why: a mandatory teleporter pair is
-    bidirectional and a mandatory door cell is grid-open once its key is
-    (correctly) found, so plain "was this ever reachable" membership alone
-    isn't enough to stop the search walking back out the same way it came
-    in and discovering the unrelated near side.
+    Uses plain grid-adjacency BFS (maze.farthest_reachable_cell), not a
+    real-move walk -- an earlier version tried restricting *traversal*
+    itself to the ground-truth reachable set (doors.py's
+    sequentially_reachable(), which only ever contains stoppable cells) and
+    that was a real, measured bug: the single-hop stoppable-only adjacency
+    graph is almost entirely disconnected once mandatory gate cells are
+    excluded from it, so the search could barely leave ctx.frontier's own
+    small sealed pocket regardless of the maze's actual size (goal depth
+    averaged under half the no-augment baseline, sometimes as low as 4
+    cells on a 41x41 maze). Fixed by restricting only the *candidates* a
+    plain BFS traversal is allowed to land on -- ctx.extra["mandatory_gated_cells"],
+    which each mandatory placement OVERWRITES (not unions) with its own
+    gated blob/subtree. This is deliberate, not an oversight: every
+    mandatory placement after the first is architecturally nested *inside*
+    whatever the previous one sealed (it's rooted at ctx.frontier, which
+    sits inside that earlier pocket, so pendant_subtree_map() can only ever
+    explore within it) -- meaning each new gated set is always a subset of
+    the one before it. A union would therefore always collapse to just the
+    *first* mandatory augment's region, which would silently stop forcing
+    every augment placed after it -- the exact "later augment's mandatory
+    content becomes optional" bug ctx.frontier itself exists to prevent, in
+    a different shape. Keeping only the latest (innermost) gated set is what
+    actually requires the *entire* chain: any cell inside it is physically
+    walled off except through every earlier pocket's own entrance too.
+    Traversal itself stays a full, always-connected plain BFS -- only the
+    "farthest" *answer* is filtered by candidates membership; doors need no
+    special handling since a locked door is already grid-open to plain
+    adjacency by design (see doors.py's module docstring).
     """
-    if ctx.frontier == ctx.start:
-        return
-    from maze_game.progression.augments.doors import sequentially_reachable  # deferred: doors.py imports this module
-
     tmap = _combined_teleport_map(ctx)
-    doors = ctx.extra.get("doors", [])
-    reachable = sequentially_reachable(ctx.grid, ctx.start, doors, teleport=lambda x, y: tmap.get((x, y)))
-    search_allowed = reachable - _mandatory_gate_cells(ctx)
-    ctx.goal = farthest_within(ctx.grid, ctx.frontier, search_allowed)
+    gated = ctx.extra.get("mandatory_gated_cells")
+    ctx.goal = farthest_reachable_cell(ctx.grid, ctx.start, extra_edges=tmap, candidates=gated or None)
 
 
 def nested_local_forbidden(ctx: AugmentContext, current_start: tuple[int, int]) -> set[tuple[int, int]] | None:
@@ -247,30 +255,6 @@ def _combined_teleport_map(ctx: AugmentContext) -> dict[tuple[int, int], tuple[i
         tmap[pair.a] = pair.b
         tmap[pair.b] = pair.a
     return tmap
-
-
-def _mandatory_gate_cells(ctx: AugmentContext) -> set[tuple[int, int]]:
-    """
-    Every cell that's a *mandatory* teleporter/door trigger -- used by
-    _finalize_goal() to keep its frontier-rooted farthest-cell search from
-    walking back out through one of them. Re-crossing any of these can't
-    reveal new territory (the player already necessarily used it to reach
-    ctx.frontier), but leaving one open to the search would let it discover
-    the vast, unrelated region on the near side of the mandatory chain,
-    silently defeating the whole forced-use guarantee. Decorative triggers
-    are never excluded -- they don't sit on a sealed boundary (see
-    teleporters.py/doors.py's own decorative-placement docstrings), so
-    re-crossing one is never a leak.
-    """
-    cells: set[tuple[int, int]] = set()
-    for pair in ctx.extra.get("teleporters", []):
-        if pair.mandatory:
-            cells.add(pair.a)
-            cells.add(pair.b)
-    for pair in ctx.extra.get("doors", []):
-        if pair.mandatory:
-            cells.add(pair.door)
-    return cells
 
 
 def offer_augment_cards(

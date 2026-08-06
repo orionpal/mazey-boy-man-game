@@ -300,6 +300,8 @@ def _place_mandatory_door(
 
         ctx.grid = sealed_grid
         ctx.reserved |= {door_cell, key_cell}
+        # Overwrite, not union -- see teleporters.py's identical comment.
+        ctx.extra["mandatory_gated_cells"] = subtree[door_cell]
         ctx.frontier = ctx.rng.choice(frontier_candidates)
         return candidate
 

@@ -148,6 +148,60 @@ def test_farthest_reachable_cell_is_the_farthest_among_valid_stopping_points():
     assert dist[goal] == expected_max_among_stopping_points
 
 
+def test_farthest_reachable_cell_extra_edges_can_reach_an_otherwise_isolated_region():
+    """
+    A teleporter-shaped shortcut (extra_edges) can make a region plain grid
+    adjacency alone would never reach *become* reachable, including cells
+    further beyond the shortcut's own endpoint -- this is the mechanism
+    augments/__init__.py's _finalize_goal() relies on to account for
+    decorative teleporters instead of being blind to them.
+    """
+    # (1, 1) is fully isolated by walls -- the only way anywhere else is
+    # the extra edge. Column 7 is a separate 3-cell vertical dead-end
+    # corridor, (7, 1)-(7, 2)-(7, 3), entirely disconnected by grid walls.
+    grid = [
+        [1, 1, 1, 1, 1, 1, 1, 1, 1],
+        [1, 0, 1, 1, 1, 1, 1, 0, 1],
+        [1, 1, 1, 1, 1, 1, 1, 0, 1],
+        [1, 1, 1, 1, 1, 1, 1, 0, 1],
+        [1, 1, 1, 1, 1, 1, 1, 1, 1],
+    ]
+    start = (1, 1)
+    assert farthest_reachable_cell(grid, start) == start  # nothing else is grid-reachable at all
+
+    goal = farthest_reachable_cell(grid, start, extra_edges={start: (7, 1)})
+    assert goal == (7, 3)  # walked from the shortcut's own endpoint further down to the real dead end
+
+
+def test_farthest_reachable_cell_candidates_restricts_which_cell_can_be_the_answer():
+    """
+    `candidates`, when given, further restricts (on top of the existing
+    stoppable-cell rule) which visited cell can be picked as the final
+    "farthest" answer -- it does not restrict *traversal*, so a cell
+    outside `candidates` is still walked through on the way to one that is
+    in it. Used by _finalize_goal() to confine goal placement to cells
+    behind an augment's mandatory chain without breaking the BFS itself.
+    """
+    # A horizontal corridor (1,1)-(7,1) with a short dead-end branch
+    # hanging off its junction at (4,1)-(4,2)-(4,3). The branch's own dead
+    # end (4,3) is closer to start than the corridor's own dead end (7,1).
+    grid = [
+        [1, 1, 1, 1, 1, 1, 1, 1, 1],
+        [1, 0, 0, 0, 0, 0, 0, 0, 1],
+        [1, 1, 1, 1, 0, 1, 1, 1, 1],
+        [1, 1, 1, 1, 0, 1, 1, 1, 1],
+        [1, 1, 1, 1, 1, 1, 1, 1, 1],
+    ]
+    start = (1, 1)
+    assert farthest_reachable_cell(grid, start) == (7, 1)  # the globally farthest stoppable cell
+
+    restricted = farthest_reachable_cell(grid, start, candidates={(4, 3)})
+    assert restricted == (4, 3)  # the branch's own dead end, even though it's the nearer of the two
+
+    # An empty/nonexistent candidates set is treated the same as no restriction at all when falsy.
+    assert farthest_reachable_cell(grid, start, candidates=None) == (7, 1)
+
+
 def _simulate_slide_along_path(grid, path):
     """
     Walk `path` for real via player.slide(), recomputing the direction from

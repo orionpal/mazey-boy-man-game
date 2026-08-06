@@ -180,6 +180,15 @@ def _place_mandatory_pair(
 
         ctx.grid = sealed_grid
         ctx.reserved |= blob | {entrance, exit_cell}
+        # Overwrite, not union: each subsequent mandatory placement in the
+        # pipeline is architecturally nested *inside* whatever came before
+        # (pendant_subtree_map(ctx.grid, ctx.frontier) can only explore
+        # within the pocket ctx.frontier already sits in) -- so the latest
+        # blob is always a subset of every earlier one. A union would
+        # collapse to just the *first* mandatory augment's region, which
+        # would silently stop forcing every augment placed after it -- the
+        # same class of bug ctx.frontier itself was built to fix.
+        ctx.extra["mandatory_gated_cells"] = blob
         return TeleporterPair(a=entrance, b=exit_cell, mandatory=True, color_index=color_index)
 
     return None
