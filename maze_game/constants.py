@@ -180,29 +180,6 @@ DOOR_FAR_SIDE_MIN_SIZE      = 3   # cells gated behind one mandatory door
 DOOR_FAR_SIDE_MAX_SIZE      = 10
 DOOR_PLACEMENT_MAX_ATTEMPTS = 10  # retries per gated region before giving up on it (graceful degradation, never a crash/hang)
 
-# Multi-Level Mazes (progression/augments/multi_level.py): the third maze
-# augment. Unlike teleporters (reuse the sealed pocket's original interior)
-# or doors (gate the original interior behind a key), each pocket's own
-# internal layout is discarded and recarved from scratch as an independent
-# "floor" -- a genuinely different maze occupying the same footprint,
-# reachable only via a linked stairs pair (mechanically identical to a
-# teleporter pair). Same level-scaling shape as teleporters/doors above:
-# floor count and how many of those floors are load-bearing both scale with
-# the augment's level, higher levels nesting mandatory floors deeper.
-MULTI_LEVEL_FLOOR_COUNT_BASE       = 2
-MULTI_LEVEL_FLOOR_COUNT_STEP       = 1
-MULTI_LEVEL_FLOOR_COUNT_MAX        = 5
-MULTI_LEVEL_MANDATORY_COUNT_BASE   = 1
-MULTI_LEVEL_MANDATORY_COUNT_STEP   = 1
-MULTI_LEVEL_FLOOR_MIN_SIZE         = 4   # cells recarved into one floor's own footprint
-MULTI_LEVEL_FLOOR_MAX_SIZE         = 12
-MULTI_LEVEL_PLACEMENT_MAX_ATTEMPTS = 10  # retries per floor before giving up on it (graceful degradation, never a crash/hang)
-# Soft preference radius (Chebyshev distance, in cells) for picking a
-# floor's return_landing near its entrance, so the two markers read as a
-# related pair in the parent maze rather than being scattered arbitrarily
-# far apart -- falls back to any valid candidate if nothing qualifies.
-MULTI_LEVEL_RETURN_NEAR_RADIUS      = 6
-
 # ── Colours  (R, G, B) ────────────────────────────────────────────────────
 # Identity colours (player/goal/pellet/gold/hazard/door/speed-bonus) are
 # deliberately spread across distinct hues so entity *families* stay
@@ -258,16 +235,4 @@ C_DOOR_KEY_PAIRS = [
     (200, 150, 255),
     (255, 190, 140),
     (170, 220, 140),
-]
-
-# Stairs pairs (multi-level mazes): each pair drawn in its own colour
-# (cycled by pair.color_index), same pattern as C_TELEPORT_PAIRS/
-# C_DOOR_KEY_PAIRS. Stone/earth-leaning, so this palette doesn't alias
-# either of those.
-C_STAIRS_PAIRS = [
-    (170, 150, 90),
-    (110, 150, 100),
-    (150, 170, 190),
-    (190, 150, 120),
-    (130, 180, 160),
 ]

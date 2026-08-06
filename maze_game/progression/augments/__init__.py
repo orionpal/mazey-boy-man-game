@@ -1,8 +1,8 @@
 """
 augments/__init__.py
 ---------------------
-Maze augments: generation-time modifiers (teleporting squares, and later
-multi-level mazes, shifting maze, reverse controls, lights out -- see
+Maze augments: generation-time modifiers (teleporting squares, doors &
+keys, and later rotating maze, fog of war, shifting rooms -- see
 docs/planning/future-ideas.md) offered every AUGMENT_INTERVAL-th maze
 alongside the perk/item shop. Mirrors shop/'s shape (a Build-like
 pick-count tracker, a card-offer function) but for maze generation instead
@@ -79,7 +79,8 @@ class AugmentContext:
     active augments' mandatory content compose into ONE nested critical
     path instead of each independently claiming the goal and silently
     orphaning whichever augment didn't run last (a real bug this field
-    fixes -- see docs/progression.md's Multi-Level Mazes section and
+    fixes -- see docs/progression.md's "Composing multiple augments'
+    mandatory content" section and
     tests/progression/augments/test_composition.py). Starts at `start`;
     staying there means no augment has placed mandatory content yet.
     """
@@ -204,22 +205,19 @@ def nested_local_forbidden(ctx: AugmentContext, current_start: tuple[int, int]) 
     how a mandatory chain nests deeper, within one augment's own chain or
     across augments), returns the much narrower set candidates should
     avoid: every individual already-placed special cell (teleporter
-    entrance/exit, door/key, floor entrance/floor_start/floor_exit/
-    return_landing) -- NOT the enclosing pocket's entire blob.
+    entrance/exit, door/key) -- NOT the enclosing pocket's entire blob.
 
     Why the distinction matters: ctx.reserved deliberately includes a
-    sealed/recarved pocket's *entire* cell closure (not just its special
-    cells), so that a *separate*, non-nested placement elsewhere can never
-    overlap it. But that same blanket set, applied to a search already
-    rooted *inside* that pocket, would reject every single candidate --
-    the whole point of nesting is to further subdivide that same,
-    already-isolated interior, not avoid it. A pocket's own boundary
-    already topologically confines a nested pendant_subtree_map() search to
-    just its interior (nothing outside is plain-grid reachable from
-    inside a sealed pocket), so the only genuine remaining risk is
-    colliding with -- or, for a *recarving* placement like multi_level.py's,
-    silently rewriting the walls around -- a specific cell some other
-    already-placed pair/link is relying on, which is exactly what this
+    sealed pocket's *entire* cell closure (not just its special cells), so
+    that a *separate*, non-nested placement elsewhere can never overlap it.
+    But that same blanket set, applied to a search already rooted *inside*
+    that pocket, would reject every single candidate -- the whole point of
+    nesting is to further subdivide that same, already-isolated interior,
+    not avoid it. A pocket's own boundary already topologically confines a
+    nested pendant_subtree_map() search to just its interior (nothing
+    outside is plain-grid reachable from inside a sealed pocket), so the
+    only genuine remaining risk is colliding with a specific cell some
+    other already-placed pair is relying on, which is exactly what this
     narrower set protects against.
     """
     # current_start == ctx.start is always the open main region, never a
@@ -239,29 +237,21 @@ def nested_local_forbidden(ctx: AugmentContext, current_start: tuple[int, int]) 
     for pair in ctx.extra.get("doors", []):
         cells.add(pair.door)
         cells.add(pair.key)
-    for link in ctx.extra.get("floors", []):
-        cells.add(link.entrance)
-        cells.add(link.floor_start)
-        cells.add(link.floor_exit)
-        cells.add(link.return_landing)
     return cells
 
 
 def _combined_teleport_map(ctx: AugmentContext) -> dict[tuple[int, int], tuple[int, int]]:
-    """Every teleporter pair and floor stairs link placed so far, folded into one map -- see _movement.py's slide_path(teleport=...) hook."""
+    """Every teleporter pair placed so far, folded into a map -- see _movement.py's slide_path(teleport=...) hook."""
     tmap: dict[tuple[int, int], tuple[int, int]] = {}
     for pair in ctx.extra.get("teleporters", []):
         tmap[pair.a] = pair.b
         tmap[pair.b] = pair.a
-    for link in ctx.extra.get("floors", []):
-        tmap[link.entrance] = link.floor_start
-        tmap[link.floor_exit] = link.return_landing
     return tmap
 
 
 def _mandatory_gate_cells(ctx: AugmentContext) -> set[tuple[int, int]]:
     """
-    Every cell that's a *mandatory* teleporter/door/floor trigger -- used by
+    Every cell that's a *mandatory* teleporter/door trigger -- used by
     _finalize_goal() to keep its frontier-rooted farthest-cell search from
     walking back out through one of them. Re-crossing any of these can't
     reveal new territory (the player already necessarily used it to reach
@@ -269,18 +259,14 @@ def _mandatory_gate_cells(ctx: AugmentContext) -> set[tuple[int, int]]:
     the vast, unrelated region on the near side of the mandatory chain,
     silently defeating the whole forced-use guarantee. Decorative triggers
     are never excluded -- they don't sit on a sealed boundary (see
-    teleporters.py/doors.py/multi_level.py's own decorative-placement
-    docstrings), so re-crossing one is never a leak.
+    teleporters.py/doors.py's own decorative-placement docstrings), so
+    re-crossing one is never a leak.
     """
     cells: set[tuple[int, int]] = set()
     for pair in ctx.extra.get("teleporters", []):
         if pair.mandatory:
             cells.add(pair.a)
             cells.add(pair.b)
-    for link in ctx.extra.get("floors", []):
-        if link.mandatory:
-            cells.add(link.entrance)
-            cells.add(link.floor_exit)
     for pair in ctx.extra.get("doors", []):
         if pair.mandatory:
             cells.add(pair.door)
@@ -324,15 +310,12 @@ AUGMENTS_BY_ID: dict[str, Augment] = {}
 # be circular).
 from maze_game.progression.augments.teleporters import TeleportersAugment  # noqa: E402
 from maze_game.progression.augments.doors import DoorsAugment  # noqa: E402
-from maze_game.progression.augments.multi_level import MultiLevelAugment  # noqa: E402
 
 # Order matters: DoorsAugment must run after TeleportersAugment -- a door
 # candidate is verified against the maze's already-finalized teleporter
 # map, so a teleporter can never silently bypass a door that looked like a
-# genuine cut vertex under plain grid adjacency (see doors.py). MultiLevelAugment
-# must run after both -- a floor candidate is verified against the maze's
-# already-finalized teleporter map *and* door/key state (see multi_level.py).
-for _augment in (TeleportersAugment(), DoorsAugment(), MultiLevelAugment()):
+# genuine cut vertex under plain grid adjacency (see doors.py).
+for _augment in (TeleportersAugment(), DoorsAugment()):
     ALL_AUGMENTS.append(_augment)
     AUGMENTS_BY_ID[_augment.id] = _augment
 del _augment

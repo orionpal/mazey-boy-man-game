@@ -411,24 +411,41 @@ pocket/gate became a real, sealed, reachable, but no-longer-required side
 room. `ctx.frontier` fixes this: a single shared "current end of the
 mandatory chain," seeded at `ctx.start`, that every augment's mandatory
 placement (a) roots its own search at (instead of `ctx.start`) and (b)
-advances to wherever its own chain ends, before returning — so Teleporters,
-Doors, and MultiLevelAugment nest their mandatory content behind each
-other, in whatever combination and order the player actually picked,
-instead of running three independent, competing chains. Final goal
-placement moved out of the individual augments entirely, into one shared
-step (`run_pipeline()`'s `_finalize_goal()`, run once after the whole
-loop) that places the goal via a farthest-cell search rooted at the final
-`ctx.frontier` — deliberately *not* a naive real-move walk from a link's
-own endpoint, since a mandatory teleporter pair's own bidirectional link
-(or a mandatory door, once its key is “found”) can otherwise leak the
-search straight back out to the near side; see `_finalize_goal()`'s and
+advances to wherever its own chain ends, before returning — so Teleporters
+and Doors nest their mandatory content behind each other, in whatever
+order the player actually picked, instead of running independent,
+competing chains. Final goal placement moved out of the individual
+augments entirely, into one shared step (`run_pipeline()`'s
+`_finalize_goal()`, run once after the whole loop) that places the goal
+via a farthest-cell search rooted at the final `ctx.frontier` —
+deliberately *not* a naive real-move walk from a link's own endpoint,
+since a mandatory teleporter pair's own bidirectional link (or a mandatory
+door, once its key is “found”) can otherwise leak the search straight back
+out to the near side; see `_finalize_goal()`'s and
 `_movement.py::farthest_within()`'s docstrings for the exact mechanism.
 `tests/progression/augments/test_composition.py` is the regression
-coverage: for every pair and the full triple of augments active together,
-disabling *any one* of them individually (with the other(s) left fully
-intact) must break solvability — the property that would have caught this
-bug, which a weaker "is everything reachable with it all intact" check
-does not.
+coverage: with both augments active, disabling *either one's* mandatory
+content individually (with the other left fully intact) must break
+solvability — the property that would have caught this bug, which a
+weaker "is everything reachable with it all intact" check does not.
+
+**Nesting a mandatory chain used to be silently impossible.** A second bug,
+found directly while building the fix above (not previously known):
+placing a mandatory pocket *inside* an already-placed one's own sealed
+pocket requires rooting the next search there — but every candidate search
+also unconditionally rejected any candidate touching `ctx.reserved`, which
+already contains the *entire* enclosing pocket (reserved on purpose, so a
+*different*, unrelated augment can never overlap it) — so a nested
+search's candidate pool was always empty. Confirmed by running the
+original code directly: 0 of 50 random seeds ever placed two nested
+mandatory teleporter pairs at a level whose formula asks for it. Fixed
+with `nested_local_forbidden()` (`augments/__init__.py`): once a search is
+confirmed to already be rooted inside a sealed pocket, it drops the
+blanket `ctx.reserved` check (the whole point of nesting is to further
+subdivide that same, already-isolated interior) and instead avoids only
+the individual special cells already placed there — including, for a
+same-call chain still in progress, cells `ctx.extra` hasn't been written
+back with yet.
 
 `offer_augment_cards()` mirrors `offer_shop_cards()`'s sampling shape:
 below the cap, prefer offering not-yet-active augments (topped up with
@@ -530,103 +547,6 @@ collects whatever key becomes reachable and unlocks its door, and repeats
 until nothing more unlocks — the actual ground-truth "can the player
 finish this maze" answer, verified after *every* placement attempt (not
 just once at the end).
-
-### Multi-Level Mazes (`progression/augments/multi_level.py`)
-
-The third augment: a "floor" is a pocket picked and sealed exactly like
-teleporters' pockets (pendant-subtree selection + `seal_pocket()`), except
-its *own interior* is also discarded and recarved from scratch
-(`_recarve_blob()`, a fresh backtracker restricted to the pocket's own
-geometric adjacency) rather than reusing whatever `generate_maze()`
-originally carved there — the one thing this augment adds that
-teleporters/doors don't: a floor reads as a genuinely different level, not
-the parent maze's leftover interior wearing a new coat of paint. Same
-level-scaling shape as the other two (`MULTI_LEVEL_*` constants): higher
-levels add more floors and make more of them mandatory, each successive
-mandatory floor nested one level deeper than the last.
-
-**Two one-way stairs, not one round-trip pair.** Earlier this literally
-*was* a teleporter pair with different sprites — mechanically identical,
-single bidirectional link. Now a `FloorLink` has four cells: `entrance`
-(parent) → `floor_start` (floor) going up, and a *separately placed*
-`floor_exit` (floor) → `return_landing` (parent) coming back down, which
-generally isn't the same cell as `entrance`. Both parent-side cells are
-rendered together from the moment the floor exists — a color-matched
-down-chevron at `entrance`, another at `return_landing` — so the player can
-see where a floor's stairs go up *and* where they'll come back out before
-ever setting foot on them, rather than the down-stairs only being
-discoverable after already exploring the floor. `return_landing`
-placement soft-prefers a candidate close to `entrance` (a small Chebyshev
-radius, `MULTI_LEVEL_RETURN_NEAR_RADIUS`) when one exists, so the two
-markers read as a related pair instead of being scattered arbitrarily far
-apart, falling back to any valid candidate otherwise (same
-graceful-degradation shape as everything else in this file). Mechanically
-this needed no new engine mechanic at all: `_teleport_map` (`progression/
-run.py`) already supports one-way entries — nothing in
-`player.slide_path()`'s `teleport` hook requires a pair to be symmetric —
-so `entrance`/`floor_exit` are just two ordinary map keys, and
-`floor_start`/`return_landing` are deliberately never keys at all
-(stepping onto them is ordinary movement, not a trigger).
-
-**Rendering — a camera crop, not a second grid.** The floor's cells stay
-exactly where `generate_maze()` originally put them (a sealed pocket is a
-pendant subtree of the *same* grid, recarving only rewrites walls between
-cells already in it, never relocates anything) — so there was never a
-second coordinate space to render "into." Instead, `LabyrinthRun` tracks a
-`_floor_stack` (pushed on landing at a floor's own `floor_start`, popped on
-landing at the *current* top-of-stack's own `return_landing` — a stack,
-not a single value, since a mandatory floor can nest inside another, and
-leaving the inner one must return to the outer one's own view, not
-straight to the top-level maze) and exposes `current_view_bounds`: `None`
-at top level, or the current floor's own `blob` bounding box.
-`renderer.py`'s `Layout` crops and scales the maze viewport to that box
-instead of the full grid when it's set — the exact same small, freshly
-recarved interior that used to render squeezed into its real tiny footprint
-alongside the much bigger parent maze now fills the whole `MAZE_AREA_SIZE`
-viewport at full detail, reading as a genuinely different, separate place
-without duplicating the grid/entity model Teleporters/Doors and this
-augment's own solvability checks all still assume is one unified graph. A
-floor's interior stays visible (at its real footprint) in the parent view
-even before the player has ever taken its stairs, same as it always has —
-only the zoom-on-entry is new. Pellets/hazards/gold spawn inside a floor's
-interior too now (excluded before, since the whole blob had to stay
-reserved for *placement* safety against other augments recarving/sealing
-over it — a different concern from spawn eligibility, now handled
-separately in `LabyrinthRun._begin_maze()`).
-
-**Forced-use guarantee**, restated in terms of the shared `ctx.frontier`
-(see "Composing multiple augments' mandatory content" above): a mandatory
-floor's pocket is sealed with *no* kept-open crossing at all, so plain grid
-adjacency can never reach past its boundary — `entrance` is the *only* way
-in. Placement roots its search at `ctx.frontier` (not `ctx.start`) and
-advances it to `floor_start` on success, so whatever the pipeline places
-next — another mandatory floor, or nothing — nests behind this one too.
-
-**Nesting a nested mandatory chain used to be silently impossible, for all
-three augments.** A second bug, found directly while building the
-`ctx.frontier` fix above (not by design, not previously known): placing a
-mandatory floor/pair/door *inside* an already-placed one's own sealed
-pocket requires rooting the next search there — but every candidate
-search also unconditionally rejected any candidate touching
-`ctx.reserved`, which already contains the *entire* enclosing pocket
-(reserved on purpose, so a *different*, unrelated augment can never
-overlap it) — so a nested search's candidate pool was always empty, for
-every one of the three augments, since the day multi-level mazes shipped.
-Confirmed by running the original code directly: 0 of 50 random seeds ever
-placed two nested mandatory floors, or two nested mandatory teleporter
-pairs, at a level whose formula asks for it. Fixed with
-`nested_local_forbidden()` (`augments/__init__.py`): once a search is
-confirmed to already be rooted inside a sealed pocket, it drops the
-blanket `ctx.reserved` check (the whole point of nesting is to further
-subdivide that same, already-isolated interior) and instead avoids only
-the individual special cells already placed there — including, for a
-same-call chain still in progress, cells `ctx.extra` hasn't been written
-back with yet. `multi_level.py`'s own recarving also needed one more
-guard: computing which cells are reachable *from* the new frontier had to
-respect any already-placed mandatory door's lock state (a door is
-grid-open, not a real wall, so plain grid adjacency alone would happily
-walk back out through an already-crossed one), the same leak class
-`_finalize_goal()` guards against.
 
 ## Not built yet (deliberately out of scope for this first pass)
 

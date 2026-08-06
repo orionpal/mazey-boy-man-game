@@ -122,7 +122,7 @@ def farthest_within(grid, start, allowed):
 
     Deliberately plain grid adjacency, not a second real-move walk from
     `start` (== ctx.frontier): a real-move search *rooted at* a mandatory
-    teleporter/floor link's own endpoint can step onto that same link from
+    teleporter pair's own endpoint can step onto that same pair from
     a different direction mid-search and immediately warp back out through
     it (bidirectional pairs) -- or, for a mandatory door, would need to
     treat the door as unlocked to even start meaningfully, both routes
@@ -133,8 +133,8 @@ def farthest_within(grid, start, allowed):
     already-correct simulation independently proved reachable, and doors'
     own behavioral (grid-open) gating is exactly why `allowed` is needed at
     all here, not real wall connectivity alone (real walls, e.g. a sealed
-    teleporter/floor pocket boundary, already confine plain adjacency
-    correctly on their own).
+    teleporter pocket boundary, already confine plain adjacency correctly
+    on their own).
     """
     seen = {start}
     queue: deque[tuple[int, int]] = deque([start])

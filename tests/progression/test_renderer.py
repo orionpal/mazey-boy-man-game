@@ -92,57 +92,6 @@ def test_build_squares_are_within_the_left_sidebar():
         assert layout.left.collidepoint(square.topleft)
 
 
-# ── view_bounds (multi-level camera crop, see LabyrinthRun.current_view_bounds) ──
-
-
-def test_layout_without_view_bounds_matches_full_grid_behaviour():
-    """Regression guard: top-level rendering (no active floor) must be
-    identical to plain Layout(cols, rows) -- explicit view_bounds=None is
-    the same as omitting it."""
-    implicit = Layout(cols=21, rows=13)
-    explicit = Layout(cols=21, rows=13, view_bounds=None)
-    assert implicit.cell == explicit.cell == Layout(cols=21, rows=13).cell
-    assert implicit.view_origin == (0, 0)
-    assert implicit.view_w == 21
-    assert implicit.view_h == 13
-
-
-def test_layout_with_view_bounds_scales_to_the_view_not_the_full_grid():
-    """A small floor cropped inside a big maze should render at a much
-    bigger cell size than the big maze itself would."""
-    full = Layout(cols=41, rows=41)
-    cropped = Layout(cols=41, rows=41, view_bounds=(10, 10, 5, 5))
-    assert cropped.cell > full.cell
-    assert cropped.view_w == 5
-    assert cropped.view_h == 5
-    assert cropped.maze_w <= MAZE_AREA_SIZE
-    assert cropped.maze_h <= MAZE_AREA_SIZE
-
-
-def test_layout_view_origin_offsets_cell_px():
-    layout = Layout(cols=41, rows=41, view_bounds=(10, 12, 6, 6))
-    assert layout.view_origin == (10, 12)
-    ox, oy = layout.maze_origin
-    # The view's own top-left cell (10, 12) must map to the maze area's
-    # own screen-space top-left corner, regardless of its raw grid position.
-    assert layout.cell_px(10, 12) == (ox, oy)
-    assert layout.cell_px(11, 12) == (ox + layout.cell, oy)
-
-
-def test_layout_in_view_respects_the_crop():
-    layout = Layout(cols=41, rows=41, view_bounds=(10, 10, 5, 5))
-    assert layout.in_view(10, 10)
-    assert layout.in_view(14, 14)  # last cell inside a 5-wide/tall crop starting at 10
-    assert not layout.in_view(15, 10)  # one past the crop's right edge
-    assert not layout.in_view(9, 10)  # one before the crop's left edge
-
-
-def test_layout_in_view_is_always_true_without_a_crop():
-    layout = Layout(cols=21, rows=21)
-    assert layout.in_view(0, 0)
-    assert layout.in_view(20, 20)
-
-
 # ── _wrap_text ────────────────────────────────────────────────────────────
 
 

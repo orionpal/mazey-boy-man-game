@@ -20,7 +20,6 @@ from maze_game.progression.entities.hazards import Pellet, GoldPellet, Hazard, l
 from maze_game.progression.shop.perks import ALL_PERKS, Perk
 from maze_game.progression.augments.teleporters import TeleportersAugment
 from maze_game.progression.augments.doors import DoorKeyPair, Key
-from maze_game.progression.augments.multi_level import FloorLink
 
 # A trivial straight 3-cell corridor, (1,1)-(2,1)-(3,1), used to drive
 # move() deterministically instead of a randomly-generated maze.
@@ -215,37 +214,6 @@ def test_gold_pellets_never_overlap_pellets():
         pellet_positions = {p.pos for p in run.pellets}
         gold_positions = {g.pos for g in run.gold_pellets}
         assert pellet_positions.isdisjoint(gold_positions)
-
-
-def test_floors_can_receive_pellets_not_just_stay_empty_transit_rooms():
-    """
-    A floor's entire blob used to be excluded from pellet/hazard spawning
-    (ctx.reserved protects the whole blob for PLACEMENT safety against
-    other augments, which used to double as the spawn-exclude set too) --
-    now only its four special stairs cells are excluded, so a floor reads
-    as a real place with something in it, not just an empty corridor.
-    Checks several seeds since spawning is density-driven and floors are
-    small, so no single seed is guaranteed to prove the point on its own.
-    """
-    from maze_game.progression.augments.multi_level import MultiLevelAugment
-
-    found = False
-    for seed in range(20):
-        run = LabyrinthRun(seed=seed)
-        for _ in range(4):
-            run.augment_build.acquire(MultiLevelAugment())
-        run._begin_maze()  # re-run _begin_maze() now that multi_level is active
-        if not run.floors:
-            continue
-        pellet_positions = {p.pos for p in run.pellets} | {g.pos for g in run.gold_pellets}
-        for link in run.floors:
-            interior = link.blob - {link.entrance, link.floor_start, link.floor_exit, link.return_landing}
-            if pellet_positions & interior:
-                found = True
-                break
-        if found:
-            break
-    assert found, "expected at least one seed to spawn a pellet/gold pellet inside a floor's own interior"
 
 
 def test_hazards_are_empty_before_the_unlock_maze(run):
@@ -800,101 +768,6 @@ def test_moving_through_a_teleporter_appends_the_teleport_event_not_move():
     assert run.events == ["teleport"]
 
 
-def test_plain_teleporters_never_touch_the_floor_stack():
-    """A plain teleporter pair isn't in run.floors at all, so it must never
-    push/pop _floor_stack -- only a cell that's specifically some
-    FloorLink's own floor_start/return_landing does."""
-    run = _teleport_run()
-    run.floors = []
-    run.move((1, 0))
-    assert run.player == (3, 1)
-    assert run._floor_stack == []
-
-
-# A wide corridor, (1,1)-(9,1), used to drive stairs (multi_level.py)
-# push/pop deterministically -- two FloorLink pairs chained one after the
-# other (floor1: (2,1)->(4,1) up, (6,1)->(8,1) down) so a single move()
-# through each teleport-mapped cell exercises one push or pop at a time.
-FLOOR_GRID = [
-    [1] * 11,
-    [1] + [0] * 9 + [1],
-    [1] * 11,
-]
-
-
-def _floor_run(floors, teleport_map) -> LabyrinthRun:
-    run = LabyrinthRun()
-    run.grid = [row[:] for row in FLOOR_GRID]
-    run.player = (1, 1)
-    run.pellets = []
-    run.hazards = []
-    run.floors = floors
-    run._teleport_map = teleport_map
-    run._floor_stack = []
-    return run
-
-
-def _floor_link(entrance, floor_start, floor_exit, return_landing, floor=1, mandatory=True, color_index=0):
-    return FloorLink(
-        entrance=entrance, floor_start=floor_start, floor_exit=floor_exit, return_landing=return_landing,
-        mandatory=mandatory, color_index=color_index, floor=floor,
-        blob=frozenset({floor_start, floor_exit}),
-    )
-
-
-def test_entering_a_floors_floor_start_pushes_the_stack():
-    link = _floor_link(entrance=(2, 1), floor_start=(4, 1), floor_exit=(6, 1), return_landing=(8, 1))
-    run = _floor_run([link], {(2, 1): (4, 1), (6, 1): (8, 1)})
-
-    run.move((1, 0))  # (1,1) -> enters (2,1) -> warps to floor_start (4,1)
-    assert run.player == (4, 1)
-    assert run._floor_stack == [link]
-
-
-def test_returning_via_a_floors_return_landing_pops_the_stack():
-    link = _floor_link(entrance=(2, 1), floor_start=(4, 1), floor_exit=(6, 1), return_landing=(8, 1))
-    run = _floor_run([link], {(2, 1): (4, 1), (6, 1): (8, 1)})
-    run.player = (4, 1)
-    run._floor_stack = [link]
-
-    run.move((1, 0))  # (4,1) -> enters (6,1) -> warps to return_landing (8,1)
-    assert run.player == (8, 1)
-    assert run._floor_stack == []
-
-
-def test_nested_floors_return_to_the_parent_floors_view_not_top_level():
-    outer = _floor_link(entrance=(2, 1), floor_start=(4, 1), floor_exit=(9, 1), return_landing=(10, 1), floor=1)
-    inner = _floor_link(entrance=(5, 1), floor_start=(6, 1), floor_exit=(7, 1), return_landing=(8, 1), floor=2)
-    teleport_map = {
-        (2, 1): (4, 1), (5, 1): (6, 1),  # both "up" trips
-        (7, 1): (8, 1), (9, 1): (10, 1),  # both "down" trips
-    }
-    run = _floor_run([outer, inner], teleport_map)
-
-    run.move((1, 0))  # -> outer.floor_start (4,1)
-    assert run._floor_stack == [outer]
-
-    run.move((1, 0))  # (4,1) -> (5,1) enters inner's entrance -> inner.floor_start (6,1)
-    assert run._floor_stack == [outer, inner]
-
-    run.move((1, 0))  # (6,1) -> (7,1) is inner's floor_exit -> inner.return_landing (8,1)
-    assert run._floor_stack == [outer], "leaving the nested floor must return to the OUTER floor's view, not top-level"
-
-    run.move((1, 0))  # (8,1) -> (9,1) is outer's floor_exit -> outer.return_landing (10,1)
-    assert run._floor_stack == []
-
-
-def test_current_view_bounds_is_none_at_top_level_and_the_blobs_bbox_inside_a_floor():
-    link = _floor_link(entrance=(2, 1), floor_start=(4, 1), floor_exit=(6, 1), return_landing=(8, 1))
-    run = _floor_run([link], {(2, 1): (4, 1), (6, 1): (8, 1)})
-    assert run.current_view_bounds is None
-
-    run._floor_stack = [link]
-    min_x = min(x for x, _y in link.blob)
-    min_y = min(y for _x, y in link.blob)
-    max_x = max(x for x, _y in link.blob)
-    max_y = max(y for _x, y in link.blob)
-    assert run.current_view_bounds == (min_x, min_y, max_x - min_x + 1, max_y - min_y + 1)
 
 
 DOOR_GRID = [

@@ -200,8 +200,6 @@ augments" section for why), and rejects-and-retries on failure. Not
 literal Wave Function Collapse, but the same shape the escalation path
 here anticipated — closing that open thread with what actually got built.
 This is also the template `docs/planning/future-ideas.md`'s remaining
-maze-augment backlog (shifting maze, reverse controls, lights out) is
+maze-augment backlog (rotating maze, fog of war, shifting rooms) is
 expected to follow if/when any of them turn out to also be
-reachability-changing rather than purely decorative. Multi-level mazes
-(the third item that backlog used to list here) has since shipped —
-see `docs/progression.md`'s "Multi-Level Mazes" section.
+reachability-changing rather than purely decorative.

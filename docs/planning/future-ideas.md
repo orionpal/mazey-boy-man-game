@@ -79,16 +79,29 @@ Starting list:
   door) is collected. Same rigor as teleporters -- seals a pocket's whole
   boundary except the door's own entrance, verifies solvability via a full
   sequential-unlock simulation -- but as a *gate* instead of a *shortcut*.
-- **Multi-level mazes** -- shipped (`progression/augments/multi_level.py`).
-  A pocket is sealed and its own interior recarved from scratch, linked to
-  the parent region by two one-way stairs warps (up: entrance ->
-  floor_start; down: a separately placed floor_exit -> return_landing).
-  Same rigor as teleporters/doors -- pendant-subtree pocket selection,
-  full sequential-unlock verification -- plus a per-floor camera crop
-  (`renderer.py`) so a floor renders at full-viewport scale instead of its
-  real tiny footprint. See `docs/progression.md`'s "Multi-Level Mazes"
-  section.
-- **Shifting maze** -- not started.
+- **Multi-level mazes** -- built and shipped, then scrapped after
+  playtesting (`progression/augments/multi_level.py`, removed). A pocket
+  was sealed and its own interior recarved from scratch, linked to the
+  parent region by two one-way stairs warps, with a per-floor camera crop
+  so it rendered at full-viewport scale. Mechanically sound (forced-use
+  guarantee, full test coverage) but reported as "pretty disorienting" in
+  actual play -- scrapped for now rather than iterated on further. Not
+  started again unless revisited.
+- **Rotating maze** -- not started. The whole maze rotates on a fixed
+  timer (every 2s), with a warning indicator shortly before each rotation
+  fires. A rigid rotation of the grid + every entity position together is
+  an isometry, so unlike the augments above it doesn't need its own
+  forced-use/solvability verification machinery -- the maze is exactly as
+  solvable after rotating as before.
+- **Fog of war** -- not started. Only cells within the player's line of
+  sight are visible; discovered cells stay revealed permanently by
+  default, structured so that default is easy to swap later for something
+  narrower (e.g. an item that grants permanent memory, rather than it
+  being everyone's baseline).
+- **Shifting room** -- not started. Pressure pads that shift certain walls
+  when stepped on, changing maze connectivity at *runtime* -- unlike every
+  augment above, which only ever mutates the grid once, at generation
+  time.
 - **Reverse controls** -- not started.
 - **Lights out** -- not started.
 

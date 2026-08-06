@@ -29,9 +29,10 @@ chain is rooted at ctx.frontier (not ctx.start), and advances ctx.frontier
 to its own chain's end when it places at least one mandatory pair --
 it no longer claims the maze's goal for itself (that used to be a real
 bug: whichever goal-claiming augment ran last silently orphaned every
-earlier one's mandatory content -- see docs/progression.md's Multi-Level
-Mazes section). Final goal placement happens once, centrally, in
-run_pipeline()'s _finalize_goal(), after every active augment has run.
+earlier one's mandatory content -- see docs/progression.md's "Composing
+multiple augments' mandatory content" section). Final goal placement
+happens once, centrally, in run_pipeline()'s _finalize_goal(), after every
+active augment has run.
 """
 
 from __future__ import annotations
