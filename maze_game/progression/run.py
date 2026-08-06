@@ -36,7 +36,7 @@ from maze_game.constants import (
     MILESTONE_INTERVAL, MILESTONE_DIMENSION_BOOST, MILESTONE_MAX_DIMENSION,
     AUGMENT_INTERVAL, HAZARD_UNLOCK_MAZE,
     SPEED_BONUS_TIME, SPEED_BONUS_SECONDS_PER_CELL,
-    POPUP_DURATION_SECONDS, C_SPEED_BONUS, C_GOLD,
+    POPUP_DURATION_SECONDS, C_SPEED_BONUS, C_GOLD, C_PRESSURE_PADS,
     ZIP_ANIMATION_DURATION_SECONDS,
     ROTATE_INTERVAL_BASE_SECONDS, ROTATE_INTERVAL_STEP_SECONDS, ROTATE_INTERVAL_MIN_SECONDS,
     ROTATE_WARNING_LEAD_SECONDS,
@@ -52,6 +52,7 @@ from maze_game.progression.shop import offer_shop_cards
 from maze_game.progression.augments import AugmentBuild, run_pipeline, offer_augment_cards
 from maze_game.progression.augments.gating.doors import Key, DoorKeyPair
 from maze_game.progression.augments.gating.teleporters import TeleporterPair
+from maze_game.progression.augments.shifting_room import PressurePad
 from maze_game.progression.augments.runtime.rotation import rotate_cell_cw, rotate_grid_cw
 from maze_game.progression.augments.runtime.fog import visible_cells_from
 from maze_game.progression.meta import MetaProgress, DEFAULT_META_UPGRADES_PATH
@@ -209,6 +210,24 @@ def _rotation_interval_for_level(level: int) -> float:
     )
 
 
+def _grid_with_pressure_pads_opened(grid: list[list[int]], pads: list) -> list[list[int]]:
+    """
+    A copy of `grid` with every shifting_room.py pad's controlled wall
+    segment pre-opened -- for planning purposes only (see the par-time
+    computation in _begin_maze() and augments/__init__.py's identical
+    _grid_with_pressure_pads_opened(), which this mirrors), never for the
+    actual live self.grid a player moves through. Returns `grid` itself,
+    unmutated, when there are no pads at all.
+    """
+    if not pads:
+        return grid
+    opened = [row[:] for row in grid]
+    for pad in pads:
+        wx, wy = pad.wall_segment
+        opened[wy][wx] = 0
+    return opened
+
+
 class LabyrinthRun:
     """
     Owns the full progression state machine: current maze, the persistent
@@ -236,6 +255,8 @@ class LabyrinthRun:
         self.doors: list = []
         self.keys: list = []
         self._locked_doors: set[tuple[int, int]] = set()
+        self.pressure_pads: list = []
+        self._pad_by_cell: dict[tuple[int, int], tuple[int, int]] = {}
         self.shop_choices: list | None = None
         self.augment_choices: list | None = None
         self.break_cursor = 0
@@ -333,11 +354,13 @@ class LabyrinthRun:
             return
         teleport = (lambda nx, ny: self._teleport_map.get((nx, ny))) if self._teleport_map else None
         door_locked = (lambda nx, ny: (nx, ny) in self._locked_doors) if self._locked_doors else None
+        pressure_pad = self._trigger_pressure_pad if self._pad_by_cell else None
         path = slide_path(
             self.grid, self.player, direction,
             junction_stop_count=junction_stop_count,
             teleport=teleport,
             door_locked=door_locked,
+            pressure_pad=pressure_pad,
         )
         if not path:
             return
@@ -419,6 +442,8 @@ class LabyrinthRun:
         self.doors = []
         self.keys = []
         self._locked_doors = set()
+        self.pressure_pads = []
+        self._pad_by_cell = {}
         self._begin_maze()
 
     @property
@@ -454,6 +479,29 @@ class LabyrinthRun:
     def _is_gated(self) -> bool:
         return bool(self.on_break or self.failed or self.completed_run or self.finished)
 
+    def _trigger_pressure_pad(self, x: int, y: int) -> None:
+        """
+        slide_path()'s pressure_pad hook -- fires for every newly-entered
+        cell mid-slide, not only the stop cell (matches the confirmed
+        pass-through trigger design). One-shot: self.grid is the single
+        source of truth for "has this pad already fired" -- opening an
+        already-open wall segment is simply a no-op, so re-crossing an
+        already-triggered pad's cell does nothing further.
+        """
+        wall_segment = self._pad_by_cell.get((x, y))
+        if wall_segment is None:
+            return
+        wx, wy = wall_segment
+        if self.grid[wy][wx] == 1:
+            self.grid[wy][wx] = 0
+            colour = C_PRESSURE_PADS[0]
+            for pad in self.pressure_pads:
+                if pad.pad == (x, y):
+                    colour = C_PRESSURE_PADS[pad.color_index % len(C_PRESSURE_PADS)]
+                    break
+            self.add_popup((x, y), "shift!", colour)
+            self.events.append("pressure_pad")
+
     def _maze_cleared(self) -> bool:
         return self.player == self.goal
 
@@ -478,6 +526,9 @@ class LabyrinthRun:
         self._locked_doors = {pair.door for pair in self.doors}
         self.keys = [Key(pair.key, door_cell=pair.door) for pair in self.doors]
 
+        self.pressure_pads = ctx.extra.get("pressure_pads", [])
+        self._pad_by_cell = {pad.pad: pad.wall_segment for pad in self.pressure_pads}
+
         self.goal = ctx.goal
         exclude = {START_POS, self.goal} | ctx.reserved
         self.pellets = spawn_pellets(self.grid, exclude, self.build.pellet_frequency_multiplier, rng=self.rng)
@@ -491,8 +542,16 @@ class LabyrinthRun:
         else:
             self.hazards = []
 
+        # A mandatory pressure pad's pocket is a real, physically-closed
+        # wall until triggered -- shortest_path() over self.grid directly
+        # would raise (goal never visited) if self.goal sits inside one.
+        # Planning against every pad pre-opened is the same "assume it'll
+        # happen" approximation already accepted for a door's key-fetching
+        # detour, which this same par-time estimate has never accounted
+        # for either.
+        planning_grid = _grid_with_pressure_pads_opened(self.grid, self.pressure_pads)
         self._par_seconds = SPEED_BONUS_SECONDS_PER_CELL * len(
-            shortest_path(self.grid, START_POS, self.goal, extra_edges=self._teleport_map)
+            shortest_path(planning_grid, START_POS, self.goal, extra_edges=self._teleport_map)
         )
 
         # A new maze is a wholly different layout -- discovered_cells (fog
@@ -561,6 +620,17 @@ class LabyrinthRun:
             for pair in self.doors
         ]
         self._locked_doors = still_locked
+
+        # PressurePad's own triggered/untriggered state needs no separate
+        # tracking here -- it's entirely captured by self.grid itself
+        # (whether wall_segment is currently open), which rotate_grid_cw()
+        # above already carried along consistently. Just rotate the
+        # coordinates and rebuild the lookup dict move() uses.
+        self.pressure_pads = [
+            PressurePad(pad=rot(pad.pad), wall_segment=rot(pad.wall_segment), mandatory=pad.mandatory, color_index=pad.color_index)
+            for pad in self.pressure_pads
+        ]
+        self._pad_by_cell = {pad.pad: pad.wall_segment for pad in self.pressure_pads}
 
         # A <150ms animation window against a >=1s rotation interval
         # essentially never overlaps in practice; clearing is simpler than

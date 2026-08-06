@@ -160,11 +160,21 @@ def _place_mandatory_pair(
         after = bfs_reachable(sealed_grid, current_start)
         pocket_region = bfs_reachable(sealed_grid, chosen)
 
+        # Uses `forbidden` (the narrow nested_local_forbidden() set when
+        # nested, ctx.reserved otherwise), NOT ctx.reserved directly -- when
+        # current_start sits inside an already-sealed outer pocket, that
+        # entire outer blob is already in ctx.reserved, and `after`/
+        # `pocket_region` here are both subsets of it (nothing outside a
+        # sealed pocket is plain-grid reachable from inside it). A raw
+        # ctx.reserved check would therefore reject every single candidate,
+        # silently capping chained mandatory pairs at 1 regardless of level
+        # -- confirmed as a real, measured bug (0/10 seeds ever placed a
+        # 2nd mandatory pair before this fix, at level 2 on a 29x29 maze).
         entrance_candidates = [
-            c for c in after if c not in ctx.reserved and is_stoppable_cell(sealed_grid, *c)
+            c for c in after if c not in forbidden and is_stoppable_cell(sealed_grid, *c)
         ]
         exit_candidates = [
-            c for c in pocket_region if c not in ctx.reserved and is_stoppable_cell(sealed_grid, *c)
+            c for c in pocket_region if c not in forbidden and is_stoppable_cell(sealed_grid, *c)
         ]
         if not entrance_candidates or not exit_candidates:
             continue

@@ -30,7 +30,7 @@ from maze_game.constants import (
     C_BG, C_WALL, C_FLOOR, C_PLAYER, C_GOAL, C_TEXT, C_DIM, C_CARD_DESC, C_FLASH, C_HUD_BG,
     C_PANEL_BG, C_PANEL_LINE, C_BUTTON, C_BUTTON_HOVER,
     C_PELLET, C_GOLD, C_HAZARD, C_TELEPORT_PAIRS, C_DOOR_LOCKED, C_DOOR_UNLOCKED, C_DOOR_KEY_PAIRS,
-    C_SPEED_BONUS, C_ROTATE_WARNING,
+    C_SPEED_BONUS, C_ROTATE_WARNING, C_PRESSURE_PADS,
     POPUP_DURATION_SECONDS, POPUP_RISE_PIXELS,
     ZIP_ANIMATION_DURATION_SECONDS,
 )
@@ -177,6 +177,7 @@ class Renderer:
             self._draw_hazards(run.hazards, layout, visible)
             self._draw_teleporters(run.teleporters, layout, visible)
             self._draw_doors_and_keys(run, layout, visible)
+            self._draw_pressure_pads(run.pressure_pads, layout, visible)
             self._draw_goal(run.goal, layout, visible)
             self._draw_player(run, layout)
             self._draw_popups(run, layout)
@@ -329,6 +330,24 @@ class Renderer:
             r = max(1, cell // 5)
             pygame.draw.circle(self.surface, colour, (ox + x * cell + cell // 2, oy + y * cell + cell // 2), r)
 
+    def _draw_pressure_pads(self, pressure_pads, layout: Layout, visible: set | None = None) -> None:
+        """
+        The pad markers themselves -- the wall segment they control needs
+        no drawing of its own: it's a plain cell in run.grid, so
+        _draw_maze() already renders it correctly (wall before triggering,
+        floor after) with zero special-casing.
+        """
+        ox, oy = layout.maze_origin
+        cell = layout.cell
+        pad_px = max(1, cell // 5)
+        for shift_pad in pressure_pads:
+            x, y = shift_pad.pad
+            if visible is not None and (x, y) not in visible:
+                continue
+            colour = C_PRESSURE_PADS[shift_pad.color_index % len(C_PRESSURE_PADS)]
+            rect = pygame.Rect(ox + x * cell + pad_px, oy + y * cell + pad_px, cell - 2 * pad_px, cell - 2 * pad_px)
+            pygame.draw.rect(self.surface, colour, rect, border_radius=max(2, cell // 6))
+
     def _draw_popups(self, run: LabyrinthRun, layout: Layout) -> None:
         """Floating "+Xs"/"-Xs" labels for pellet/hazard/speed-bonus time changes -- rises and fades out over its lifetime."""
         ox, oy = layout.maze_origin
@@ -456,6 +475,7 @@ class Renderer:
             (C_DOOR_UNLOCKED, "square", "Unlocked Door"),
             (C_SPEED_BONUS, "square", "Speed Bonus"),
             (C_ROTATE_WARNING, "triangle", "Rotation Warning"),
+            (C_PRESSURE_PADS[0], "square", "Pressure Pad"),
         ]
 
         x = layout.right.x + 16

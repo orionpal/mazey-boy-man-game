@@ -83,6 +83,25 @@ def pendant_subtree_map(grid, root):
     return order, subtree, parent
 
 
+def boundary_crossings(grid, blob) -> set[tuple[int, int]]:
+    """
+    Every open wall-midpoint coordinate on `blob`'s boundary -- the same
+    crossings seal_pocket() would re-wall, just returned instead of
+    mutated. Used by shifting_room.py to pick one specific crossing to
+    designate as a pressure pad's controlled wall segment before sealing
+    everything (including that one) via seal_pocket().
+    """
+    cols, rows = len(grid[0]), len(grid)
+    crossings: set[tuple[int, int]] = set()
+    for cx, cy in blob:
+        for dx, dy in _PASSAGE_STEPS:
+            nx, ny = cx + dx, cy + dy
+            wx, wy = cx + dx // 2, cy + dy // 2
+            if 0 <= nx < cols and 0 <= ny < rows and (nx, ny) not in blob and grid[wy][wx] == 0:
+                crossings.add((wx, wy))
+    return crossings
+
+
 def seal_pocket(grid, blob, keep_open: frozenset = frozenset()):
     """
     Re-wall every open wall-segment crossing the blob's boundary, except

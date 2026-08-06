@@ -35,6 +35,7 @@ def slide_path(
     junction_stop_count: int | None = 1,
     teleport: Callable[[int, int], tuple[int, int] | None] | None = None,
     door_locked: Callable[[int, int], bool] | None = None,
+    pressure_pad: Callable[[int, int], None] | None = None,
 ) -> list[tuple[int, int]]:
     """
     Slide the player from `pos` in `direction`, returning every cell entered
@@ -77,6 +78,15 @@ def slide_path(
     -- treats it as ordinarily passable) while still being impassable to
     real movement until whatever `door_locked` is checking against changes
     (see progression/augments/doors.py).
+
+    If `pressure_pad` is given, it's called as `pressure_pad(cx, cy)` for
+    every newly-entered cell (same "fires mid-slide, not only on the
+    stop cell" shape as `teleport`) -- unlike `teleport`/`door_locked`,
+    it never affects this slide's own path (no return value is used); it's
+    a pure side-effecting notification a caller uses to react to the
+    player having passed over a cell (see progression/augments/
+    shifting_room.py, which uses it to open a real wall elsewhere in the
+    maze the instant its pad is stepped on, even mid-slide).
     """
     cols = len(grid[0])
     rows = len(grid)
@@ -98,6 +108,9 @@ def slide_path(
 
         cx, cy = nx, ny
         path.append((cx, cy))
+
+        if pressure_pad is not None:
+            pressure_pad(cx, cy)
 
         if teleport is not None:
             dest = teleport(cx, cy)

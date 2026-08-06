@@ -277,7 +277,14 @@ def _place_mandatory_door(
         sealed_grid = seal_pocket(ctx.grid, subtree[door_cell], keep_open=frozenset({entrance}))
 
         near_side = _reachable_before_a_new_door(sealed_grid, ctx.start, committed, door_cell, teleport=teleport)
-        key_candidates = [c for c in near_side if c not in ctx.reserved and c != door_cell]
+        # Uses `forbidden` (the narrow nested_local_forbidden() set when
+        # nested, ctx.reserved otherwise), NOT ctx.reserved directly -- see
+        # teleporters.py's identical fix/comment for why: when current_start
+        # sits inside an already-sealed outer pocket, near_side/subtree[door_cell]
+        # are both subsets of that already-fully-reserved outer blob, so a
+        # raw ctx.reserved check would reject every candidate and silently
+        # cap chained mandatory doors at 1 regardless of level.
+        key_candidates = [c for c in near_side if c not in forbidden and c != door_cell]
         if not key_candidates:
             continue
         key_cell = ctx.rng.choice(key_candidates)
@@ -287,7 +294,7 @@ def _place_mandatory_door(
 
         frontier_candidates = [
             c for c in subtree[door_cell]
-            if c != door_cell and c not in ctx.reserved
+            if c != door_cell and c not in forbidden
             and c not in near_side       # unreachable while THIS door is locked -- proves it's a real gate
             and c in final_reachable     # but reachable once its key is found
             and is_stoppable_cell(sealed_grid, *c)

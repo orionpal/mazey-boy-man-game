@@ -189,6 +189,24 @@ DOOR_FAR_SIDE_MIN_SIZE      = 3   # cells gated behind one mandatory door
 DOOR_FAR_SIDE_MAX_SIZE      = 10
 DOOR_PLACEMENT_MAX_ATTEMPTS = 10  # retries per gated region before giving up on it (graceful degradation, never a crash/hang)
 
+# Shifting Room (progression/augments/shifting_room.py): the third gating
+# augment. A pocket is sealed *completely* (a real wall, not a behavioral
+# gate like doors) except for one boundary crossing, which stays closed
+# until the player steps on its pressure pad -- unlike teleporters/doors,
+# which only ever mutate the grid once at generation time, a pad's effect
+# happens at runtime. One-shot (opens permanently, no toggle-back) and
+# fires the instant the player slides *over* the pad, not only if they
+# stop there -- see player.slide_path()'s pressure_pad hook. Same
+# level-scaling shape as teleporters/doors.
+SHIFT_PAD_COUNT_BASE        = 2
+SHIFT_PAD_COUNT_STEP        = 1
+SHIFT_PAD_COUNT_MAX         = 5
+SHIFT_MANDATORY_COUNT_BASE  = 1
+SHIFT_MANDATORY_COUNT_STEP  = 1
+SHIFT_POCKET_MIN_SIZE       = 3   # cells sealed off behind one mandatory pad
+SHIFT_POCKET_MAX_SIZE       = 10
+SHIFT_PLACEMENT_MAX_ATTEMPTS = 10  # retries per gated pocket before giving up on it (graceful degradation, never a crash/hang)
+
 # Rotating maze (progression/augments/runtime/rotation.py): the whole grid
 # rotates 90 degrees clockwise on a fixed timer, with a warning arrow
 # shortly before each rotation fires. Purely a runtime effect (no
@@ -260,4 +278,17 @@ C_DOOR_KEY_PAIRS = [
     (200, 150, 255),
     (255, 190, 140),
     (170, 220, 140),
+]
+
+# Pressure pads (shifting_room.py): each pad drawn in its own colour
+# (cycled by pad.color_index), same pattern as C_TELEPORT_PAIRS/
+# C_DOOR_KEY_PAIRS -- there's no "partner" cell to pair it with (a pad's
+# effect is an initially-invisible wall becoming floor, not a second
+# marker), so this is just for telling multiple active pads apart at a
+# glance. Earthy green/olive-leaning, distinct from both palettes above.
+C_PRESSURE_PADS = [
+    (150, 200, 90),
+    (100, 180, 130),
+    (190, 210, 80),
+    (120, 160, 60),
 ]

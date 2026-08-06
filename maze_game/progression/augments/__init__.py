@@ -192,10 +192,43 @@ def _finalize_goal(ctx: AugmentContext) -> None:
     "farthest" *answer* is filtered by candidates membership; doors need no
     special handling since a locked door is already grid-open to plain
     adjacency by design (see doors.py's module docstring).
+
+    Unlike doors, a shifting_room.py pocket IS a real, physically-closed
+    wall until its pad is triggered -- invisible to plain BFS traversal
+    entirely, not just behaviorally gated. Left as-is, a mandatory pad's
+    own gated blob would be permanently unvisitable by this function's
+    BFS, so `gated` could never actually contain anything the traversal
+    reached, and the goal would silently collapse back to ctx.start. Fixed
+    by planning against _grid_with_pressure_pads_opened(ctx) instead of
+    ctx.grid directly -- every pad is treated as pre-opened for placement
+    purposes, on the reasoning that any mandatory pad WILL eventually be
+    triggered in real play (the same "assume it'll happen" approximation
+    already accepted for a door's key-collection detour, which similarly
+    isn't accounted for in this same distance metric).
     """
     tmap = _combined_teleport_map(ctx)
     gated = ctx.extra.get("mandatory_gated_cells")
-    ctx.goal = farthest_reachable_cell(ctx.grid, ctx.start, extra_edges=tmap, candidates=gated or None)
+    planning_grid = _grid_with_pressure_pads_opened(ctx)
+    ctx.goal = farthest_reachable_cell(planning_grid, ctx.start, extra_edges=tmap, candidates=gated or None)
+
+
+def _grid_with_pressure_pads_opened(ctx: AugmentContext) -> list[list[int]]:
+    """
+    A copy of ctx.grid with every shifting_room.py pad's controlled wall
+    segment pre-opened -- see _finalize_goal()'s docstring for why goal
+    placement needs to "see through" a wall that's real and closed at
+    generation time but guaranteed to eventually open in real play.
+    Returns ctx.grid itself, unmutated, when there are no pads at all (the
+    common case) rather than an unnecessary copy.
+    """
+    pads = ctx.extra.get("pressure_pads", [])
+    if not pads:
+        return ctx.grid
+    grid = [row[:] for row in ctx.grid]
+    for pad in pads:
+        wx, wy = pad.wall_segment
+        grid[wy][wx] = 0
+    return grid
 
 
 def nested_local_forbidden(ctx: AugmentContext, current_start: tuple[int, int]) -> set[tuple[int, int]] | None:
@@ -210,7 +243,8 @@ def nested_local_forbidden(ctx: AugmentContext, current_start: tuple[int, int]) 
     how a mandatory chain nests deeper, within one augment's own chain or
     across augments), returns the much narrower set candidates should
     avoid: every individual already-placed special cell (teleporter
-    entrance/exit, door/key) -- NOT the enclosing pocket's entire blob.
+    entrance/exit, door/key, pressure pad) -- NOT the enclosing pocket's
+    entire blob.
 
     Why the distinction matters: ctx.reserved deliberately includes a
     sealed pocket's *entire* cell closure (not just its special cells), so
@@ -242,6 +276,8 @@ def nested_local_forbidden(ctx: AugmentContext, current_start: tuple[int, int]) 
     for pair in ctx.extra.get("doors", []):
         cells.add(pair.door)
         cells.add(pair.key)
+    for pad in ctx.extra.get("pressure_pads", []):
+        cells.add(pad.pad)
     return cells
 
 
@@ -290,15 +326,18 @@ AUGMENTS_BY_ID: dict[str, Augment] = {}
 # step has to happen down here, after they're defined, not at the top of
 # the file (that would be circular).
 from maze_game.progression.augments.gating import DoorsAugment, TeleportersAugment  # noqa: E402
+from maze_game.progression.augments.shifting_room import ShiftingRoomAugment  # noqa: E402
 from maze_game.progression.augments.runtime import FogOfWarAugment, RotatingMazeAugment  # noqa: E402
 
-# Order matters for the gating/ pair: DoorsAugment must run after
+# Order matters for the first three: DoorsAugment must run after
 # TeleportersAugment -- a door candidate is verified against the maze's
 # already-finalized teleporter map, so a teleporter can never silently
 # bypass a door that looked like a genuine cut vertex under plain grid
-# adjacency (see doors.py). runtime/ augments have a no-op apply(), so
-# their position in this tuple doesn't affect generation at all.
-for _augment in (TeleportersAugment(), DoorsAugment(), RotatingMazeAugment(), FogOfWarAugment()):
+# adjacency (see doors.py) -- and ShiftingRoomAugment must run after both,
+# for the identical reason (see shifting_room.py). runtime/ augments have
+# a no-op apply(), so their position in this tuple doesn't affect
+# generation at all.
+for _augment in (TeleportersAugment(), DoorsAugment(), ShiftingRoomAugment(), RotatingMazeAugment(), FogOfWarAugment()):
     ALL_AUGMENTS.append(_augment)
     AUGMENTS_BY_ID[_augment.id] = _augment
 del _augment

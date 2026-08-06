@@ -26,6 +26,7 @@ from maze_game.progression.augments.gating.teleporters import TeleportersAugment
 from maze_game.progression.augments.gating.doors import DoorKeyPair, Key, DoorsAugment
 from maze_game.progression.augments.runtime.rotation import RotatingMazeAugment, rotate_cell_cw
 from maze_game.progression.augments.runtime.fog import FogOfWarAugment, visible_cells_from
+from maze_game.progression.augments.shifting_room import ShiftingRoomAugment, PressurePad
 
 # A trivial straight 3-cell corridor, (1,1)-(2,1)-(3,1), used to drive
 # move() deterministically instead of a randomly-generated maze.
@@ -1066,6 +1067,108 @@ def test_rotate_maze_rotates_discovered_cells_in_lockstep():
     before = set(run.discovered_cells)
     run._rotate_maze()
     assert run.discovered_cells == {rotate_cell_cw(c, n) for c in before}
+
+
+# ── Shifting room augment ────────────────────────────────────────────────
+# A corridor (1,1)-(2,1)-(3,1)-(4,1)-(5,1) with a pad at (3,1) controlling a
+# wall segment at (5,2) -- initially closed, sealing off the pocket cell
+# (5,3) -- so move() can drive the real pass-through/one-shot trigger
+# semantics deterministically instead of via a randomly-generated maze.
+
+PRESSURE_PAD_GRID = [
+    [1, 1, 1, 1, 1, 1, 1],
+    [1, 0, 0, 0, 0, 0, 1],
+    [1, 1, 1, 1, 1, 1, 1],
+    [1, 1, 1, 1, 1, 0, 1],
+    [1, 1, 1, 1, 1, 1, 1],
+]
+
+
+def _pressure_pad_run() -> LabyrinthRun:
+    run = LabyrinthRun()
+    run.grid = [row[:] for row in PRESSURE_PAD_GRID]
+    run.player = (1, 1)
+    run.goal = (5, 3)
+    run.pellets = []
+    run.gold_pellets = []
+    run.hazards = []
+    pad = PressurePad(pad=(3, 1), wall_segment=(5, 2), mandatory=True, color_index=0)
+    run.pressure_pads = [pad]
+    run._pad_by_cell = {pad.pad: pad.wall_segment}
+    return run
+
+
+def test_sliding_over_a_pressure_pad_triggers_it_even_without_stopping():
+    """The one behavior the user was most explicit about: passing OVER a pad triggers it, even though the slide never stops there."""
+    run = _pressure_pad_run()
+    assert run.grid[2][5] == 1  # wall_segment still closed
+    run.move((1, 0))  # slides straight through (3, 1) to the dead end at (5, 1) -- never stops on the pad itself
+    assert run.player == (5, 1)
+    assert run.grid[2][5] == 0  # opened despite never stopping there
+    assert run.events == ["pressure_pad", "move"]
+    assert len(run.popups) == 1
+    assert run.popups[0].text == "shift!"
+
+
+def test_pressure_pad_is_one_shot():
+    run = _pressure_pad_run()
+    run.move((1, 0))  # triggers it, ends at (5, 1)
+    run.events = []
+    run.popups = []
+    run.move((-1, 0))  # slide back left, passing over the pad again
+    assert run.grid[2][5] == 0  # still open
+    assert run.events == ["move"]  # no second "pressure_pad" event/popup
+    assert run.popups == []
+
+
+def test_begin_maze_extracts_pressure_pads_and_builds_pad_lookup():
+    found = False
+    for seed in range(10):
+        run = LabyrinthRun(seed=seed)
+        run.augment_build.acquire(ShiftingRoomAugment())
+        run._begin_maze()
+        if run.pressure_pads:
+            found = True
+            for pad in run.pressure_pads:
+                assert run._pad_by_cell[pad.pad] == pad.wall_segment
+    assert found, "no seed placed any pad -- test is vacuous"
+
+
+def test_begin_maze_does_not_crash_when_the_goal_is_inside_a_sealed_pocket():
+    """
+    Regression test: shortest_path() used to raise KeyError computing
+    _par_seconds whenever ctx.goal landed inside a still-sealed
+    pressure-pad pocket -- a genuinely closed wall, unlike a locked door
+    (which stays grid-open). _begin_maze() must plan against every pad
+    pre-opened instead of the literal, still-sealed self.grid.
+    """
+    for seed in range(30):
+        run = LabyrinthRun(seed=seed)
+        run.augment_build.acquire(ShiftingRoomAugment())
+        run._begin_maze()  # must not raise
+        assert run._par_seconds >= 0
+
+
+def test_rotate_maze_rotates_pressure_pads_and_preserves_triggered_state():
+    run = LabyrinthRun(seed=7)
+    run.augment_build.acquire(ShiftingRoomAugment())
+    run.augment_build.acquire(RotatingMazeAugment())
+    run._begin_maze()
+    assert run.pressure_pads  # otherwise this test proves nothing
+
+    n = run.cols
+    pad = run.pressure_pads[0]
+    run._trigger_pressure_pad(*pad.pad)  # trigger it before rotating
+    assert run.grid[pad.wall_segment[1]][pad.wall_segment[0]] == 0
+
+    before_pads = list(run.pressure_pads)
+    run._rotate_maze()
+
+    assert [p.pad for p in run.pressure_pads] == [rotate_cell_cw(p.pad, n) for p in before_pads]
+    assert [p.wall_segment for p in run.pressure_pads] == [rotate_cell_cw(p.wall_segment, n) for p in before_pads]
+    rotated_wall = rotate_cell_cw(pad.wall_segment, n)
+    assert run.grid[rotated_wall[1]][rotated_wall[0]] == 0  # triggered state carried through via self.grid itself
+    assert run._pad_by_cell[rotate_cell_cw(pad.pad, n)] == rotated_wall
 
 
 # ── Popups ────────────────────────────────────────────────────────────────
