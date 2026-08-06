@@ -265,6 +265,24 @@ straight through, so pellet/hazard contact resolution (which already
 checks every cell in the returned path, not just the final stop) works
 identically for combo moves — a longer path is still just a longer path.
 
+## Zip animation: a quick visual instead of an instant teleport snap
+
+Every other move already reads as continuous (one grid cell to the next);
+a teleport hop is the one genuinely discontinuous jump, and used to just
+snap `run.player` straight to the exit cell with no visual transition.
+Deliberately a **presentational-only** change — `LabyrinthRun.player`
+still updates instantly in `move()`, so nothing about par-time, contact
+resolution, or any other timing/solvability assumption elsewhere changes.
+`move()` records a `TeleportAnimation(from_cell, to_cell, started_at)`
+whenever `teleported` is true; `renderer.py`'s `_draw_player()` linearly
+interpolates the on-screen position between those two cells over a short
+`ZIP_ANIMATION_DURATION_SECONDS` (0.12s) window, falling through to the
+exact original instant-position code once it expires. Mirrors the
+existing `Popup`/`_draw_popups()` wall-clock-timed presentational
+pattern rather than inventing a new one. The interpolation math itself is
+exposed as a standalone, pygame-free `animated_player_position(run, now)`
+function so it's testable without a real surface.
+
 ## Groups: seamless within, breaks stack sequentially between
 
 Within a group of 5, finishing a maze immediately starts the next one --
@@ -375,12 +393,27 @@ identical outcomes unless the input is also identical.
 
 ## Maze augments
 
-Generation-time maze modifiers — the first being teleporting squares —
-chosen every `AUGMENT_INTERVAL` (10) mazes, stacked on top of the existing
-group-boundary shop break (see "Groups" above). Up to `MAX_ACTIVE_AUGMENTS`
-(4) can be active in one run at once; picking an augment already active
-levels it up instead of doing nothing (same shape as perk stacking:
-`AugmentBuild.picks[id]` *is* the level, mirroring `shop/perks.py::Build`).
+Maze modifiers — three "gating" ones (teleporting squares, doors & keys,
+shifting rooms), each capable of forcing the player to interact with them
+to reach the goal, and two purely runtime/presentational ones (rotating
+maze, fog of war) — chosen every `AUGMENT_INTERVAL` (10) mazes, stacked on
+top of the existing group-boundary shop break (see "Groups" above). Up to
+`MAX_ACTIVE_AUGMENTS` (4) can be active in one run at once; picking an
+augment already active levels it up instead of doing nothing (same shape
+as perk stacking: `AugmentBuild.picks[id]` *is* the level, mirroring
+`shop/perks.py::Build`).
+
+`progression/augments/` is itself split into two subpackages once a third
+gating augment (shifting rooms) pushed the flat directory over this
+project's own file-count convention: `gating/` (teleporters.py, doors.py,
+and the shared `_movement.py` pocket-sealing helpers — augments that do
+real work at generation time) and `runtime/` (rotation.py, fog.py —
+augments whose `apply()` is a no-op; `LabyrinthRun` reads
+`augment_build.level_of(id)` directly at runtime instead, the same pattern
+`renderer.py`'s augment sidebar already used). `shifting_room.py` stays at
+the top level of `progression/augments/` since it's a hybrid of both —
+real generation-time pocket-sealing *and* a runtime trigger — and doesn't
+fit cleanly into either subpackage.
 
 **Architecture** (`progression/augments/`): `Augment.apply(ctx)` is the
 only shared hook (deliberately no generic `contact()`/`render()` hook --
@@ -411,41 +444,77 @@ pocket/gate became a real, sealed, reachable, but no-longer-required side
 room. `ctx.frontier` fixes this: a single shared "current end of the
 mandatory chain," seeded at `ctx.start`, that every augment's mandatory
 placement (a) roots its own search at (instead of `ctx.start`) and (b)
-advances to wherever its own chain ends, before returning — so Teleporters
-and Doors nest their mandatory content behind each other, in whatever
-order the player actually picked, instead of running independent,
-competing chains. Final goal placement moved out of the individual
-augments entirely, into one shared step (`run_pipeline()`'s
-`_finalize_goal()`, run once after the whole loop) that places the goal
-via a farthest-cell search rooted at the final `ctx.frontier` —
-deliberately *not* a naive real-move walk from a link's own endpoint,
-since a mandatory teleporter pair's own bidirectional link (or a mandatory
-door, once its key is “found”) can otherwise leak the search straight back
-out to the near side; see `_finalize_goal()`'s and
-`_movement.py::farthest_within()`'s docstrings for the exact mechanism.
-`tests/progression/augments/test_composition.py` is the regression
-coverage: with both augments active, disabling *either one's* mandatory
-content individually (with the other left fully intact) must break
+advances to wherever its own chain ends, before returning — so Teleporters,
+Doors, and Shifting Room nest their mandatory content behind each other,
+in whatever order the player actually picked, instead of running
+independent, competing chains. Final goal placement moved out of the
+individual augments entirely, into one shared step (`run_pipeline()`'s
+`_finalize_goal()`, run once after the whole loop).
+`tests/progression/augments/gating/test_composition.py` is the regression
+coverage: with multiple augments active, disabling *any one's* mandatory
+content individually (with the others left fully intact) must break
 solvability — the property that would have caught this bug, which a
 weaker "is everything reachable with it all intact" check does not.
 
-**Nesting a mandatory chain used to be silently impossible.** A second bug,
-found directly while building the fix above (not previously known):
-placing a mandatory pocket *inside* an already-placed one's own sealed
-pocket requires rooting the next search there — but every candidate search
-also unconditionally rejected any candidate touching `ctx.reserved`, which
-already contains the *entire* enclosing pocket (reserved on purpose, so a
-*different*, unrelated augment can never overlap it) — so a nested
-search's candidate pool was always empty. Confirmed by running the
-original code directly: 0 of 50 random seeds ever placed two nested
-mandatory teleporter pairs at a level whose formula asks for it. Fixed
-with `nested_local_forbidden()` (`augments/__init__.py`): once a search is
-confirmed to already be rooted inside a sealed pocket, it drops the
-blanket `ctx.reserved` check (the whole point of nesting is to further
-subdivide that same, already-isolated interior) and instead avoids only
-the individual special cells already placed there — including, for a
-same-call chain still in progress, cells `ctx.extra` hasn't been written
-back with yet.
+**Bug: goal placement could collapse to a near-disconnected graph, landing
+absurdly close to start.** `_finalize_goal()`'s first version restricted
+*traversal itself* to the ground-truth sequentially-reachable set (only
+ever stoppable cells) minus every mandatory trigger cell, walked via
+single wall-midpoint hops. Measured directly (not theorized): that graph
+is almost entirely disconnected once trigger cells are excluded, so the
+search could barely leave `ctx.frontier`'s own small sealed pocket
+regardless of the maze's actual size — goal depth averaged under half the
+no-augment baseline, sometimes as shallow as 4 cells on a 41x41 maze.
+Fixed by keeping traversal a full, always-connected **plain grid BFS**
+(`maze.farthest_reachable_cell()`, extended with `extra_edges`/
+`candidates` kwargs) and restricting only the *candidate answers* it's
+allowed to land on, via `ctx.extra["mandatory_gated_cells"]` — which each
+mandatory placement **overwrites, not unions**, with its own gated
+blob/subtree. That's deliberate: every mandatory placement after the first
+is architecturally nested *inside* whatever the previous one sealed, so
+each new gated set is always a subset of the one before it — a union would
+always collapse back to just the *first* mandatory augment's region,
+silently un-forcing every augment placed after it, the exact bug
+`ctx.frontier` itself exists to prevent, in a different shape. Re-tested
+on the same seeds/levels after the fix: 70-100+ cells deep, matching or
+exceeding the no-augment baseline. Shifting Room's pockets needed one more
+piece on top: a pocket sealed by that augment is a *real*, physically
+closed wall (see its own section below), invisible to plain BFS
+traversal entirely until its pad fires — so goal placement (and, in
+`LabyrinthRun._begin_maze()`, the par-time estimate) plans against a copy
+of the grid with every pad pre-opened
+(`_grid_with_pressure_pads_opened()`), the same "assume it'll eventually
+happen" approximation already accepted for a door's key-fetching detour.
+
+**Nesting a mandatory chain used to be silently impossible — found twice,
+in two different spots.** First occurrence: placing a mandatory pocket
+*inside* an already-placed one's own sealed pocket requires rooting the
+next search there — but the *initial* candidate list unconditionally
+rejected any candidate touching `ctx.reserved`, which already contains the
+*entire* enclosing pocket (reserved on purpose, so a *different*,
+unrelated augment can never overlap it) — so a nested search's candidate
+pool was always empty. Confirmed by running the original code directly: 0
+of 50 random seeds ever placed two nested mandatory teleporter pairs at a
+level whose formula asks for it. Fixed with `nested_local_forbidden()`
+(`augments/__init__.py`): once a search is confirmed to already be rooted
+inside a sealed pocket, it drops the blanket `ctx.reserved` check (the
+whole point of nesting is to further subdivide that same, already-isolated
+interior) and instead avoids only the individual special cells already
+placed there.
+
+Second occurrence, found later while building Shifting Room and
+re-measuring rather than assuming the first fix was complete: every
+gating module's placement function computed the *correct* narrow
+candidate set for its opening pool, then went right back to the blanket
+`ctx.reserved` check for every *later* filtering step in the same
+function (picking the entrance/exit, the key, the pad) — so a nested
+placement's pool was non-empty, but every candidate inside it still got
+rejected a few lines later. Measured directly: 0 of 10 seeds ever placed a
+second mandatory teleporter pair even after the first fix. Fixed in
+`teleporters.py`, `doors.py`, and `shifting_room.py` alike, by threading
+the same `forbidden` set (the narrow one when nested, `ctx.reserved`
+otherwise) through every filtering step in each function, not just the
+first one.
 
 `offer_augment_cards()` mirrors `offer_shop_cards()`'s sampling shape:
 below the cap, prefer offering not-yet-active augments (topped up with
@@ -547,6 +616,122 @@ collects whatever key becomes reachable and unlocks its door, and repeats
 until nothing more unlocks — the actual ground-truth "can the player
 finish this maze" answer, verified after *every* placement attempt (not
 just once at the end).
+
+### Rotating maze (`progression/augments/runtime/rotation.py`)
+
+The third augment, and the first purely runtime one: every
+`ROTATE_INTERVAL_BASE_SECONDS` (2s, faster per level down to a
+`ROTATE_INTERVAL_MIN_SECONDS` floor), the whole maze rotates 90 degrees
+clockwise, with a warning arrow shown for `ROTATE_WARNING_LEAD_SECONDS`
+beforehand. `apply()` is a no-op — `LabyrinthRun` reads
+`augment_build.level_of("rotating_maze")` directly at runtime, the same
+pattern `renderer.py`'s augment sidebar already used to read active levels
+independent of `AugmentContext`.
+
+For an odd-sized square grid (every maze this game generates —
+`dimensions_for_maze()` guarantees `cols == rows`), `rotate_cell_cw((x,y),
+n) = (n-1-y, x)` paired with the matching array transform is a genuine
+**isometry**: verified directly (not assumed) that it preserves
+`bfs_reachable()`/`is_stoppable_cell()` exactly and is its own inverse
+after 4 applications. Same maze, differently oriented — unlike every
+gating augment above, it needs no forced-use/solvability verification at
+all, since rotating can't make the maze any more or less solvable than it
+already was. `LabyrinthRun._rotate_maze()` rotates the grid and every
+entity position (player, goal, pellets/hazards/keys, popups,
+`discovered_cells`, and reconstructs the frozen `TeleporterPair`/
+`DoorKeyPair`/`PressurePad` lists) together, atomically, on each
+rotation. `self._par_seconds` is deliberately left untouched — hop count
+between two rotated cells over a rotated grid is provably identical to
+the pre-rotation hop count.
+
+`RotationTimer` deliberately mirrors `TimeResource`'s `tick()`/`resync()`
+shape exactly, including a `resync()` call in `_resume_after_break()` —
+`TimeResource` needed that specifically to avoid charging an entire
+break's duration in one lump the instant ticking resumes (see "Bug:
+forced stops at junctions" above for the general staleness-bug class);
+reusing the identical shape avoids reintroducing it in a second,
+differently-coded timer rather than re-deriving the fix from scratch.
+
+### Fog of war (`progression/augments/runtime/fog.py`)
+
+The fourth augment, also purely runtime: only cells within the player's
+line of sight are drawn. For this maze's 1-wide, axis-aligned corridors,
+line of sight is exactly **4 straight rays from the player's cell, each
+walked at raw-grid resolution until (and including) a wall** —
+`visible_cells_from()`. Simpler than a radius-limited BFS and more
+literally correct: standing in a straight corridor reveals the whole
+corridor both directions and nothing else; standing at a junction reveals
+partway down every open branch, but the ray down each branch stops the
+instant the corridor turns, same as real line of sight can't see around a
+corner.
+
+`LabyrinthRun.discovered_cells` accumulates every cell ever seen, reset
+each new maze; the current default is **permanent memory** (once
+discovered, a cell stays revealed for the rest of the maze).
+`visible_and_discovered_cells()` isolates that default to one clearly
+marked spot — a future narrower default (e.g. an item gating "memory",
+rather than it being the baseline) is a one-line change there, changing
+nothing about the accumulation itself or how `renderer.py` filters
+against whatever it returns. `renderer.py`'s `draw()` computes the
+visible set once and threads it through every entity-drawing method;
+undiscovered cells are simply skipped, staying whatever
+`self.surface.fill(C_BG)` already painted — no separate "fog" colour or
+extra render state needed.
+
+### Shifting room (`progression/augments/shifting_room.py`)
+
+The fifth augment, and the first that mutates the grid **at runtime**
+instead of only at generation time: pressure pads that permanently open a
+hidden wall elsewhere in the maze. Confirmed with the user before
+building it: the pad fires the instant the player *slides over* it (not
+only if they stop there — `player.slide_path()` gained a `pressure_pad`
+hook, mirroring `teleport`/`door_locked`'s "fires on every newly-entered
+cell mid-slide" shape, but purely side-effecting — it never alters the
+slide's own path), it's **one-shot** (no toggle-back), and it **can be
+mandatory** — a pocket can be sealed shut behind it exactly like a
+teleporter/door pocket, gating the route to the goal.
+
+A shifting-room pocket is sealed *completely* (`seal_pocket()` with no
+`keep_open` crossing at all) — a real, physically closed wall, not a
+behavioral gate the way a locked door is. That turned out to make
+placement *simpler* in one respect (every existing generation-time helper
+already treats a still-closed pocket as plain unreachable, no
+special-casing needed the way a locked-but-grid-open door cell needs) but
+surfaced three real correctness issues, each found by direct empirical
+testing rather than assumed away:
+
+- **Planning code needs to "see through" an unopened pad.**
+  `shortest_path()`/`farthest_reachable_cell()` over the real, still-sealed
+  grid would raise or silently fail whenever a goal or par-time estimate
+  needed to reach inside a pocket nothing has triggered yet. Fixed by
+  planning against a copy of the grid with every pad pre-opened
+  (`_grid_with_pressure_pads_opened()`, in both `augments/__init__.py` and
+  `progression/run.py`) — the same "assume it'll eventually happen"
+  approximation already accepted for a door's key-fetching detour, which
+  neither par-time nor goal-distance has ever accounted for either.
+- **A teleporter can bridge straight past a still-sealed wall.** A
+  decorative teleporter endpoint placed *before* Shifting Room runs can
+  land inside a pocket Shifting Room later seals — `seal_pocket()` only
+  re-walls *physical* boundary crossings, and a teleporter's edge isn't
+  physical (`slide_path()`'s `teleport` hook fires regardless of walls).
+  Found directly via the three-augment composition test failing
+  intermittently, not anticipated in advance. Fixed by verifying each
+  candidate pocket is disjoint from the real reachable set (accounting for
+  every already-placed teleporter/door) before committing to it.
+- **Chained mandatory pads inherited the "nesting is impossible" bug** —
+  see "Nesting a mandatory chain..." above; fixed in the same pass, in the
+  same shared way, across all three gating modules.
+
+Runtime one-shot tracking needs no separate state at all: `self.grid`
+itself is the single source of truth for "has this pad already fired" —
+opening an already-open wall segment is simply a no-op, and rotation
+(`_rotate_maze()`) carries a pad's triggered/untriggered state along for
+free, since it's rotating the same grid that already encodes it; only the
+`PressurePad.pad`/`.wall_segment` *coordinates* need transforming.
+`renderer.py` needs no special drawing for the wall segment itself —
+`_draw_maze()` already renders whatever `self.grid` currently says (wall
+before triggering, floor after) with zero special-casing; only the pad
+marker itself (`_draw_pressure_pads()`) is new drawing code.
 
 ## Not built yet (deliberately out of scope for this first pass)
 

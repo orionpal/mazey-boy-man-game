@@ -54,13 +54,15 @@ is still pure backlog.
 
 ## 6. Maze augments -- IN PROGRESS, see docs/progression.md and docs/maze-generation.md
 
-A pool of generation-time maze modifiers, chosen every `AUGMENT_INTERVAL`
-(10) mazes alongside the existing perk/item shop, each able to level up on
-repeat picks (more/harder effect) and up to `MAX_ACTIVE_AUGMENTS` (4)
-composable at once in a single run. Architecture: `progression/augments/`
-(`Augment`, `AugmentContext`, `AugmentBuild`, `run_pipeline()`,
-`offer_augment_cards()`) is a post-process pipeline over `generate_maze()`'s
-output -- `generate_maze(cols, rows) -> grid` itself stays untouched, per
+A pool of maze modifiers -- most generation-time, some purely runtime (see
+`progression/augments/gating/` vs. `progression/augments/runtime/` in
+`docs/progression.md`) -- chosen every `AUGMENT_INTERVAL` (10) mazes
+alongside the existing perk/item shop, each able to level up on repeat
+picks (more/harder effect) and up to `MAX_ACTIVE_AUGMENTS` (4) composable
+at once in a single run. Architecture: `progression/augments/` (`Augment`,
+`AugmentContext`, `AugmentBuild`, `run_pipeline()`, `offer_augment_cards()`)
+is a post-process pipeline over `generate_maze()`'s output --
+`generate_maze(cols, rows) -> grid` itself stays untouched, per
 `docs/maze-generation.md`'s "Proposed near-term plan". Every future augment
 plugs into the same registry (`ALL_AUGMENTS`) and composes through the same
 pipeline without a rewrite.
@@ -87,25 +89,39 @@ Starting list:
   guarantee, full test coverage) but reported as "pretty disorienting" in
   actual play -- scrapped for now rather than iterated on further. Not
   started again unless revisited.
-- **Rotating maze** -- not started. The whole maze rotates on a fixed
-  timer (every 2s), with a warning indicator shortly before each rotation
-  fires. A rigid rotation of the grid + every entity position together is
-  an isometry, so unlike the augments above it doesn't need its own
-  forced-use/solvability verification machinery -- the maze is exactly as
-  solvable after rotating as before.
-- **Fog of war** -- not started. Only cells within the player's line of
-  sight are visible; discovered cells stay revealed permanently by
-  default, structured so that default is easy to swap later for something
+- **Rotating maze -- SHIPPED**, `progression/augments/runtime/rotation.py`.
+  The whole maze rotates every `ROTATE_INTERVAL_BASE_SECONDS` (2s, faster
+  per level), with a warning arrow shown shortly before each rotation
+  fires. Confirmed empirically (not just assumed): a rigid rotation of the
+  grid + every entity position together is a genuine isometry, so unlike
+  the gating augments above it needs no forced-use/solvability
+  verification machinery at all -- the maze is exactly as solvable after
+  rotating as before.
+- **Fog of war -- SHIPPED**, `progression/augments/runtime/fog.py`. Only
+  cells within the player's line of sight (4 straight rays from their
+  cell, each walked until a wall) are visible; discovered cells stay
+  revealed permanently by default (`LabyrinthRun.discovered_cells`),
+  structured so that default is easy to swap later for something
   narrower (e.g. an item that grants permanent memory, rather than it
-  being everyone's baseline).
-- **Shifting room** -- not started. Pressure pads that shift certain walls
-  when stepped on, changing maze connectivity at *runtime* -- unlike every
-  augment above, which only ever mutates the grid once, at generation
-  time.
+  being everyone's baseline) -- see
+  `LabyrinthRun.visible_and_discovered_cells()`'s docstring for exactly
+  where that swap would go.
+- **Shifting room -- SHIPPED**, `progression/augments/shifting_room.py`.
+  Pressure pads that permanently open a hidden wall elsewhere in the maze
+  when the player slides over them (pass-through trigger, one-shot,
+  can be mandatory) -- the first augment to change maze connectivity at
+  *runtime* rather than only at generation time. Needed the same
+  generate-verify-retry rigor as teleporters/doors, plus extra care
+  because a still-untriggered pocket is a genuinely closed wall (not a
+  behavioral gate like a locked door): planning code (goal placement,
+  par-time estimate) has to explicitly plan against every pad pre-opened
+  rather than the literal, currently-sealed grid. See
+  `docs/progression.md`'s "Shifting room" section for the concrete bugs
+  this surfaced.
 - **Reverse controls** -- not started.
 - **Lights out** -- not started.
 
-The last four are pure backlog: naming them here reserves their place in
+The last two are pure backlog: naming them here reserves their place in
 the augment pool and pacing, nothing more. Pull one into an actual design
 (generation-time pass, run-time hook, rendering) when it's time to build it
 -- teleporting squares is the concrete template for what that involves.
