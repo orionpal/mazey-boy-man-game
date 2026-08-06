@@ -290,7 +290,7 @@ AUGMENTS_BY_ID: dict[str, Augment] = {}
 # step has to happen down here, after they're defined, not at the top of
 # the file (that would be circular).
 from maze_game.progression.augments.gating import DoorsAugment, TeleportersAugment  # noqa: E402
-from maze_game.progression.augments.runtime import RotatingMazeAugment  # noqa: E402
+from maze_game.progression.augments.runtime import FogOfWarAugment, RotatingMazeAugment  # noqa: E402
 
 # Order matters for the gating/ pair: DoorsAugment must run after
 # TeleportersAugment -- a door candidate is verified against the maze's
@@ -298,7 +298,7 @@ from maze_game.progression.augments.runtime import RotatingMazeAugment  # noqa: 
 # bypass a door that looked like a genuine cut vertex under plain grid
 # adjacency (see doors.py). runtime/ augments have a no-op apply(), so
 # their position in this tuple doesn't affect generation at all.
-for _augment in (TeleportersAugment(), DoorsAugment(), RotatingMazeAugment()):
+for _augment in (TeleportersAugment(), DoorsAugment(), RotatingMazeAugment(), FogOfWarAugment()):
     ALL_AUGMENTS.append(_augment)
     AUGMENTS_BY_ID[_augment.id] = _augment
 del _augment

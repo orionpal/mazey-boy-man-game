@@ -25,6 +25,7 @@ from maze_game.progression.shop.perks import ALL_PERKS, Perk
 from maze_game.progression.augments.gating.teleporters import TeleportersAugment
 from maze_game.progression.augments.gating.doors import DoorKeyPair, Key, DoorsAugment
 from maze_game.progression.augments.runtime.rotation import RotatingMazeAugment, rotate_cell_cw
+from maze_game.progression.augments.runtime.fog import FogOfWarAugment, visible_cells_from
 
 # A trivial straight 3-cell corridor, (1,1)-(2,1)-(3,1), used to drive
 # move() deterministically instead of a randomly-generated maze.
@@ -761,6 +762,7 @@ def _teleport_run() -> LabyrinthRun:
     run.player = (1, 1)
     run.goal = (3, 1)
     run.pellets = []
+    run.gold_pellets = []
     run.hazards = []
     run._teleport_map = {(2, 1): (3, 1)}
     return run
@@ -813,6 +815,7 @@ def _door_run() -> LabyrinthRun:
     run.player = (1, 1)
     run.goal = (3, 1)
     run.pellets = []
+    run.gold_pellets = []
     run.hazards = []
     pair = DoorKeyPair(door=(3, 1), key=(2, 1), mandatory=True, color_index=0)
     run.doors = [pair]
@@ -995,6 +998,76 @@ def test_restart_resets_the_rotation_timer():
     assert run.rotation_timer.remaining == pytest.approx(ROTATE_INTERVAL_BASE_SECONDS, abs=0.05)
 
 
+# ── Fog of war augment ───────────────────────────────────────────────────
+
+
+def _fog_run(seed: int = 1) -> LabyrinthRun:
+    run = LabyrinthRun(seed=seed)
+    run.augment_build.acquire(FogOfWarAugment())
+    run._begin_maze()
+    return run
+
+
+def test_begin_maze_seeds_discovered_cells_with_the_starting_view():
+    run = _fog_run()
+    assert run.discovered_cells == visible_cells_from(run.grid, run.player)
+    assert run.discovered_cells  # non-empty -- START_POS always sees at least itself
+
+
+def test_discovered_cells_stays_empty_when_the_augment_is_inactive():
+    run = LabyrinthRun(seed=1)
+    run._begin_maze()
+    assert run.discovered_cells == set()
+
+
+def test_moving_accumulates_newly_visible_cells_into_discovered_cells():
+    run = _fog_run()
+    before = set(run.discovered_cells)
+    run.move((1, 0))
+    assert run.discovered_cells >= before  # never shrinks
+    assert run.discovered_cells == before | visible_cells_from(run.grid, run.player)
+
+
+def test_discovered_cells_never_shrinks_moving_back_and_forth():
+    """Permanent-memory default: once seen, a cell stays in discovered_cells even after moving away from it."""
+    run = _fog_run()
+    run.move((1, 0))
+    peak = set(run.discovered_cells)
+    run.move((-1, 0))
+    assert run.discovered_cells >= peak
+
+
+def test_visible_and_discovered_cells_returns_none_when_fog_is_inactive():
+    run = LabyrinthRun(seed=1)
+    run._begin_maze()
+    assert run.visible_and_discovered_cells() is None
+
+
+def test_visible_and_discovered_cells_returns_the_accumulator_when_active():
+    run = _fog_run()
+    assert run.visible_and_discovered_cells() is run.discovered_cells
+
+
+def test_begin_maze_resets_discovered_cells_for_a_new_maze():
+    run = _fog_run()
+    run.move((1, 0))
+    assert run.discovered_cells
+    run._begin_maze()
+    assert run.discovered_cells == visible_cells_from(run.grid, run.player)
+
+
+def test_rotate_maze_rotates_discovered_cells_in_lockstep():
+    run = LabyrinthRun(seed=5)
+    run.augment_build.acquire(FogOfWarAugment())
+    run.augment_build.acquire(RotatingMazeAugment())
+    run._begin_maze()
+    run.move((1, 0))
+    n = run.cols
+    before = set(run.discovered_cells)
+    run._rotate_maze()
+    assert run.discovered_cells == {rotate_cell_cw(c, n) for c in before}
+
+
 # ── Popups ────────────────────────────────────────────────────────────────
 
 
@@ -1039,6 +1112,7 @@ def _junction_corridor_run() -> LabyrinthRun:
     run.player = (1, 1)
     run.goal = (4, 1)
     run.pellets = []
+    run.gold_pellets = []
     run.hazards = []
     return run
 

@@ -1,18 +1,22 @@
 """
-Tests for maze_game.progression.renderer.Layout -- window/sidebar/perk-card
-sizing math, and the text-wrapping helper perk cards/tooltips rely on to
-avoid overflowing their rects. Pure geometry (pygame.Rect) and font
-metrics, no display needed.
+Tests for maze_game.progression.renderer -- Layout's window/sidebar/perk-card
+sizing math, the text-wrapping helper perk cards/tooltips rely on to avoid
+overflowing their rects, the zip-animation interpolation helper, and (via
+a real off-screen Surface + Renderer) fog of war's visibility filtering,
+the one part of this module where pixel-level inspection is actually the
+most direct way to verify the behavior. Everything else here is pure
+geometry (pygame.Rect) and font metrics, no display needed.
 """
 
 import pygame
 import pytest
 
-from maze_game.progression.renderer import Layout, MAZE_AREA_SIZE, _wrap_text, animated_player_position
-from maze_game.progression.run import TeleportAnimation
+from maze_game.progression.renderer import Layout, MAZE_AREA_SIZE, Renderer, _wrap_text, animated_player_position
+from maze_game.progression.run import LabyrinthRun, TeleportAnimation
+from maze_game.progression.augments.runtime.fog import FogOfWarAugment
 from maze_game.progression.shop.perks import ALL_PERKS
 from maze_game.progression.augments import ALL_AUGMENTS
-from maze_game.constants import SIDEBAR_W, HUD_HEIGHT, ZIP_ANIMATION_DURATION_SECONDS
+from maze_game.constants import SIDEBAR_W, HUD_HEIGHT, ZIP_ANIMATION_DURATION_SECONDS, C_BG
 
 
 def test_window_size_is_static_regardless_of_maze_dimensions():
@@ -174,3 +178,59 @@ def test_animated_player_position_falls_back_to_player_pos_once_expired():
     run = _StubRun(player=(8, 1), teleport_animation=anim)
     after = 100.0 + ZIP_ANIMATION_DURATION_SECONDS + 1.0
     assert animated_player_position(run, now=after) == (8, 1)
+
+
+# ── Fog of war visibility filtering ─────────────────────────────────────
+# The one part of this module where pixel-level inspection (a real Surface
+# + Renderer) is the most direct way to verify the actual behavior, rather
+# than pure geometry.
+
+
+def _fog_test_run(tmp_path) -> LabyrinthRun:
+    run = LabyrinthRun(seed=1, gold_path=tmp_path / "gold.json", meta_upgrades_path=tmp_path / "meta.json")
+    run.augment_build.acquire(FogOfWarAugment())
+    # A tiny, fully deterministic 3x3 grid (one open cell) instead of
+    # whatever _begin_maze() actually generated -- only the visibility
+    # filtering is under test here, not maze content.
+    run.grid = [[1, 1, 1], [1, 0, 1], [1, 1, 1]]
+    run.cols, run.rows = 3, 3
+    run.player = (1, 1)
+    run.goal = (1, 1)
+    run.pellets = []
+    run.gold_pellets = []
+    run.hazards = []
+    run.teleporters = []
+    run.doors = []
+    run.keys = []
+    run.discovered_cells = {(1, 1)}  # only the player's own cell has been discovered
+    return run
+
+
+def test_undiscovered_cells_are_not_drawn(tmp_path):
+    pygame.display.init()
+    pygame.font.init()
+    run = _fog_test_run(tmp_path)
+    layout = Layout(run.cols, run.rows)
+    surface = pygame.Surface((layout.window_w, layout.window_h))
+    Renderer(surface).draw(run)
+
+    ox, oy = layout.maze_origin
+    cell = layout.cell
+    undiscovered_px = surface.get_at((ox + cell // 2, oy + cell // 2))  # (0, 0) -- a wall cell, never discovered
+    assert tuple(undiscovered_px)[:3] == C_BG
+
+
+def test_discovered_cells_are_drawn(tmp_path):
+    pygame.display.init()
+    pygame.font.init()
+    run = _fog_test_run(tmp_path)
+    layout = Layout(run.cols, run.rows)
+    surface = pygame.Surface((layout.window_w, layout.window_h))
+    Renderer(surface).draw(run)
+
+    ox, oy = layout.maze_origin
+    cell = layout.cell
+    # (1, 1) is the player's own (discovered) cell -- drawn as floor/player,
+    # not left at the background fill.
+    discovered_px = surface.get_at((ox + cell + 2, oy + cell + 2))
+    assert tuple(discovered_px)[:3] != C_BG

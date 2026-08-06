@@ -13,6 +13,7 @@ Re-exports the concrete Augment subclasses so augments/__init__.py's
 registration step doesn't need to know about this split.
 """
 
+from maze_game.progression.augments.runtime.fog import FogOfWarAugment
 from maze_game.progression.augments.runtime.rotation import RotatingMazeAugment
 
-__all__ = ["RotatingMazeAugment"]
+__all__ = ["FogOfWarAugment", "RotatingMazeAugment"]

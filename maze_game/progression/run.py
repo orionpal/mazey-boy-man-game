@@ -53,9 +53,11 @@ from maze_game.progression.augments import AugmentBuild, run_pipeline, offer_aug
 from maze_game.progression.augments.gating.doors import Key, DoorKeyPair
 from maze_game.progression.augments.gating.teleporters import TeleporterPair
 from maze_game.progression.augments.runtime.rotation import rotate_cell_cw, rotate_grid_cw
+from maze_game.progression.augments.runtime.fog import visible_cells_from
 from maze_game.progression.meta import MetaProgress, DEFAULT_META_UPGRADES_PATH
 
 ROTATING_MAZE_ID = "rotating_maze"
+FOG_OF_WAR_ID = "fog_of_war"
 
 START_POS: tuple[int, int] = (1, 1)
 
@@ -267,6 +269,26 @@ class LabyrinthRun:
         """Queue a brief floating label at `pos` (a grid cell) -- see Popup/renderer._draw_popups."""
         self.popups.append(Popup(pos, text, color, time.monotonic()))
 
+    def visible_and_discovered_cells(self) -> set[tuple[int, int]] | None:
+        """
+        Which cells renderer.py should draw -- `None` means "no restriction,
+        draw everything" (fog of war isn't active for this build).
+
+        PERMANENT MEMORY is the current default: self.discovered_cells only
+        ever grows (accumulated in move()/_begin_maze()), so once a cell has
+        been seen it stays revealed for the rest of the maze. To switch to a
+        narrower default later (e.g. the player has to remember on their
+        own, unless they've picked up some future "memory" item), change
+        the return line below to a freshly-computed
+        visible_cells_from(self.grid, self.player) instead of the
+        accumulator -- everything else (the accumulation itself, and
+        renderer.py's filtering against whatever this returns) stays
+        unchanged.
+        """
+        if self.augment_build.level_of(FOG_OF_WAR_ID) <= 0:
+            return None
+        return self.discovered_cells
+
     def update(self) -> None:
         """Advance the timer and check win/timeout. Call once per frame."""
         now = time.monotonic()
@@ -328,6 +350,8 @@ class LabyrinthRun:
         if teleported:
             self.teleport_animation = TeleportAnimation(path[-2], path[-1], time.monotonic())
         self.player = path[-1]
+        if self.augment_build.level_of(FOG_OF_WAR_ID) > 0:
+            self.discovered_cells |= visible_cells_from(self.grid, self.player)
         resolve_contacts(self, path)
 
     def move_break_cursor(self, delta: int) -> None:
@@ -470,6 +494,13 @@ class LabyrinthRun:
         self._par_seconds = SPEED_BONUS_SECONDS_PER_CELL * len(
             shortest_path(self.grid, START_POS, self.goal, extra_edges=self._teleport_map)
         )
+
+        # A new maze is a wholly different layout -- discovered_cells (fog
+        # of war's "memory") resets every maze, not just once per run.
+        self.discovered_cells: set[tuple[int, int]] = set()
+        if self.augment_build.level_of(FOG_OF_WAR_ID) > 0:
+            self.discovered_cells |= visible_cells_from(self.grid, self.player)
+
         self._maze_started_at = time.monotonic()
         self.finished = False
         self.shield_charges_remaining = self.build.hazard_shield_charges_per_maze
@@ -506,6 +537,10 @@ class LabyrinthRun:
             key.door_cell = rot(key.door_cell)
         for popup in self.popups:
             popup.pos = rot(popup.pos)
+        # Fog of war's "memory" is keyed to grid coordinates -- rotate it in
+        # lockstep with everything else, or a rotation would silently
+        # invalidate everywhere the player has already discovered.
+        self.discovered_cells = {rot(c) for c in self.discovered_cells}
 
         self.teleporters = [
             TeleporterPair(a=rot(pair.a), b=rot(pair.b), mandatory=pair.mandatory, color_index=pair.color_index)
