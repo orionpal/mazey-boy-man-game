@@ -83,6 +83,28 @@ run it) to play. A couple of things worth knowing:
 
 ---
 
+## Deploying the Web Build
+
+The game also runs in a browser via [pygbag](https://pypi.org/project/pygbag/)
+(compiles CPython + pygame-ce to WebAssembly), embedded on
+[orionpal.com](https://orionpal.com) at `/projects/embeds/mazey-boy`.
+
+```bash
+python3 deploy_web.py
+```
+
+This stages a clean copy of just the shipped source (`main.py`, `maze_game/`,
+`assets/`), builds it with pygbag, and copies the result into the
+orionpal.com repo's `public/mazey-boy/` — by default assumed to be cloned as
+a sibling directory next to this one (`--site-dir` overrides that). It
+installs `pygbag` into `.venv` automatically the first time. It does **not**
+commit or push anything — review the diff it prints and commit/push both
+repos yourself.
+
+Run this any time game logic changes and you want the live site updated.
+
+---
+
 ## Labyrinth Progression Mode (`main.py`)
 
 A run of 100 mazes, starting small (9x9) and gradually growing to 41x41,
@@ -96,7 +118,7 @@ any maze ends the run back at maze 1.
 | `↑ ↓ ← →` | Slide the player |
 | `Space` | Resume from a between-group break |
 | `R` | Restart from maze 1 (after a fail or a full clear) |
-| `Esc` | Quit |
+| `Esc` | Pause (Resume / Return to Base); `Esc` again resumes |
 
 This is a first playtestable pass, not a balance pass — see
 `docs/progression.md` for exactly how the dimensions ramp, time limits, and

@@ -20,9 +20,10 @@ menu -> quit); closing the window quits immediately from anywhere.
 Run with:
     python main.py
 
-Also the pygbag entry point for the web build (see docs/web-build.md): pygbag
-requires an async main loop -- the browser's single-threaded event loop can't
-block on a plain `while` loop -- so every frame-driving loop here and in
+Also the pygbag entry point for the web build (see deploy_web.py and the
+README's "Deploying the web build" section): pygbag requires an async main
+loop -- the browser's single-threaded event loop can't block on a plain
+`while` loop -- so every frame-driving loop here and in
 progression/app.py/freeplay/app.py is `async def` with an `await
 asyncio.sleep(0)` each frame to yield control back to it. Desktop behaviour
 (asyncio.run(main()) on a normal CPython event loop) is unchanged either way.
