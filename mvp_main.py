@@ -16,6 +16,8 @@ Run with:
 """
 
 import asyncio
+import random
+import time
 
 import pygame
 
@@ -24,6 +26,14 @@ from maze_game.freeplay.app import run_freeplay
 
 
 async def main() -> None:
+    if IS_WEB:
+        # see main.py's main() for why this is needed on web: pygbag's
+        # pre-warmed interpreter snapshot freezes `random`'s auto-seed from
+        # before the snapshot was taken, so every fresh page load replays
+        # the same sequence unless re-seeded here with something that isn't
+        # part of that frozen state -- live wall-clock time.
+        random.seed(time.time_ns())
+
     pygame.init()
     pygame.display.set_caption("Maze")
     clock = pygame.time.Clock()

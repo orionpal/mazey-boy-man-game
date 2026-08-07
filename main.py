@@ -29,6 +29,8 @@ asyncio.sleep(0)` each frame to yield control back to it. Desktop behaviour
 """
 
 import asyncio
+import random
+import time
 from typing import TYPE_CHECKING
 
 import pygame
@@ -108,6 +110,16 @@ async def run_menu(window: "Window | None", clock: pygame.time.Clock) -> str | N
 
 
 async def main() -> None:
+    if IS_WEB:
+        # pygbag boots CPython from a pre-warmed interpreter snapshot for
+        # faster startup; `random`'s own auto-seed (done at interpreter
+        # startup, before the snapshot is taken) gets frozen into it, so
+        # every fresh page load was replaying the *same* first "random"
+        # seed -- always the same opening mazes. time.time_ns() is a live
+        # JS Date.now()-backed call, not interpreter state, so it isn't
+        # part of the snapshot and genuinely varies run to run.
+        random.seed(time.time_ns())
+
     pygame.init()
     pygame.display.set_caption("Maze")
     clock = pygame.time.Clock()
