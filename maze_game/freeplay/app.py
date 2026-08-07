@@ -12,13 +12,18 @@ machine. This loop drains and clears that list once per frame, playing
 whatever sound (if any) exists for each event.
 """
 
+import asyncio
+from typing import TYPE_CHECKING
+
 import pygame
-from pygame._sdl2.video import Window
 
 from maze_game.constants import FPS
 from maze_game.media import sound
 from maze_game.freeplay.game import Game
 from maze_game.freeplay.renderer import Renderer, Layout
+
+if TYPE_CHECKING:
+    from pygame._sdl2.video import Window
 
 DIRECTION_MAP: dict[int, tuple[int, int]] = {
     pygame.K_UP:    ( 0, -1),
@@ -28,7 +33,7 @@ DIRECTION_MAP: dict[int, tuple[int, int]] = {
 }
 
 
-def sync_window_size(window: Window, size: tuple[int, int]) -> pygame.Surface:
+def sync_window_size(window: "Window | None", size: tuple[int, int]) -> pygame.Surface:
     """
     Resize the existing native window in place to `size`. Deliberately uses
     Window.size instead of calling pygame.display.set_mode() again --
@@ -38,13 +43,19 @@ def sync_window_size(window: Window, size: tuple[int, int]) -> pygame.Surface:
     resizing look like the whole game window closing and reopening. Setting
     .size on the already-created Window resizes it in place (same window
     ID), and is a cheap no-op when the size is unchanged.
+
+    On web (window is None) there's no native window to preserve identity
+    for -- just the one canvas element -- so pygame.display.set_mode()
+    again is fine there; it resizes the canvas rather than tearing anything down.
     """
+    if window is None:
+        return pygame.display.set_mode(size)
     if window.size != size:
         window.size = size
     return pygame.display.get_surface()
 
 
-def run_freeplay(window: Window, clock: pygame.time.Clock) -> str:
+async def run_freeplay(window: "Window | None", clock: pygame.time.Clock) -> str:
     """
     Play free-play mode until the player quits. Returns "quit" if the
     window was closed (the whole app should exit) or "menu" if ESC/Q was
@@ -97,3 +108,4 @@ def run_freeplay(window: Window, clock: pygame.time.Clock) -> str:
         )
         pygame.display.flip()
         clock.tick(FPS)
+        await asyncio.sleep(0)

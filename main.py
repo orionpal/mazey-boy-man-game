@@ -19,27 +19,48 @@ menu -> quit); closing the window quits immediately from anywhere.
 
 Run with:
     python main.py
+
+Also the pygbag entry point for the web build (see docs/web-build.md): pygbag
+requires an async main loop -- the browser's single-threaded event loop can't
+block on a plain `while` loop -- so every frame-driving loop here and in
+progression/app.py/freeplay/app.py is `async def` with an `await
+asyncio.sleep(0)` each frame to yield control back to it. Desktop behaviour
+(asyncio.run(main()) on a normal CPython event loop) is unchanged either way.
 """
 
-import pygame
-from pygame._sdl2.video import Window
+import asyncio
+from typing import TYPE_CHECKING
 
-from maze_game.constants import FPS
+import pygame
+
+from maze_game.constants import FPS, IS_WEB
 from maze_game.media import sound
 from maze_game.menu import MainMenu
 from maze_game.menu.renderer import MenuRenderer
 from maze_game.progression.app import run_progression_mode
 from maze_game.freeplay.app import run_freeplay
 
+if TYPE_CHECKING:
+    from pygame._sdl2.video import Window
 
-def _sync_window_size(window: Window, size: tuple[int, int]) -> pygame.Surface:
-    """Same in-place-resize approach used by both game-mode loops -- see freeplay/app.py's docstring for why."""
+
+def _sync_window_size(window: "Window | None", size: tuple[int, int]) -> pygame.Surface:
+    """
+    Same in-place-resize approach used by both game-mode loops -- see
+    freeplay/app.py's docstring for why. `window` is None on web (IS_WEB):
+    there's no native OS window to resize in place there, just the single
+    canvas element, so pygame.display.set_mode() again is the right call --
+    it's only flicker-prone tearing down/rebuilding a *native* window, which
+    doesn't apply to a canvas.
+    """
+    if window is None:
+        return pygame.display.set_mode(size)
     if window.size != size:
         window.size = size
     return pygame.display.get_surface()
 
 
-def run_menu(window: Window, clock: pygame.time.Clock) -> str | None:
+async def run_menu(window: "Window | None", clock: pygame.time.Clock) -> str | None:
     """Show the menu until a mode is chosen ("labyrinth"/"relax") or the player quits (None)."""
     menu = MainMenu()
     renderer = MenuRenderer(_sync_window_size(window, MenuRenderer.window_size()))
@@ -70,24 +91,29 @@ def run_menu(window: Window, clock: pygame.time.Clock) -> str | None:
         renderer.draw(menu, pygame.mouse.get_pos())
         pygame.display.flip()
         clock.tick(FPS)
+        await asyncio.sleep(0)
 
 
-def main() -> None:
+async def main() -> None:
     pygame.init()
     pygame.display.set_caption("Maze")
     clock = pygame.time.Clock()
     pygame.display.set_mode((1, 1))  # placeholder -- run_menu resizes it before the first frame draws
-    window = Window.from_display_module()
 
-    mode = run_menu(window, clock)
+    window = None
+    if not IS_WEB:
+        from pygame._sdl2.video import Window
+        window = Window.from_display_module()
+
+    mode = await run_menu(window, clock)
     while mode is not None:
-        result = run_progression_mode(window, clock) if mode == "labyrinth" else run_freeplay(window, clock)
+        result = await (run_progression_mode(window, clock) if mode == "labyrinth" else run_freeplay(window, clock))
         if result == "quit":
             break
-        mode = run_menu(window, clock)
+        mode = await run_menu(window, clock)
 
     pygame.quit()
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

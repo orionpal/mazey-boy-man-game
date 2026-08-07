@@ -13,8 +13,10 @@ pygame. This loop drains and clears that list once per frame, playing
 whatever sound (if any) exists for each event.
 """
 
+import asyncio
+from typing import TYPE_CHECKING
+
 import pygame
-from pygame._sdl2.video import Window
 
 from maze_game.constants import FPS
 from maze_game.media import sound
@@ -22,6 +24,9 @@ from maze_game.progression.run import LabyrinthRun
 from maze_game.progression.renderer import Renderer, Layout
 from maze_game.progression.meta import Base, MetaProgress, ALL_META_UPGRADES
 from maze_game.progression.meta.renderer import BaseRenderer
+
+if TYPE_CHECKING:
+    from pygame._sdl2.video import Window
 
 DIRECTION_MAP: dict[int, tuple[int, int]] = {
     pygame.K_UP:    ( 0, -1),
@@ -42,14 +47,16 @@ def _junction_stop_count(keys_held) -> int | None:
     return None if keys_held[pygame.K_SPACE] else 1
 
 
-def sync_window_size(window: Window, size: tuple[int, int]) -> pygame.Surface:
-    """Same in-place-resize approach as freeplay/app.py -- see its docstring for why."""
+def sync_window_size(window: "Window | None", size: tuple[int, int]) -> pygame.Surface:
+    """Same in-place-resize approach as freeplay/app.py -- see its docstring for why. `window` is None on web."""
+    if window is None:
+        return pygame.display.set_mode(size)
     if window.size != size:
         window.size = size
     return pygame.display.get_surface()
 
 
-def run_labyrinth(window: Window, clock: pygame.time.Clock) -> str:
+async def run_labyrinth(window: "Window | None", clock: pygame.time.Clock) -> str:
     """
     Play a labyrinth run until it ends or the player backs out. Returns
     "quit" if the window was closed (the whole app should exit), "menu" if
@@ -99,6 +106,7 @@ def run_labyrinth(window: Window, clock: pygame.time.Clock) -> str:
         renderer.draw(run)
         pygame.display.flip()
         clock.tick(FPS)
+        await asyncio.sleep(0)
 
 
 def _try_purchase(progress: MetaProgress, upgrade) -> None:
@@ -107,7 +115,7 @@ def _try_purchase(progress: MetaProgress, upgrade) -> None:
         sound.play("card_select")  # reuses the existing "a choice was confirmed" event
 
 
-def run_base(window: Window, clock: pygame.time.Clock) -> str:
+async def run_base(window: "Window | None", clock: pygame.time.Clock) -> str:
     """
     Show the Base until the player starts a run or backs out. Returns
     "start" (launch a fresh run), "menu" (ESC, back to the title screen),
@@ -159,9 +167,10 @@ def run_base(window: Window, clock: pygame.time.Clock) -> str:
         renderer.draw(base, progress, pygame.mouse.get_pos())
         pygame.display.flip()
         clock.tick(FPS)
+        await asyncio.sleep(0)
 
 
-def run_progression_mode(window: Window, clock: pygame.time.Clock) -> str:
+async def run_progression_mode(window: "Window | None", clock: pygame.time.Clock) -> str:
     """
     Owns the Base<->run loop: the Base always precedes a run, and R after a
     fail/complete screen loops back into it (see run_labyrinth()) rather
@@ -169,10 +178,10 @@ def run_progression_mode(window: Window, clock: pygame.time.Clock) -> str:
     this -- the same contract every other mode's entry point exposes.
     """
     while True:
-        base_result = run_base(window, clock)
+        base_result = await run_base(window, clock)
         if base_result in ("quit", "menu"):
             return base_result
-        run_result = run_labyrinth(window, clock)
+        run_result = await run_labyrinth(window, clock)
         if run_result in ("quit", "menu"):
             return run_result
         # run_result == "base" -- loop back to the Base to spend gold before the next run.

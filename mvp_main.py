@@ -15,23 +15,29 @@ Run with:
     python mvp_main.py
 """
 
-import pygame
-from pygame._sdl2.video import Window
+import asyncio
 
+import pygame
+
+from maze_game.constants import IS_WEB
 from maze_game.freeplay.app import run_freeplay
 
 
-def main() -> None:
+async def main() -> None:
     pygame.init()
     pygame.display.set_caption("Maze")
     clock = pygame.time.Clock()
     pygame.display.set_mode((1, 1))  # placeholder -- run_freeplay resizes it before the first frame draws
-    window = Window.from_display_module()
 
-    run_freeplay(window, clock)
+    window = None
+    if not IS_WEB:
+        from pygame._sdl2.video import Window
+        window = Window.from_display_module()
+
+    await run_freeplay(window, clock)
 
     pygame.quit()
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

@@ -8,6 +8,13 @@ customise the look and feel without touching game logic.
 import sys
 from pathlib import Path
 
+# ── Platform detection ──────────────────────────────────────────────────────
+# pygbag runs the game under Emscripten/Pyodide, where sys.platform reports
+# "emscripten". Used to route around desktop-only APIs (pygame._sdl2.video.Window
+# in particular -- see main.py/mvp_main.py/progression/app.py/freeplay/app.py)
+# that have no browser equivalent.
+IS_WEB = sys.platform == "emscripten"
+
 # ── Persistent save-file location ───────────────────────────────────────────
 # gold.json/meta_upgrades.json/run_history.json all live next to APP_ROOT. In
 # a normal checkout that's the repo root (__file__-relative). In a
