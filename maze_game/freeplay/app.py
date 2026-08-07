@@ -33,6 +33,9 @@ DIRECTION_MAP: dict[int, tuple[int, int]] = {
 }
 
 
+_web_display_size: tuple[int, int] | None = None  # last size passed to set_mode() on web
+
+
 def sync_window_size(window: "Window | None", size: tuple[int, int]) -> pygame.Surface:
     """
     Resize the existing native window in place to `size`. Deliberately uses
@@ -46,10 +49,18 @@ def sync_window_size(window: "Window | None", size: tuple[int, int]) -> pygame.S
 
     On web (window is None) there's no native window to preserve identity
     for -- just the one canvas element -- so pygame.display.set_mode()
-    again is fine there; it resizes the canvas rather than tearing anything down.
+    again is fine there; it resizes the canvas rather than tearing anything
+    down. Still guarded to only fire on an actual size change, same as the
+    desktop branch -- calling it unconditionally every frame fought the
+    browser's own live canvas/CSS layout during an actual resize (e.g. OS
+    window snap), which is what caused the reported squishing.
     """
+    global _web_display_size
     if window is None:
-        return pygame.display.set_mode(size)
+        if _web_display_size != size:
+            _web_display_size = size
+            return pygame.display.set_mode(size)
+        return pygame.display.get_surface()
     if window.size != size:
         window.size = size
     return pygame.display.get_surface()

@@ -43,6 +43,8 @@ from maze_game.freeplay.app import run_freeplay
 if TYPE_CHECKING:
     from pygame._sdl2.video import Window
 
+_web_display_size: tuple[int, int] | None = None  # last size passed to set_mode() on web
+
 
 def _sync_window_size(window: "Window | None", size: tuple[int, int]) -> pygame.Surface:
     """
@@ -52,9 +54,20 @@ def _sync_window_size(window: "Window | None", size: tuple[int, int]) -> pygame.
     canvas element, so pygame.display.set_mode() again is the right call --
     it's only flicker-prone tearing down/rebuilding a *native* window, which
     doesn't apply to a canvas.
+
+    Still only called when `size` actually changes (mirrors the `window.size
+    != size` guard below): calling set_mode() every frame regardless fights
+    the browser's own live canvas/CSS layout during an actual window resize
+    (e.g. OS window snap), which is what caused the reported squishing --
+    each frame re-created the display mid-transition instead of settling on
+    the final size once.
     """
+    global _web_display_size
     if window is None:
-        return pygame.display.set_mode(size)
+        if _web_display_size != size:
+            _web_display_size = size
+            return pygame.display.set_mode(size)
+        return pygame.display.get_surface()
     if window.size != size:
         window.size = size
     return pygame.display.get_surface()

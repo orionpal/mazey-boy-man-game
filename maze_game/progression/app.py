@@ -47,10 +47,21 @@ def _junction_stop_count(keys_held) -> int | None:
     return None if keys_held[pygame.K_SPACE] else 1
 
 
+_web_display_size: tuple[int, int] | None = None  # last size passed to set_mode() on web
+
+
 def sync_window_size(window: "Window | None", size: tuple[int, int]) -> pygame.Surface:
-    """Same in-place-resize approach as freeplay/app.py -- see its docstring for why. `window` is None on web."""
+    """
+    Same in-place-resize approach as freeplay/app.py -- see its docstring for
+    why. `window` is None on web. Only calls set_mode() when `size` actually
+    changes -- see main.py's _sync_window_size() for why that matters on web.
+    """
+    global _web_display_size
     if window is None:
-        return pygame.display.set_mode(size)
+        if _web_display_size != size:
+            _web_display_size = size
+            return pygame.display.set_mode(size)
+        return pygame.display.get_surface()
     if window.size != size:
         window.size = size
     return pygame.display.get_surface()
