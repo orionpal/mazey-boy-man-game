@@ -35,18 +35,19 @@ from maze_game.constants import (
     MIN_DIMENSION, MAX_DIMENSION, DIMENSION_STEP,
     MILESTONE_INTERVAL, MILESTONE_DIMENSION_BOOST, MILESTONE_MAX_DIMENSION,
     AUGMENT_INTERVAL, HAZARD_UNLOCK_MAZE,
-    SPEED_BONUS_TIME, SPEED_BONUS_SECONDS_PER_CELL,
+    SPEED_BONUS_TIME, SPEED_BONUS_SECONDS_PER_CELL, SECOND_WIND_REFILL_SECONDS,
     POPUP_DURATION_SECONDS, C_SPEED_BONUS, C_GOLD, C_PRESSURE_PADS,
     ZIP_ANIMATION_DURATION_SECONDS,
     ROTATE_INTERVAL_BASE_SECONDS, ROTATE_INTERVAL_STEP_SECONDS, ROTATE_INTERVAL_MIN_SECONDS,
     ROTATE_WARNING_LEAD_SECONDS,
+    TWIN_GOAL_CLUSTER_SIZE, TWIN_GOAL_CLUSTER_RADIUS,
 )
 from maze_game.maze import generate_maze, farthest_reachable_cell, shortest_path
 from maze_game.player import slide_path
 from maze_game.progression.entities import resolve_contacts
 from maze_game.progression.entities.hazards import (
-    spawn_pellets, spawn_hazards, hazard_density_ramp,
-    spawn_gold_pellets, load_gold_total, save_gold_total, DEFAULT_GOLD_PATH,
+    spawn_pellets, spawn_hazards, hazard_density_ramp, pellet_value_ramp,
+    spawn_pellet_cluster_near, spawn_gold_pellets, load_gold_total, save_gold_total, DEFAULT_GOLD_PATH,
 )
 from maze_game.progression.shop import offer_shop_cards
 from maze_game.progression.augments import AugmentBuild, run_pipeline, offer_augment_cards
@@ -59,6 +60,7 @@ from maze_game.progression.meta import MetaProgress, DEFAULT_META_UPGRADES_PATH
 
 ROTATING_MAZE_ID = "rotating_maze"
 FOG_OF_WAR_ID = "fog_of_war"
+PEEK_ID = "peek"  # checked directly by app.py::_run_pause_loop(), not read anywhere in this module
 
 START_POS: tuple[int, int] = (1, 1)
 
@@ -151,10 +153,13 @@ class TimeResource:
         self.amount = amount
         self._last_tick = time.monotonic()
 
-    def tick(self) -> None:
+    def tick(self) -> float:
+        """Returns the elapsed seconds this tick just consumed -- Compound Interest needs a frame-accurate delta to add its trickle against, not just the post-tick amount."""
         now = time.monotonic()
-        self.amount = max(0.0, self.amount - (now - self._last_tick))
+        elapsed = now - self._last_tick
+        self.amount = max(0.0, self.amount - elapsed)
         self._last_tick = now
+        return elapsed
 
     def resync(self) -> None:
         """
@@ -172,6 +177,10 @@ class TimeResource:
 
     def spend(self, amount: float) -> None:
         self.amount = max(0.0, self.amount - amount)
+
+    def scale(self, factor: float) -> None:
+        """Multiply the current amount by `factor` -- the Gamble pellet's bust case (halves it), not a top-up/spend."""
+        self.amount = max(0.0, self.amount * factor)
 
     @property
     def depleted(self) -> bool:
@@ -264,6 +273,13 @@ class LabyrinthRun:
         self.teleport_animation: TeleportAnimation | None = None
         self.rotation_timer = RotationTimer(ROTATE_INTERVAL_BASE_SECONDS)
         self.events: list[str] = []
+        # Freeze pellet state -- deliberately NOT reset by _begin_maze()
+        # (unlike hazard_contacts_this_maze/pending_chain_multiplier below):
+        # it's a wall-clock window, not a per-maze resource, so a freeze
+        # picked up right as a maze ends keeps working into the next one.
+        # Only restart() clears it.
+        self.freeze_until: float | None = None
+        self._was_frozen = False  # falling-edge detector, so update() resyncs the rotation timer exactly once per freeze window
         # Gold is a persistent meta-currency, unlike time -- loaded once here
         # and never reset by restart() (see restart()'s docstring/comment).
         # DEFAULT_GOLD_PATH/DEFAULT_META_UPGRADES_PATH are looked up here
@@ -290,10 +306,16 @@ class LabyrinthRun:
         """Queue a brief floating label at `pos` (a grid cell) -- see Popup/renderer._draw_popups."""
         self.popups.append(Popup(pos, text, color, time.monotonic()))
 
+    @property
+    def freeze_active(self) -> bool:
+        """True for PELLET_FREEZE_DURATION_SECONDS after picking up a Freeze pellet -- hazards become harmless, the rotating maze stops advancing, and fog of war is fully suppressed, all for this same window."""
+        return self.freeze_until is not None and time.monotonic() < self.freeze_until
+
     def visible_and_discovered_cells(self) -> set[tuple[int, int]] | None:
         """
         Which cells renderer.py should draw -- `None` means "no restriction,
-        draw everything" (fog of war isn't active for this build).
+        draw everything" (fog of war isn't active for this build, or a
+        Freeze pellet is temporarily suppressing it).
 
         PERMANENT MEMORY is the current default: self.discovered_cells only
         ever grows (accumulated in move()/_begin_maze()), so once a cell has
@@ -306,7 +328,7 @@ class LabyrinthRun:
         renderer.py's filtering against whatever this returns) stays
         unchanged.
         """
-        if self.augment_build.level_of(FOG_OF_WAR_ID) <= 0:
+        if self.freeze_active or self.augment_build.level_of(FOG_OF_WAR_ID) <= 0:
             return None
         return self.discovered_cells
 
@@ -318,14 +340,36 @@ class LabyrinthRun:
             self.teleport_animation = None
         if self.on_break or self.failed or self.completed_run or self.finished:
             return
-        self.time.tick()
+        elapsed = self.time.tick()
+        if self.build.compound_interest_rate > 0:
+            # Continuous, not event-driven like every other pellet/perk
+            # effect -- gold can change at arbitrary times (a gold pellet
+            # pickup), so this has to be evaluated every frame rather than
+            # cached. No popup: at 60fps that would be constant spam: the
+            # live HUD timer readout is the only feedback for this one.
+            self.time.add(self.gold * self.build.compound_interest_rate * elapsed)
+        frozen = self.freeze_active
         rotation_level = self.augment_build.level_of(ROTATING_MAZE_ID)
-        if rotation_level > 0:
+        if rotation_level > 0 and not frozen:
             self.rotation_timer.tick()
             if self.rotation_timer.remaining <= 0:
                 self._rotate_maze()
                 self.rotation_timer.remaining = _rotation_interval_for_level(rotation_level)
+        if self._was_frozen and not frozen:
+            # The rotation timer's tick() calls above were skipped for the
+            # whole freeze window -- resync its reference point now, or the
+            # next tick() would charge the entire frozen stretch as elapsed
+            # in one lump (same staleness bug resync() exists to prevent
+            # for breaks -- see TimeResource.resync()'s docstring).
+            self.rotation_timer.resync()
+        self._was_frozen = frozen
         if self.time.depleted:
+            if self.build.second_wind_charges > 0:
+                self.build.second_wind_charges -= 1
+                self.time.add(SECOND_WIND_REFILL_SECONDS)
+                self.add_popup(self.player, "Second Wind!", C_SPEED_BONUS)
+                self.events.append("second_wind")
+                return
             self.failed = True
             self.events.append("fail")
             return
@@ -339,6 +383,10 @@ class LabyrinthRun:
                     save_gold_total(self.gold, self.gold_path)
                     self.add_popup(self.player, f"+{self.build.gold_rush_bonus}g", C_GOLD)
                     self.events.append("gold")
+            if self.hazard_contacts_this_maze == 0 and self.build.momentum_bonus_per_clear > 0:
+                self.build.pellet_value_multiplier += self.build.momentum_bonus_per_clear
+                self.add_popup(self.player, "Momentum!", C_SPEED_BONUS)
+                self.events.append("momentum_bonus")
             self.finished = True
             self.events.append("maze_complete")
             self._advance()
@@ -434,6 +482,8 @@ class LabyrinthRun:
         self.teleport_animation = None
         self.rotation_timer = RotationTimer(ROTATE_INTERVAL_BASE_SECONDS)
         self.events = []
+        self.freeze_until = None
+        self._was_frozen = False
         self.time = TimeResource(LABYRINTH_START_TIME)
         self.build = self.meta_progress.seed_build()  # reseeded, not reset to a plain Build() -- owned upgrades persist across restarts
         self.augment_build = AugmentBuild()
@@ -503,7 +553,9 @@ class LabyrinthRun:
             self.events.append("pressure_pad")
 
     def _maze_cleared(self) -> bool:
-        return self.player == self.goal
+        if self.player == self.goal:
+            return True
+        return self.secondary_goal is not None and self.player == self.secondary_goal
 
     def _begin_maze(self) -> None:
         cols, rows = dimensions_for_maze(self.maze_index)
@@ -530,9 +582,26 @@ class LabyrinthRun:
         self._pad_by_cell = {pad.pad: pad.wall_segment for pad in self.pressure_pads}
 
         self.goal = ctx.goal
+        self.secondary_goal = ctx.extra.get("secondary_goal")  # Twin Goals augment -- None unless active (and a candidate was found)
         exclude = {START_POS, self.goal} | ctx.reserved
-        self.pellets = spawn_pellets(self.grid, exclude, self.build.pellet_frequency_multiplier, rng=self.rng)
+        if self.secondary_goal is not None:
+            exclude = exclude | {self.secondary_goal}
+        self.pellets = spawn_pellets(
+            self.grid, exclude, self.build.pellet_frequency_multiplier,
+            value_multiplier=pellet_value_ramp(self.maze_index), rng=self.rng,
+        )
         exclude = exclude | {p.pos for p in self.pellets}
+        if self.secondary_goal is not None:
+            # A small guaranteed bonus on top of the normal scattered spawn
+            # above, clustered near whichever of the two goals this roll
+            # picks -- the two goals aren't purely equivalent even though
+            # both end the maze.
+            cluster_goal = self.rng.choice([self.goal, self.secondary_goal])
+            cluster = spawn_pellet_cluster_near(
+                self.grid, cluster_goal, exclude, TWIN_GOAL_CLUSTER_SIZE, TWIN_GOAL_CLUSTER_RADIUS, rng=self.rng,
+            )
+            self.pellets.extend(cluster)
+            exclude = exclude | {p.pos for p in cluster}
         self.gold_pellets = spawn_gold_pellets(self.grid, exclude, rng=self.rng)
         exclude = exclude | {p.pos for p in self.gold_pellets}
         if self.maze_index >= HAZARD_UNLOCK_MAZE:
@@ -550,9 +619,16 @@ class LabyrinthRun:
         # detour, which this same par-time estimate has never accounted
         # for either.
         planning_grid = _grid_with_pressure_pads_opened(self.grid, self.pressure_pads)
-        self._par_seconds = SPEED_BONUS_SECONDS_PER_CELL * len(
-            shortest_path(planning_grid, START_POS, self.goal, extra_edges=self._teleport_map)
-        )
+        path_len = len(shortest_path(planning_grid, START_POS, self.goal, extra_edges=self._teleport_map))
+        if self.secondary_goal is not None:
+            # Whichever goal is actually closer determines a fair par time
+            # -- a player beelining for the nearer one shouldn't be judged
+            # against the farther one's distance.
+            secondary_path_len = len(
+                shortest_path(planning_grid, START_POS, self.secondary_goal, extra_edges=self._teleport_map)
+            )
+            path_len = min(path_len, secondary_path_len)
+        self._par_seconds = SPEED_BONUS_SECONDS_PER_CELL * path_len
 
         # A new maze is a wholly different layout -- discovered_cells (fog
         # of war's "memory") resets every maze, not just once per run.
@@ -563,6 +639,8 @@ class LabyrinthRun:
         self._maze_started_at = time.monotonic()
         self.finished = False
         self.shield_charges_remaining = self.build.hazard_shield_charges_per_maze
+        self.hazard_contacts_this_maze = 0  # Momentum's "hazard-free clear" streak counter -- see update()'s maze-cleared branch
+        self.pending_chain_multiplier = 1.0  # a Chain pellet's un-consumed buff doesn't carry across a maze boundary
 
     def _rotate_maze(self) -> None:
         """
@@ -588,6 +666,8 @@ class LabyrinthRun:
         self.grid = rotate_grid_cw(self.grid)
         self.player = rot(self.player)
         self.goal = rot(self.goal)
+        if self.secondary_goal is not None:
+            self.secondary_goal = rot(self.secondary_goal)
 
         for entity in (*self.pellets, *self.gold_pellets, *self.hazards):
             entity.pos = rot(entity.pos)
@@ -670,3 +750,28 @@ class LabyrinthRun:
         self.rotation_timer.resync()  # same staleness class as self.time above, same fix
         self.maze_index += 1
         self._begin_maze()  # seamless when no break was due -- no pause within a group
+
+
+# (result string app.py's _run_pause_loop() returns, display label). Order
+# is the on-screen/cursor order. Lives here, not in app.py, so both
+# renderer.py (option labels) and app.py (the loop) can import it without a
+# circular dependency -- same reasoning as everything else in this pure
+# state machine.
+PAUSE_OPTIONS: list[tuple[str, str]] = [
+    ("resumed", "Resume"),
+    ("base", "Return to Base"),
+]
+
+
+class PauseMenu:
+    """Just a wrapping cursor over PAUSE_OPTIONS -- mirrors menu/__init__.py::MainMenu."""
+
+    def __init__(self) -> None:
+        self.cursor = 0
+
+    def move_cursor(self, delta: int) -> None:
+        self.cursor = (self.cursor + delta) % len(PAUSE_OPTIONS)
+
+    @property
+    def selected(self) -> str:
+        return PAUSE_OPTIONS[self.cursor][0]

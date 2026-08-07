@@ -11,11 +11,16 @@ import pytest
 from maze_game.constants import (
     PELLET_TIME_VALUE, PELLET_MIN_COUNT, HAZARD_TIME_PENALTY,
     HAZARD_UNLOCK_MAZE, HAZARD_RAMP_MAZES, HAZARD_RAMP_START_MULTIPLIER,
+    PELLET_VALUE_RAMP_START_MAZE, PELLET_VALUE_RAMP_MAZES, PELLET_VALUE_RAMP_END_MULTIPLIER,
+    PELLET_KIND_PLAIN, PELLET_KIND_DOUBLE, PELLET_KIND_VOLATILE, PELLET_KIND_CHAIN,
+    PELLET_KIND_FREEZE, PELLET_KIND_GAMBLE, PELLET_KIND_WEIGHTS, PELLET_KIND_VALUE_MULTIPLIERS,
+    PELLET_CHAIN_MULTIPLIER, PELLET_GAMBLE_WIN_MULTIPLIER, PELLET_GAMBLE_LOSE_FRACTION,
     HAZARD_DENSITY, HAZARD_MAX_COUNT, C_PELLET, C_GOLD, C_HAZARD, C_SHIELD,
+    C_PELLET_DOUBLE, C_PELLET_VOLATILE, C_PELLET_CHAIN, C_PELLET_FREEZE, C_PELLET_GAMBLE,
 )
 from maze_game.progression.entities.hazards import (
     Pellet, GoldPellet, Hazard, HAZARD_TYPES, spawn_pellets, spawn_hazards, hazard_density_ramp,
-    spawn_gold_pellets, load_gold_total, save_gold_total,
+    pellet_value_ramp, spawn_pellet_cluster_near, spawn_gold_pellets, load_gold_total, save_gold_total,
 )
 from maze_game.progression.shop.perks import Build
 
@@ -30,7 +35,7 @@ for _y in range(1, 6):
 class _FakeRun:
     """Minimal stand-in for LabyrinthRun -- just enough state for on_contact()."""
 
-    def __init__(self, gold_path=None):
+    def __init__(self, gold_path=None, grid=None):
         self.time = _FakeTimeResource()
         self.build = Build()
         self.popups = []
@@ -38,9 +43,23 @@ class _FakeRun:
         self.gold = 0
         self.gold_path = gold_path
         self.shield_charges_remaining = 0
+        self.hazard_contacts_this_maze = 0
+        self.pending_chain_multiplier = 1.0
+        self.freeze_until = None
+        self.rng = random.Random(0)
+        self.grid = grid if grid is not None else OPEN_ROOM
+        self.player = (1, 1)
+        self.goal = (5, 5)
+        self.pellets = []
+        self.gold_pellets = []
+        self.hazards = []
 
     def add_popup(self, pos, text, color):
         self.popups.append((pos, text, color))
+
+    @property
+    def freeze_active(self):
+        return self.freeze_until is not None
 
 
 class _FakeTimeResource:
@@ -52,6 +71,9 @@ class _FakeTimeResource:
 
     def spend(self, amount):
         self.amount = max(0.0, self.amount - amount)
+
+    def scale(self, factor):
+        self.amount = max(0.0, self.amount * factor)
 
 
 # ── Pellet ────────────────────────────────────────────────────────────────
@@ -215,6 +237,30 @@ def test_hazard_types_registry_contains_the_base_type():
     assert Hazard in HAZARD_TYPES
 
 
+def test_hazard_on_contact_increments_the_contact_counter_whether_or_not_shielded():
+    run = _FakeRun()
+    run.shield_charges_remaining = 1
+    Hazard((1, 1)).on_contact(run)  # shielded
+    Hazard((1, 1)).on_contact(run)  # unshielded
+    assert run.hazard_contacts_this_maze == 2
+
+
+def test_hazard_on_contact_is_a_full_no_op_while_frozen():
+    run = _FakeRun()
+    run.freeze_until = 999999.0  # any non-None value -- _FakeRun.freeze_active just checks "is not None"
+    run.shield_charges_remaining = 1
+    hazard = Hazard((2, 3))
+    hazard.on_contact(run)
+    assert run.time.amount == pytest.approx(10.0)  # no penalty
+    assert run.shield_charges_remaining == 1  # not consumed
+    assert run.events == ["freeze_block"]
+    assert run.hazard_contacts_this_maze == 0  # a freeze-blocked hit doesn't count against Momentum's clean streak
+    pos, text, color = run.popups[0]
+    assert pos == (2, 3)
+    assert text == "Frozen!"
+    assert color == C_PELLET_FREEZE
+
+
 # ── spawn_pellets / spawn_hazards ─────────────────────────────────────────
 
 
@@ -246,6 +292,12 @@ def test_spawn_pellets_uses_the_configured_time_value():
     random.seed(4)
     pellets = spawn_pellets(OPEN_ROOM, exclude=set())
     assert all(p.value == PELLET_TIME_VALUE for p in pellets)
+
+
+def test_spawn_pellets_value_multiplier_scales_pellet_value():
+    random.seed(4)
+    pellets = spawn_pellets(OPEN_ROOM, exclude=set(), value_multiplier=1.5)
+    assert all(p.value == pytest.approx(PELLET_TIME_VALUE * 1.5) for p in pellets)
 
 
 def test_spawn_hazards_excludes_given_cells():
@@ -309,4 +361,147 @@ def test_first_hazard_maze_spawns_noticeably_fewer_hazards_than_full_density():
     random.seed(14)
     unramped = spawn_hazards(OPEN_ROOM, exclude=set(), density_multiplier=1.0)
     assert len(ramped) < len(unramped)
+
+
+# ── Pellet value ramp ──────────────────────────────────────────────────────
+
+
+def test_pellet_value_ramp_is_flat_before_the_start_maze():
+    assert pellet_value_ramp(1) == pytest.approx(1.0)
+    assert pellet_value_ramp(PELLET_VALUE_RAMP_START_MAZE - 1) == pytest.approx(1.0)
+
+
+def test_pellet_value_ramp_starts_at_1x_on_the_start_maze():
+    assert pellet_value_ramp(PELLET_VALUE_RAMP_START_MAZE) == pytest.approx(1.0)
+
+
+def test_pellet_value_ramp_reaches_full_multiplier_after_ramp_mazes():
+    end_maze = PELLET_VALUE_RAMP_START_MAZE + PELLET_VALUE_RAMP_MAZES
+    assert pellet_value_ramp(end_maze) == pytest.approx(PELLET_VALUE_RAMP_END_MULTIPLIER)
+    assert pellet_value_ramp(end_maze + 50) == pytest.approx(PELLET_VALUE_RAMP_END_MULTIPLIER)  # never exceeds it
+
+
+def test_pellet_value_ramp_increases_monotonically():
+    values = [pellet_value_ramp(PELLET_VALUE_RAMP_START_MAZE + i) for i in range(PELLET_VALUE_RAMP_MAZES + 1)]
+    assert values == sorted(values)
+
+
+# ── Pellet kinds ─────────────────────────────────────────────────────────
+
+
+def test_spawn_pellets_kind_distribution_roughly_matches_the_weight_table():
+    rng = random.Random(42)
+    big_room = [[1] * 41 for _ in range(41)]
+    for y in range(1, 40):
+        for x in range(1, 40):
+            big_room[y][x] = 0
+    pellets = spawn_pellets(big_room, exclude=set(), frequency_multiplier=50.0, rng=rng)
+    counts = {kind: 0 for kind in PELLET_KIND_WEIGHTS}
+    for p in pellets:
+        counts[p.kind] += 1
+    total = len(pellets)
+    assert total > 200  # sanity: the inflated frequency actually produced a large sample
+    total_weight = sum(PELLET_KIND_WEIGHTS.values())
+    for kind, weight in PELLET_KIND_WEIGHTS.items():
+        expected_fraction = weight / total_weight
+        actual_fraction = counts[kind] / total
+        assert actual_fraction == pytest.approx(expected_fraction, abs=0.05)
+
+
+def test_spawn_pellets_value_matches_the_kind_multiplier():
+    rng = random.Random(7)
+    pellets = spawn_pellets(OPEN_ROOM, exclude=set(), frequency_multiplier=20.0, rng=rng)
+    for p in pellets:
+        assert p.value == pytest.approx(PELLET_TIME_VALUE * PELLET_KIND_VALUE_MULTIPLIERS[p.kind])
+
+
+def test_pellet_plain_and_double_grant_time_scaled_by_kind_and_build_multiplier():
+    run = _FakeRun()
+    run.build.pellet_value_multiplier = 2.0
+    Pellet((1, 1), value=1.0, kind=PELLET_KIND_PLAIN).on_contact(run)
+    assert run.time.amount == pytest.approx(10.0 + 1.0 * 2.0)
+    run2 = _FakeRun()
+    run2.build.pellet_value_multiplier = 2.0
+    Pellet((1, 1), value=2.0, kind=PELLET_KIND_DOUBLE).on_contact(run2)
+    assert run2.time.amount == pytest.approx(10.0 + 2.0 * 2.0)
+    pos, text, color = run2.popups[0]
+    assert color == C_PELLET_DOUBLE
+
+
+def test_pellet_volatile_grants_time_and_spawns_exactly_one_extra_hazard():
+    run = _FakeRun()
+    run.rng = random.Random(3)
+    Pellet((1, 1), value=2.5, kind=PELLET_KIND_VOLATILE).on_contact(run)
+    assert run.time.amount == pytest.approx(10.0 + 2.5)
+    assert len(run.hazards) == 1
+    assert isinstance(run.hazards[0], Hazard)
+    assert run.hazards[0].pos not in {run.player, run.goal}
+
+
+def test_pellet_chain_grants_no_time_but_multiplies_the_next_pellet():
+    run = _FakeRun()
+    Pellet((1, 1), value=0.0, kind=PELLET_KIND_CHAIN).on_contact(run)
+    assert run.time.amount == pytest.approx(10.0)  # no time from the Chain pellet itself
+    assert run.events == ["pellet_chain"]
+    Pellet((2, 2), value=1.0, kind=PELLET_KIND_PLAIN).on_contact(run)
+    assert run.time.amount == pytest.approx(10.0 + 1.0 * PELLET_CHAIN_MULTIPLIER)
+    # the multiplier is consumed -- a third plain pellet gets no bonus
+    Pellet((3, 3), value=1.0, kind=PELLET_KIND_PLAIN).on_contact(run)
+    assert run.time.amount == pytest.approx(10.0 + 1.0 * PELLET_CHAIN_MULTIPLIER + 1.0)
+
+
+def test_pellet_chain_stacks_if_picked_up_again_before_being_consumed():
+    run = _FakeRun()
+    Pellet((1, 1), value=0.0, kind=PELLET_KIND_CHAIN).on_contact(run)
+    Pellet((2, 2), value=0.0, kind=PELLET_KIND_CHAIN).on_contact(run)
+    Pellet((3, 3), value=1.0, kind=PELLET_KIND_PLAIN).on_contact(run)
+    assert run.time.amount == pytest.approx(10.0 + 1.0 * PELLET_CHAIN_MULTIPLIER ** 2)
+
+
+def test_pellet_freeze_sets_freeze_until_and_grants_no_time():
+    run = _FakeRun()
+    Pellet((1, 1), value=0.0, kind=PELLET_KIND_FREEZE).on_contact(run)
+    assert run.time.amount == pytest.approx(10.0)
+    assert run.freeze_until is not None
+    assert run.events == ["pellet_freeze"]
+
+
+def test_pellet_gamble_win_grants_big_time_bonus(monkeypatch):
+    run = _FakeRun()
+    monkeypatch.setattr(run.rng, "random", lambda: 0.0)  # forces the win branch (0.0 < WIN_CHANCE)
+    Pellet((1, 1), value=1.0, kind=PELLET_KIND_GAMBLE).on_contact(run)
+    assert run.time.amount == pytest.approx(10.0 + 1.0 * PELLET_GAMBLE_WIN_MULTIPLIER)
+    assert run.events == ["pellet"]
+
+
+def test_pellet_gamble_bust_halves_the_banked_time(monkeypatch):
+    run = _FakeRun()
+    monkeypatch.setattr(run.rng, "random", lambda: 0.999)  # forces the bust branch
+    Pellet((1, 1), value=1.0, kind=PELLET_KIND_GAMBLE).on_contact(run)
+    assert run.time.amount == pytest.approx(10.0 * (1.0 - PELLET_GAMBLE_LOSE_FRACTION))
+    assert run.events == ["pellet_gamble_bust"]
+    pos, text, color = run.popups[0]
+    assert color == C_PELLET_GAMBLE
+
+
+def test_spawn_pellet_cluster_near_stays_within_radius():
+    center = (3, 3)
+    cluster = spawn_pellet_cluster_near(OPEN_ROOM, center, exclude=set(), count=3, radius=1, rng=random.Random(9))
+    assert len(cluster) <= 3
+    for p in cluster:
+        assert max(abs(p.pos[0] - center[0]), abs(p.pos[1] - center[1])) <= 1
+        assert p.kind == PELLET_KIND_PLAIN
+
+
+def test_spawn_pellet_cluster_near_respects_exclude():
+    center = (3, 3)
+    exclude = {(2, 2), (2, 3), (2, 4), (3, 2), (3, 3), (3, 4), (4, 2), (4, 3), (4, 4)}
+    cluster = spawn_pellet_cluster_near(OPEN_ROOM, center, exclude=exclude, count=3, radius=1, rng=random.Random(9))
+    assert cluster == []  # every cell within radius 1 is excluded -- graceful degradation to nothing, not a crash
+
+
+def test_spawn_pellet_cluster_near_degrades_gracefully_with_no_candidates():
+    tiny = [[1, 1, 1], [1, 0, 1], [1, 1, 1]]
+    cluster = spawn_pellet_cluster_near(tiny, (1, 1), exclude={(1, 1)}, count=5, radius=0, rng=random.Random(1))
+    assert cluster == []
 

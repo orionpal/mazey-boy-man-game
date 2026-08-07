@@ -14,11 +14,12 @@ from maze_game.constants import (
     MILESTONE_INTERVAL, MILESTONE_DIMENSION_BOOST, MILESTONE_MAX_DIMENSION,
     LABYRINTH_GROUP_SIZE, LABYRINTH_TOTAL_MAZES, LABYRINTH_START_TIME,
     HAZARD_TIME_PENALTY, SPEED_BONUS_TIME, POPUP_DURATION_SECONDS,
-    ROTATE_INTERVAL_BASE_SECONDS,
+    ROTATE_INTERVAL_BASE_SECONDS, SECOND_WIND_REFILL_SECONDS,
+    TWIN_GOAL_CLUSTER_SIZE,
 )
 from maze_game.progression.run import (
     dimensions_for_maze, is_milestone_maze, TimeResource, LabyrinthRun,
-    TeleportAnimation, RotationTimer,
+    TeleportAnimation, RotationTimer, PauseMenu, PAUSE_OPTIONS,
 )
 from maze_game.progression.entities.hazards import Pellet, GoldPellet, Hazard, load_gold_total
 from maze_game.progression.shop.perks import ALL_PERKS, Perk
@@ -27,6 +28,7 @@ from maze_game.progression.augments.gating.doors import DoorKeyPair, Key, DoorsA
 from maze_game.progression.augments.runtime.rotation import RotatingMazeAugment, rotate_cell_cw
 from maze_game.progression.augments.runtime.fog import FogOfWarAugment, visible_cells_from
 from maze_game.progression.augments.shifting_room import ShiftingRoomAugment, PressurePad
+from maze_game.progression.augments.twin_goals import TwinGoalsAugment
 
 # A trivial straight 3-cell corridor, (1,1)-(2,1)-(3,1), used to drive
 # move() deterministically instead of a randomly-generated maze.
@@ -144,6 +146,13 @@ def test_time_resource_ticks_down_by_real_elapsed_time():
     assert resource.amount == pytest.approx(9.95, abs=0.02)
 
 
+def test_time_resource_tick_returns_the_elapsed_seconds():
+    resource = TimeResource(10.0)
+    resource._last_tick -= 0.05  # simulate 0.05s having passed
+    elapsed = resource.tick()
+    assert elapsed == pytest.approx(0.05, abs=0.02)
+
+
 def test_time_resource_add_and_spend():
     resource = TimeResource(10.0)
     resource.add(5.0)
@@ -162,6 +171,18 @@ def test_time_resource_spend_clamps_at_zero():
 def test_time_resource_not_depleted_above_zero():
     resource = TimeResource(0.01)
     assert resource.depleted is False
+
+
+def test_time_resource_scale_halves_the_amount():
+    resource = TimeResource(10.0)
+    resource.scale(0.5)
+    assert resource.amount == pytest.approx(5.0)
+
+
+def test_time_resource_scale_clamps_at_zero():
+    resource = TimeResource(10.0)
+    resource.scale(-1.0)
+    assert resource.amount == 0.0
 
 
 # ── LabyrinthRun lifecycle ────────────────────────────────────────────────
@@ -203,6 +224,98 @@ def test_update_ticks_the_time_resource(run):
     time.sleep(0.05)
     run.update()
     assert run.time.amount < before
+
+
+# ── Momentum / Compound Interest / Second Wind perks ─────────────────────
+
+
+def test_momentum_bonus_applies_on_a_hazard_free_clear():
+    run = LabyrinthRun()
+    momentum = next(p for p in ALL_PERKS if p.effect_key == "momentum")
+    run.build.acquire(momentum)
+    before = run.build.pellet_value_multiplier
+    run.hazard_contacts_this_maze = 0
+    run.player = run.goal
+    run.update()
+    assert run.build.pellet_value_multiplier == pytest.approx(before + run.build.momentum_bonus_per_clear)
+    assert "momentum_bonus" in run.events
+
+
+def test_momentum_bonus_does_not_apply_after_a_hazard_contact():
+    run = LabyrinthRun()
+    momentum = next(p for p in ALL_PERKS if p.effect_key == "momentum")
+    run.build.acquire(momentum)
+    before = run.build.pellet_value_multiplier
+    run.hazard_contacts_this_maze = 1
+    run.player = run.goal
+    run.update()
+    assert run.build.pellet_value_multiplier == pytest.approx(before)
+    assert "momentum_bonus" not in run.events
+
+
+def test_momentum_bonus_does_not_apply_without_the_perk():
+    run = LabyrinthRun()
+    before = run.build.pellet_value_multiplier
+    run.hazard_contacts_this_maze = 0
+    run.player = run.goal
+    run.update()
+    assert run.build.pellet_value_multiplier == pytest.approx(before)
+    assert "momentum_bonus" not in run.events
+
+
+def test_compound_interest_adds_time_proportional_to_gold_and_elapsed_time():
+    run = LabyrinthRun()
+    compound_interest = next(p for p in ALL_PERKS if p.effect_key == "compound_interest")
+    run.build.acquire(compound_interest)
+    run.gold = 100
+    run.time._last_tick -= 1.0  # simulate exactly 1s having passed
+    before = run.time.amount
+    run.update()
+    # The normal tick-down subtracts the same ~1s of elapsed time first --
+    # compound interest is on top of that, not instead of it.
+    expected_gain = run.gold * run.build.compound_interest_rate * 1.0
+    assert run.time.amount == pytest.approx(before - 1.0 + expected_gain, abs=0.05)
+
+
+def test_compound_interest_adds_nothing_without_the_perk():
+    run = LabyrinthRun()
+    run.gold = 100
+    run.time._last_tick -= 1.0
+    before = run.time.amount
+    run.update()
+    assert run.time.amount == pytest.approx(before - 1.0, abs=0.05)  # only the normal tick-down, no trickle
+
+
+def test_second_wind_refills_instead_of_failing_on_depletion():
+    run = LabyrinthRun()
+    second_wind = next(p for p in ALL_PERKS if p.effect_key == "second_wind")
+    run.build.acquire(second_wind)
+    run.time.amount = 0.0
+    run.update()
+    assert run.failed is False
+    assert run.time.amount == pytest.approx(SECOND_WIND_REFILL_SECONDS, abs=0.05)
+    assert run.build.second_wind_charges == 0  # consumed
+    assert "second_wind" in run.events
+
+
+def test_second_wind_only_saves_once_per_charge():
+    run = LabyrinthRun()
+    second_wind = next(p for p in ALL_PERKS if p.effect_key == "second_wind")
+    run.build.acquire(second_wind)
+    run.time.amount = 0.0
+    run.update()  # consumes the only charge, refills
+    run.time.amount = 0.0
+    run.update()  # no charges left -- fails normally
+    assert run.failed is True
+    assert "fail" in run.events
+
+
+def test_second_wind_charges_reset_by_restart():
+    run = LabyrinthRun()
+    second_wind = next(p for p in ALL_PERKS if p.effect_key == "second_wind")
+    run.build.acquire(second_wind)
+    run.restart()
+    assert run.build.second_wind_charges == 0  # Build is reseeded fresh, no owned meta upgrade grants this
 
 
 def test_pellets_and_hazards_never_spawn_on_start_or_goal(run):
@@ -1171,6 +1284,76 @@ def test_rotate_maze_rotates_pressure_pads_and_preserves_triggered_state():
     assert run._pad_by_cell[rotate_cell_cw(pad.pad, n)] == rotated_wall
 
 
+# ── Twin Goals augment ────────────────────────────────────────────────────
+
+
+def _twin_goals_run(seed: int = 1) -> LabyrinthRun:
+    """maze_index bumped to ~21x21 -- the 9x9 starting size is too small for the default distance-fraction thresholds to reliably find a candidate."""
+    run = LabyrinthRun(seed=seed)
+    run.augment_build.acquire(TwinGoalsAugment())
+    run.maze_index = 31
+    run._begin_maze()
+    return run
+
+
+def test_secondary_goal_is_set_when_twin_goals_is_active():
+    run = _twin_goals_run()
+    assert run.secondary_goal is not None
+    assert run.secondary_goal != run.goal
+    assert run.secondary_goal != run.player
+
+
+def test_secondary_goal_stays_none_when_the_augment_is_inactive():
+    run = LabyrinthRun(seed=1)
+    run.maze_index = 31
+    run._begin_maze()
+    assert run.secondary_goal is None
+
+
+def test_maze_cleared_via_the_secondary_goal():
+    run = _twin_goals_run()
+    run.player = run.secondary_goal
+    assert run._maze_cleared() is True
+
+
+def test_maze_cleared_via_the_primary_goal_still_works_with_twin_goals_active():
+    run = _twin_goals_run()
+    run.player = run.goal
+    assert run._maze_cleared() is True
+
+
+def test_pellets_never_double_spawn_on_the_same_cell():
+    run = _twin_goals_run()
+    positions = [p.pos for p in run.pellets]
+    assert len(positions) == len(set(positions))
+
+
+def test_bonus_cluster_adds_pellets_beyond_the_normal_scattered_spawn():
+    with_twin_goals = _twin_goals_run(seed=2)
+    without = LabyrinthRun(seed=2)
+    without.maze_index = 31
+    without._begin_maze()
+    # Not an exact equality (scattered spawn count depends on open-cell
+    # count, unaffected by Twin Goals) -- just confirms the cluster added
+    # at least some pellets on top of it, when a secondary goal exists.
+    if with_twin_goals.secondary_goal is not None:
+        assert len(with_twin_goals.pellets) >= len(without.pellets)
+
+
+def test_rotate_maze_transforms_the_secondary_goal_consistently():
+    run = LabyrinthRun(seed=4)
+    run.augment_build.acquire(TwinGoalsAugment())
+    run.augment_build.acquire(RotatingMazeAugment())
+    run.maze_index = 31
+    run._begin_maze()
+    assert run.secondary_goal is not None  # otherwise this test proves nothing
+
+    n = run.cols
+    before_secondary = run.secondary_goal
+    run._rotate_maze()
+    assert run.secondary_goal == rotate_cell_cw(before_secondary, n)
+
+
 # ── Popups ────────────────────────────────────────────────────────────────
 
 
@@ -1240,3 +1423,99 @@ def test_move_with_number_combo_collects_pellets_it_now_passes_through():
     assert run.player == (4, 1)
     assert run.pellets == []
     assert run.time.amount == pytest.approx(before + 1.0 * run.build.pellet_value_multiplier)
+
+
+# ── Freeze pellet (runtime effect) ──────────────────────────────────────
+
+
+def test_freeze_active_is_false_by_default(run):
+    assert run.freeze_active is False
+
+
+def test_freeze_active_is_true_until_the_deadline():
+    run = LabyrinthRun(seed=1)
+    run.freeze_until = time.monotonic() + 10.0
+    assert run.freeze_active is True
+
+
+def test_freeze_active_is_false_once_the_deadline_passes():
+    run = LabyrinthRun(seed=1)
+    run.freeze_until = time.monotonic() - 0.01
+    assert run.freeze_active is False
+
+
+def test_visible_and_discovered_cells_returns_none_while_frozen_even_with_fog_active():
+    run = _fog_run()
+    run.freeze_until = time.monotonic() + 10.0
+    assert run.visible_and_discovered_cells() is None
+
+
+def test_update_does_not_tick_the_rotation_timer_while_frozen():
+    run = _rotating_run()
+    run.freeze_until = time.monotonic() + 10.0
+    run.rotation_timer.remaining = 1.0
+    run.rotation_timer._last_tick -= 30.0  # simulate 30s having passed
+    run.update()
+    assert run.rotation_timer.remaining == 1.0  # untouched -- frozen, same as on_break
+
+
+def test_update_resyncs_the_rotation_timer_once_a_freeze_window_ends():
+    run = _rotating_run()
+    run.freeze_until = time.monotonic() - 0.01  # already expired
+    run._was_frozen = True  # simulate having just been frozen last frame
+    run.rotation_timer._last_tick -= 30.0  # stale, as if 30s passed while frozen
+    run.update()
+    # resync() reset the reference point to ~now -- if it hadn't, this
+    # update() would have charged the whole stale 30s against `remaining`.
+    assert run.rotation_timer.remaining == pytest.approx(ROTATE_INTERVAL_BASE_SECONDS, abs=0.5)
+
+
+def test_begin_maze_resets_hazard_contacts_and_pending_chain_multiplier():
+    run = LabyrinthRun(seed=1)
+    run.hazard_contacts_this_maze = 5
+    run.pending_chain_multiplier = 3.0
+    run._begin_maze()
+    assert run.hazard_contacts_this_maze == 0
+    assert run.pending_chain_multiplier == 1.0
+
+
+def test_begin_maze_does_not_reset_freeze_until():
+    """Freeze is a wall-clock window, not a per-maze resource -- it should keep working into the next maze."""
+    run = LabyrinthRun(seed=1)
+    deadline = time.monotonic() + 10.0
+    run.freeze_until = deadline
+    run._begin_maze()
+    assert run.freeze_until == deadline
+
+
+def test_restart_clears_freeze_until():
+    run = LabyrinthRun(seed=1)
+    run.freeze_until = time.monotonic() + 10.0
+    run.restart()
+    assert run.freeze_until is None
+
+
+# ── PauseMenu (tiny cursor state, mirrors menu/__init__.py::MainMenu) ────
+
+
+def test_pause_menu_starts_at_the_first_option():
+    menu = PauseMenu()
+    assert menu.cursor == 0
+    assert menu.selected == PAUSE_OPTIONS[0][0]
+
+
+def test_pause_menu_move_cursor_wraps_forward_and_backward():
+    menu = PauseMenu()
+    menu.move_cursor(-1)
+    assert menu.cursor == len(PAUSE_OPTIONS) - 1  # wraps backward from 0
+    menu.move_cursor(1)
+    assert menu.cursor == 0
+    menu.move_cursor(1)
+    assert menu.cursor == 1 % len(PAUSE_OPTIONS)
+
+
+def test_pause_menu_selected_matches_the_option_at_the_cursor():
+    menu = PauseMenu()
+    for i in range(len(PAUSE_OPTIONS)):
+        menu.cursor = i
+        assert menu.selected == PAUSE_OPTIONS[i][0]

@@ -10,7 +10,7 @@ import pytest
 
 from maze_game.maze import (
     generate_maze, farthest_reachable_cell, shortest_path, braid,
-    _open_neighbour_count, is_stoppable_cell, bfs_reachable,
+    _open_neighbour_count, is_stoppable_cell, bfs_reachable, secondary_goal_candidate,
 )
 from maze_game.player import slide
 
@@ -200,6 +200,45 @@ def test_farthest_reachable_cell_candidates_restricts_which_cell_can_be_the_answ
 
     # An empty/nonexistent candidates set is treated the same as no restriction at all when falsy.
     assert farthest_reachable_cell(grid, start, candidates=None) == (7, 1)
+
+
+# ── secondary_goal_candidate (Twin Goals) ─────────────────────────────────
+
+
+def test_secondary_goal_candidate_returns_a_stoppable_cell_far_from_both_anchors():
+    for seed in range(5):
+        rng = random.Random(seed)
+        grid = generate_maze(21, 21, rng=rng)
+        start = (1, 1)
+        primary_goal = farthest_reachable_cell(grid, start)
+        result = secondary_goal_candidate(grid, start, primary_goal, rng=rng)
+        assert result is not None
+        assert is_stoppable_cell(grid, *result)
+        assert result != start
+        assert result != primary_goal
+
+
+def test_secondary_goal_candidate_respects_exclude():
+    rng = random.Random(3)
+    grid = generate_maze(21, 21, rng=rng)
+    start = (1, 1)
+    primary_goal = farthest_reachable_cell(grid, start)
+    first = secondary_goal_candidate(grid, start, primary_goal, rng=random.Random(3))
+    assert first is not None
+    result = secondary_goal_candidate(grid, start, primary_goal, exclude={first}, rng=random.Random(3))
+    assert result != first  # excluded cell never re-chosen, even with the same rng draw sequence
+
+
+def test_secondary_goal_candidate_returns_none_gracefully_when_no_candidate_qualifies():
+    # A tiny maze with unreasonably strict thresholds -- nothing can be
+    # "far enough" from both anchors at once.
+    grid = generate_maze(9, 9, rng=random.Random(1))
+    start = (1, 1)
+    primary_goal = farthest_reachable_cell(grid, start)
+    result = secondary_goal_candidate(
+        grid, start, primary_goal, min_start_fraction=0.99, min_goal_fraction=0.99, rng=random.Random(1),
+    )
+    assert result is None
 
 
 def _simulate_slide_along_path(grid, path):

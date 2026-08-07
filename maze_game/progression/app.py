@@ -14,16 +14,18 @@ whatever sound (if any) exists for each event.
 """
 
 import asyncio
+import time
 from typing import TYPE_CHECKING
 
 import pygame
 
 from maze_game.constants import FPS
 from maze_game.media import sound
-from maze_game.progression.run import LabyrinthRun
+from maze_game.progression.run import LabyrinthRun, PauseMenu, PEEK_ID
 from maze_game.progression.renderer import Renderer, Layout
 from maze_game.progression.meta import Base, MetaProgress, ALL_META_UPGRADES
 from maze_game.progression.meta.renderer import BaseRenderer
+from maze_game.progression.augments.runtime.peek import peek_alpha
 
 if TYPE_CHECKING:
     from pygame._sdl2.video import Window
@@ -67,15 +69,69 @@ def sync_window_size(window: "Window | None", size: tuple[int, int]) -> pygame.S
     return pygame.display.get_surface()
 
 
+async def _run_pause_loop(window: "Window | None", clock: pygame.time.Clock, run: LabyrinthRun, renderer: Renderer) -> str:
+    """
+    Shows the pause menu until the player picks "Resume"/"Return to Base",
+    or closes the window. Returns "quit" / "resumed" / "base" -- exactly
+    PauseMenu's own result strings, see run.py::PAUSE_OPTIONS.
+
+    Opaque black the instant this loop starts, by default -- unless the
+    Peek augment is active, in which case the overlay starts transparent
+    and fades to opaque over PEEK_FADE_DURATION_SECONDS (see
+    augments/runtime/peek.py::peek_alpha()). `pause_started_at` is a fresh
+    local every call, so the fade window restarts on every ESC press
+    rather than carrying over from a previous pause.
+
+    Deliberately its own nested loop (mirrors main.py::run_menu()'s shape
+    exactly) rather than folding pause handling into run_labyrinth()'s own
+    loop -- run.update() is simply never called while this loop owns
+    control, so the maze stays genuinely frozen (same idea as on_break
+    already not calling it) with no extra "are we paused" branching
+    threaded through the normal frame body.
+    """
+    menu = PauseMenu()
+    peek_active = run.augment_build.level_of(PEEK_ID) > 0
+    pause_started_at = time.monotonic()
+    while True:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                return "quit"
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    return "resumed"
+                elif event.key in (pygame.K_UP, pygame.K_LEFT):
+                    menu.move_cursor(-1)
+                    sound.play("menu_move")
+                elif event.key in (pygame.K_DOWN, pygame.K_RIGHT):
+                    menu.move_cursor(1)
+                    sound.play("menu_move")
+                elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
+                    sound.play("menu_select")
+                    return menu.selected
+            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                for index, rect in enumerate(renderer.pause_option_rects()):
+                    if rect.collidepoint(event.pos):
+                        menu.cursor = index
+                        sound.play("menu_select")
+                        return menu.selected
+
+        alpha = peek_alpha(time.monotonic() - pause_started_at) if peek_active else 255
+        renderer.draw_pause_overlay(run, menu, pygame.mouse.get_pos(), alpha=alpha)
+        pygame.display.flip()
+        clock.tick(FPS)
+        await asyncio.sleep(0)
+
+
 async def run_labyrinth(window: "Window | None", clock: pygame.time.Clock) -> str:
     """
     Play a labyrinth run until it ends or the player backs out. Returns
-    "quit" if the window was closed (the whole app should exit), "menu" if
-    ESC was pressed (back to main.py's menu -- a run in progress is simply
-    abandoned, same as closing the game used to do), or "base" if R was
-    pressed after a fail/complete screen (see run_progression_mode(), which
-    routes that back into run_base() to spend gold before the next run,
-    rather than restarting in place).
+    "quit" if the window was closed (the whole app should exit), or "base"
+    if either R was pressed after a fail/complete screen, or the player
+    chose "Return to Base" from the pause menu (see _run_pause_loop() --
+    ESC now opens that instead of instantly abandoning the run the way it
+    used to). Either "base" path routes back into run_base() via
+    run_progression_mode() to spend gold before the next run, rather than
+    restarting in place.
     """
     run = LabyrinthRun()
     renderer = Renderer(sync_window_size(window, Renderer.window_size(run.cols, run.rows)))
@@ -86,7 +142,18 @@ async def run_labyrinth(window: "Window | None", clock: pygame.time.Clock) -> st
                 return "quit"
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
-                    return "menu"
+                    result = await _run_pause_loop(window, clock, run, renderer)
+                    # The pause loop never called run.time.tick()/rotation_timer.tick() --
+                    # resync both before ticking resumes, or the entire paused
+                    # stretch gets charged as elapsed time in one lump on the very
+                    # next tick() (same staleness bug resync() exists to prevent for
+                    # breaks -- see TimeResource.resync()'s docstring). Cheap even
+                    # when `run` is about to be discarded (the "quit"/"base" cases).
+                    run.time.resync()
+                    run.rotation_timer.resync()
+                    if result in ("quit", "base"):
+                        return result
+                    # "resumed" -- fall through, keep playing.
                 elif event.key == pygame.K_r and (run.failed or run.completed_run):
                     return "base"
                 elif run.on_break:

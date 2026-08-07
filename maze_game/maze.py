@@ -295,6 +295,77 @@ def farthest_reachable_cell(
     return farthest
 
 
+def _bfs_distances(
+    grid: list[list[int]],
+    start: tuple[int, int],
+    extra_edges: dict[tuple[int, int], tuple[int, int]] | None = None,
+) -> dict[tuple[int, int], int]:
+    """Every open cell reachable from `start`, mapped to its shortest-path step count. Same traversal as farthest_reachable_cell(), just returning the full distance map instead of one answer."""
+    cols, rows = len(grid[0]), len(grid)
+    distances: dict[tuple[int, int], int] = {start: 0}
+    queue: deque[tuple[int, int]] = deque([start])
+    while queue:
+        cx, cy = queue.popleft()
+        neighbours = [(cx + dx, cy + dy) for dx, dy in ((0, 1), (0, -1), (1, 0), (-1, 0))]
+        linked = (extra_edges or {}).get((cx, cy))
+        if linked is not None:
+            neighbours.append(linked)
+        for nx, ny in neighbours:
+            if 0 <= nx < cols and 0 <= ny < rows and grid[ny][nx] == 0 and (nx, ny) not in distances:
+                distances[(nx, ny)] = distances[(cx, cy)] + 1
+                queue.append((nx, ny))
+    return distances
+
+
+def secondary_goal_candidate(
+    grid: list[list[int]],
+    start: tuple[int, int],
+    primary_goal: tuple[int, int],
+    extra_edges: dict[tuple[int, int], tuple[int, int]] | None = None,
+    exclude: set[tuple[int, int]] | None = None,
+    min_start_fraction: float = 0.5,
+    min_goal_fraction: float = 0.3,
+    rng: random.Random | None = None,
+) -> tuple[int, int] | None:
+    """
+    Pick a second, independently-reachable goal cell for the Twin Goals
+    augment: stoppable (same rule as the primary goal -- see
+    is_stoppable_cell()), not in `exclude`, and far enough from *both*
+    `start` and `primary_goal` that it's neither a trivial detour from
+    spawn nor clustered on top of the existing goal.
+
+    "Far enough" is a fraction of each BFS's own farthest reachable
+    distance, not an absolute cell count -- this game's mazes range from
+    9x9 to 61x61 over a single run, so a fixed step-count threshold would
+    be meaningless at one end or the other.
+
+    Graceful degradation, same convention as every other placement helper
+    in this codebase: returns None if no candidate satisfies both
+    thresholds (e.g. a maze too small to fit two well-separated goals),
+    never raises.
+    """
+    rng = rng if rng is not None else random
+    exclude = exclude or set()
+    dist_from_start = _bfs_distances(grid, start, extra_edges)
+    dist_from_goal = _bfs_distances(grid, primary_goal, extra_edges)
+    max_from_start = max(dist_from_start.values(), default=0)
+    max_from_goal = max(dist_from_goal.values(), default=0)
+    start_threshold = min_start_fraction * max_from_start
+    goal_threshold = min_goal_fraction * max_from_goal
+
+    candidates = [
+        cell for cell in dist_from_start
+        if cell not in exclude
+        and cell in dist_from_goal
+        and is_stoppable_cell(grid, *cell)
+        and dist_from_start[cell] >= start_threshold
+        and dist_from_goal[cell] >= goal_threshold
+    ]
+    if not candidates:
+        return None
+    return rng.choice(candidates)
+
+
 def shortest_path(
     grid: list[list[int]],
     start: tuple[int, int],

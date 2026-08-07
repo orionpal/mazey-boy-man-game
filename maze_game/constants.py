@@ -107,6 +107,60 @@ PELLET_TIME_VALUE = 1.0       # seconds gained per pellet (before perk multiplie
 PELLET_DENSITY    = 0.6       # pellet count = density * sqrt(open cell count)
 PELLET_MIN_COUNT  = 2
 
+# Pellet value ramp: mazes grow bigger and (from HAZARD_UNLOCK_MAZE) hazards
+# ramp in, but a flat PELLET_TIME_VALUE wasn't keeping pace -- later mazes
+# felt starved for time even with careful play. Starting at
+# PELLET_VALUE_RAMP_START_MAZE, pellet value ramps from 1.0x up to
+# PELLET_VALUE_RAMP_END_MULTIPLIER over the following PELLET_VALUE_RAMP_MAZES
+# mazes, same ramp shape as hazard_density_ramp() below.
+PELLET_VALUE_RAMP_START_MAZE     = 20
+PELLET_VALUE_RAMP_MAZES          = 10
+PELLET_VALUE_RAMP_END_MULTIPLIER = 1.5
+
+# Pellet kinds: most spawns are plain (PELLET_TIME_VALUE, no side effect);
+# a minority are one of five colored variants with their own on-contact
+# effect (see progression/entities/hazards.py::PELLET_KIND_EFFECTS).
+# PELLET_KIND_WEIGHTS is a random.choices() weight table, not a
+# probability (doesn't need to sum to 1) -- plain dominates heavily so a
+# colored pellet reads as a small, noticeable event, not the norm.
+PELLET_KIND_PLAIN    = "plain"
+PELLET_KIND_DOUBLE   = "double"     # 2x time value, nothing else
+PELLET_KIND_VOLATILE = "volatile"   # bigger time value, but spawns one extra hazard elsewhere
+PELLET_KIND_CHAIN    = "chain"      # no time itself -- multiplies the *next* pellet's value
+PELLET_KIND_FREEZE   = "freeze"     # no time -- pauses hazards/rotation and clears fog of war, briefly
+PELLET_KIND_GAMBLE   = "gamble"     # 50/50: big time bonus, or your banked time is halved
+
+PELLET_KIND_WEIGHTS: dict[str, int] = {
+    PELLET_KIND_PLAIN:    80,
+    PELLET_KIND_DOUBLE:   6,
+    PELLET_KIND_VOLATILE: 5,
+    PELLET_KIND_CHAIN:    5,
+    PELLET_KIND_FREEZE:   5,
+    PELLET_KIND_GAMBLE:   4,
+}
+
+# Multiplier baked into Pellet.value at spawn time (on top of
+# PELLET_TIME_VALUE * the ramp/frequency multipliers spawn_pellets()
+# already applies). Chain/Freeze grant no time directly, hence 0.0 --
+# their effect is entirely in PELLET_KIND_EFFECTS. Gamble's swing (4x win /
+# half your banked time on a loss) happens at contact time, not spawn
+# time, so its spawn-time multiplier is a neutral 1.0.
+PELLET_KIND_VALUE_MULTIPLIERS: dict[str, float] = {
+    PELLET_KIND_PLAIN:    1.0,
+    PELLET_KIND_DOUBLE:   2.0,
+    PELLET_KIND_VOLATILE: 2.5,
+    PELLET_KIND_CHAIN:    0.0,
+    PELLET_KIND_FREEZE:   0.0,
+    PELLET_KIND_GAMBLE:   1.0,
+}
+
+PELLET_VOLATILE_EXTRA_HAZARD_COUNT = 1
+PELLET_FREEZE_DURATION_SECONDS     = 4.0
+PELLET_CHAIN_MULTIPLIER            = 2.0   # multiplies the next pellet's value; stacks if picked up again first
+PELLET_GAMBLE_WIN_CHANCE           = 0.5
+PELLET_GAMBLE_WIN_MULTIPLIER       = 4.0
+PELLET_GAMBLE_LOSE_FRACTION        = 0.5   # fraction of the player's *current banked time* lost on a bad roll
+
 # Hazards: persistent hazards (not consumed on contact), unlocked partway
 # through the run.
 HAZARD_UNLOCK_MAZE  = 11       # hazards start appearing from this maze index onward
@@ -126,6 +180,10 @@ HAZARD_RAMP_START_MULTIPLIER = 0.25
 # see progression/shop/perks.py).
 HAZARD_SHIELD_CHARGES_PER_LEVEL = 1  # Bulwark: ignored hazard contacts per maze, per pick
 GOLD_RUSH_BONUS_PER_LEVEL      = 1  # Speedrunner: bonus gold on an under-par clear, per pick
+MOMENTUM_PELLET_VALUE_BONUS_PER_LEVEL = 0.1   # Momentum: permanent pellet-value bump per hazard-free maze clear, per pick
+COMPOUND_INTEREST_RATE_PER_LEVEL      = 0.01  # Compound Interest: seconds of time per held gold per second, per pick
+SECOND_WIND_CHARGES_PER_LEVEL         = 1     # Second Wind: extra "don't actually fail" charges this run, per pick
+SECOND_WIND_REFILL_SECONDS            = 5.0   # time refilled to when a Second Wind charge is spent
 
 # Feedback popups: a brief floating "+Xs"/"-Xs" label wherever a pellet,
 # hazard, or maze-clear speed bonus changes the time resource, so the effect
@@ -229,6 +287,26 @@ ROTATE_INTERVAL_STEP_SECONDS = -0.3   # faster per level above 1
 ROTATE_INTERVAL_MIN_SECONDS  = 1.0
 ROTATE_WARNING_LEAD_SECONDS  = 0.75   # the warning arrow shows for this long before each rotation
 
+# Peek (progression/augments/runtime/peek.py): makes the pause menu's
+# overlay start transparent (you can see -- and study -- the maze) and
+# fade to fully opaque over this many seconds, instead of snapping opaque
+# the instant you pause. Restarts fresh every time the pause menu opens.
+PEEK_FADE_DURATION_SECONDS = 8.0
+
+# Twin Goals (progression/augments/twin_goals.py): a second, independently
+# reachable goal cell -- reaching either one clears the maze. Candidates
+# must be at least these *fractions* of the farthest reachable distance
+# from the player's start and from the primary goal respectively (not an
+# absolute cell count -- mazes range from 9x9 to 61x61 over a run), so the
+# secondary goal is never right next to spawn or clustered on top of the
+# primary goal. See maze.py::secondary_goal_candidate().
+TWIN_GOAL_MIN_START_DISTANCE_FRACTION = 0.5
+TWIN_GOAL_MIN_GOAL_DISTANCE_FRACTION  = 0.3
+# The bonus pellet cluster guaranteed near whichever of the two goals gets
+# picked (see progression/entities/hazards.py::spawn_pellet_cluster_near()).
+TWIN_GOAL_CLUSTER_SIZE   = 3
+TWIN_GOAL_CLUSTER_RADIUS = 3
+
 # ── Colours  (R, G, B) ────────────────────────────────────────────────────
 # Identity colours (player/goal/pellet/gold/hazard/door/speed-bonus) are
 # deliberately spread across distinct hues so entity *families* stay
@@ -259,6 +337,14 @@ C_DOOR_LOCKED   = (170, 70,  40)   # brick -- was (140,40,40), colliding with C_
 C_DOOR_UNLOCKED = (60, 190, 170)   # teal -- was (90,180,90), colliding with C_PLAYER
 C_SHIELD        = (190, 210, 230)  # pale blue/silver -- Bulwark's "Shielded!" popup, distinct from C_HAZARD's red
 C_ROTATE_WARNING = (255, 200, 60)  # the rotating maze augment's pre-rotation warning arrow -- close to C_FLASH's urgency yellow
+
+# Colored pellet variants -- deliberately distinct from C_PELLET/C_HAZARD/
+# C_GOAL/C_PLAYER/C_SHIELD so each kind reads as its own thing at a glance.
+C_PELLET_DOUBLE   = (60,  150, 255)  # vivid blue
+C_PELLET_VOLATILE = (235, 100,  40)  # burnt orange-red -- distinct from C_HAZARD's red
+C_PELLET_CHAIN    = (140, 230,  70)  # lime green -- distinct from C_PLAYER's green
+C_PELLET_FREEZE   = (225, 245, 255)  # icy white-blue
+C_PELLET_GAMBLE   = (150,  50, 210)  # violet purple -- distinct from C_GOAL's magenta
 
 # Teleporter pairs: each pair drawn in its own colour (cycled by
 # pair.color_index if there are more pairs than colours), so linked cells

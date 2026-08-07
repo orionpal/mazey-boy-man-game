@@ -29,25 +29,42 @@ from maze_game.constants import (
     SIDEBAR_W, HUD_HEIGHT, LABYRINTH_TOTAL_MAZES, MAX_ACTIVE_AUGMENTS,
     C_BG, C_WALL, C_FLOOR, C_PLAYER, C_GOAL, C_TEXT, C_DIM, C_CARD_DESC, C_FLASH, C_HUD_BG,
     C_PANEL_BG, C_PANEL_LINE, C_BUTTON, C_BUTTON_HOVER,
-    C_PELLET, C_GOLD, C_HAZARD, C_TELEPORT_PAIRS, C_DOOR_LOCKED, C_DOOR_UNLOCKED, C_DOOR_KEY_PAIRS,
+    C_PELLET, C_PELLET_DOUBLE, C_PELLET_VOLATILE, C_PELLET_CHAIN, C_PELLET_FREEZE, C_PELLET_GAMBLE,
+    C_GOLD, C_HAZARD, C_TELEPORT_PAIRS, C_DOOR_LOCKED, C_DOOR_UNLOCKED, C_DOOR_KEY_PAIRS,
     C_SPEED_BONUS, C_ROTATE_WARNING, C_PRESSURE_PADS,
     POPUP_DURATION_SECONDS, POPUP_RISE_PIXELS,
     ZIP_ANIMATION_DURATION_SECONDS,
+    PELLET_KIND_PLAIN, PELLET_KIND_DOUBLE, PELLET_KIND_VOLATILE,
+    PELLET_KIND_CHAIN, PELLET_KIND_FREEZE, PELLET_KIND_GAMBLE,
 )
 from maze_game.media import sprites
 from maze_game.media.shapes import draw_smiley_face
 from maze_game.progression.shop.perks import ALL_PERKS
 from maze_game.progression.augments import AUGMENTS_BY_ID
-from maze_game.progression.run import LabyrinthRun
+from maze_game.progression.run import LabyrinthRun, PauseMenu, PAUSE_OPTIONS
 
 MAZE_AREA_SIZE = 640  # fixed pixel viewport the maze renders within, at any dimension
 LOW_TIME_WARNING_SECONDS = 5.0
+
+PELLET_KIND_COLOURS = {
+    PELLET_KIND_PLAIN:    C_PELLET,
+    PELLET_KIND_DOUBLE:   C_PELLET_DOUBLE,
+    PELLET_KIND_VOLATILE: C_PELLET_VOLATILE,
+    PELLET_KIND_CHAIN:    C_PELLET_CHAIN,
+    PELLET_KIND_FREEZE:   C_PELLET_FREEZE,
+    PELLET_KIND_GAMBLE:   C_PELLET_GAMBLE,
+}
 
 CARD_MARGIN = 24
 CARD_GAP = 16
 CARD_PADDING = 12
 CARD_LINE_HEIGHT = 18
 CARD_NAME_LINE_HEIGHT = 24
+
+PAUSE_OPTION_W = 280
+PAUSE_OPTION_H = 56
+PAUSE_OPTION_GAP = 16
+PAUSE_OPTION_START_Y_OFFSET = 20  # relative to vertical center, where the option stack starts
 
 BUILD_SQUARE_SIZE = 36
 BUILD_SQUARE_GAP = 12
@@ -179,6 +196,8 @@ class Renderer:
             self._draw_doors_and_keys(run, layout, visible)
             self._draw_pressure_pads(run.pressure_pads, layout, visible)
             self._draw_goal(run.goal, layout, visible)
+            if run.secondary_goal is not None:
+                self._draw_goal(run.secondary_goal, layout, visible)  # Twin Goals -- same visual as the primary goal, either one clears the maze
             self._draw_player(run, layout)
             self._draw_popups(run, layout)
 
@@ -250,7 +269,8 @@ class Renderer:
                 self.surface.blit(icon, (ox + x * cell, oy + y * cell))
                 continue
             r = max(1, cell // 5)
-            pygame.draw.circle(self.surface, C_PELLET, (ox + x * cell + cell // 2, oy + y * cell + cell // 2), r)
+            colour = PELLET_KIND_COLOURS.get(pellet.kind, C_PELLET)
+            pygame.draw.circle(self.surface, colour, (ox + x * cell + cell // 2, oy + y * cell + cell // 2), r)
 
     def _draw_gold_pellets(self, gold_pellets, layout: Layout, visible: set | None = None) -> None:
         ox, oy = layout.maze_origin
@@ -469,6 +489,11 @@ class Renderer:
             (C_PLAYER, "circle", "Player"),
             (C_GOAL, "circle", "Goal"),
             (C_PELLET, "circle", "Time Pellet"),
+            (C_PELLET_DOUBLE, "circle", "Double Pellet"),
+            (C_PELLET_VOLATILE, "circle", "Volatile Pellet"),
+            (C_PELLET_CHAIN, "circle", "Chain Pellet"),
+            (C_PELLET_FREEZE, "circle", "Freeze Pellet"),
+            (C_PELLET_GAMBLE, "circle", "Gamble Pellet"),
             (C_GOLD, "circle", "Gold Pellet"),
             (C_HAZARD, "square", "Hazard"),
             (C_DOOR_LOCKED, "square", "Locked Door"),
@@ -576,3 +601,43 @@ class Renderer:
         cx, cy = self.surface.get_width() // 2, self.surface.get_height() // 2
         self.surface.blit(title_surf, title_surf.get_rect(center=(cx, cy - 16)))
         self.surface.blit(subtitle_surf, subtitle_surf.get_rect(center=(cx, cy + 20)))
+
+    # ── Pause menu ───────────────────────────────────────────────────────
+
+    def pause_option_rects(self) -> list[pygame.Rect]:
+        """Shared by draw_pause_overlay() and app.py's click handling -- same convention as Layout.cards/menu/renderer.py's option_rects()."""
+        cx = self.surface.get_width() // 2
+        top = self.surface.get_height() // 2 + PAUSE_OPTION_START_Y_OFFSET
+        return [
+            pygame.Rect(cx - PAUSE_OPTION_W // 2, top + i * (PAUSE_OPTION_H + PAUSE_OPTION_GAP), PAUSE_OPTION_W, PAUSE_OPTION_H)
+            for i in range(len(PAUSE_OPTIONS))
+        ]
+
+    def draw_pause_overlay(self, run: LabyrinthRun, menu: PauseMenu, mouse_pos: tuple[int, int], alpha: int = 255) -> None:
+        """
+        Draws the normal (frozen) maze scene underneath, then a black
+        overlay on top -- fully opaque (alpha=255) by default, so the maze
+        is completely hidden while paused, or partially see-through while
+        the Peek augment's fade-in is still in progress (see
+        app.py::_run_pause_loop()). One code path serves both cases rather
+        than a separate "don't draw the maze at all" branch.
+        """
+        self.draw(run)
+
+        overlay = pygame.Surface(self.surface.get_size(), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, alpha))
+        self.surface.blit(overlay, (0, 0))
+
+        title = self.font_huge.render("Paused", True, C_TEXT)
+        cx = self.surface.get_width() // 2
+        title_y = self.surface.get_height() // 2 + PAUSE_OPTION_START_Y_OFFSET - 50
+        self.surface.blit(title, title.get_rect(center=(cx, title_y)))
+
+        for i, ((_, label), rect) in enumerate(zip(PAUSE_OPTIONS, self.pause_option_rects())):
+            selected = i == menu.cursor
+            hovered = rect.collidepoint(mouse_pos)
+            colour = C_BUTTON_HOVER if (selected or hovered) else C_BUTTON
+            pygame.draw.rect(self.surface, colour, rect, border_radius=8)
+            pygame.draw.rect(self.surface, C_FLASH if selected else C_DIM, rect, width=2, border_radius=8)
+            text = self.font_button.render(label, True, C_TEXT)
+            self.surface.blit(text, text.get_rect(center=rect.center))

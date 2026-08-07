@@ -16,6 +16,9 @@ def test_build_starts_with_no_picks_and_unit_multipliers():
     assert build.hazard_resistance_multiplier == 1.0
     assert build.hazard_shield_charges_per_maze == 0
     assert build.gold_rush_bonus == 0
+    assert build.momentum_bonus_per_clear == 0.0
+    assert build.compound_interest_rate == 0.0
+    assert build.second_wind_charges == 0
 
 
 def test_acquiring_a_perk_records_the_pick_and_applies_its_effect():
@@ -57,6 +60,30 @@ def test_acquiring_a_gold_rush_effect_adds_bonus_additively():
     build.acquire(perk)
     build.acquire(perk)
     assert build.gold_rush_bonus == 2  # 1 + 1, additive not compounding
+
+
+def test_acquiring_a_momentum_effect_adds_the_per_clear_bonus_additively():
+    build = Build()
+    perk = Perk(id="x", name="X", description="d", effect_key="momentum", magnitude=0.1)
+    build.acquire(perk)
+    build.acquire(perk)
+    assert build.momentum_bonus_per_clear == pytest.approx(0.2)  # 0.1 + 0.1, additive not compounding
+
+
+def test_acquiring_a_compound_interest_effect_adds_the_rate_additively():
+    build = Build()
+    perk = Perk(id="x", name="X", description="d", effect_key="compound_interest", magnitude=0.01)
+    build.acquire(perk)
+    build.acquire(perk)
+    assert build.compound_interest_rate == pytest.approx(0.02)
+
+
+def test_acquiring_a_second_wind_effect_adds_charges_additively():
+    build = Build()
+    perk = Perk(id="x", name="X", description="d", effect_key="second_wind", magnitude=1)
+    build.acquire(perk)
+    build.acquire(perk)
+    assert build.second_wind_charges == 2
 
 
 def test_all_perks_have_distinct_ids_and_valid_effect_keys():
