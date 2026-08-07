@@ -15,6 +15,7 @@ from typing import Callable
 from maze_game.constants import (
     HAZARD_SHIELD_CHARGES_PER_LEVEL, GOLD_RUSH_BONUS_PER_LEVEL,
     MOMENTUM_PELLET_VALUE_BONUS_PER_LEVEL, COMPOUND_INTEREST_RATE_PER_LEVEL, SECOND_WIND_CHARGES_PER_LEVEL,
+    PEEK_FADE_SECONDS_PER_LEVEL,
 )
 
 
@@ -61,6 +62,12 @@ class Build:
         # fail the run" charges for this run, consumed in
         # LabyrinthRun.update()'s depletion check.
         self.second_wind_charges = 0
+        # Peek: how many seconds the pause menu's overlay takes to fade
+        # from transparent to opaque (0 = the no-perk default, instantly
+        # opaque -- see progression/run.py::peek_alpha()). A direct
+        # player-facing convenience, not something that changes the maze
+        # itself, hence a perk rather than an augment.
+        self.peek_fade_seconds = 0.0
 
     def acquire(self, perk: Perk) -> None:
         self.picks[perk.id] = self.picks.get(perk.id, 0) + 1
@@ -99,6 +106,10 @@ def _apply_second_wind(build: Build, magnitude: float) -> None:
     build.second_wind_charges += int(magnitude)
 
 
+def _apply_peek(build: Build, magnitude: float) -> None:
+    build.peek_fade_seconds += magnitude
+
+
 EFFECTS: dict[str, Callable[[Build, float], None]] = {
     "pellet_frequency": _apply_pellet_frequency,
     "pellet_value": _apply_pellet_value,
@@ -108,6 +119,7 @@ EFFECTS: dict[str, Callable[[Build, float], None]] = {
     "momentum": _apply_momentum,
     "compound_interest": _apply_compound_interest,
     "second_wind": _apply_second_wind,
+    "peek": _apply_peek,
 }
 
 ALL_PERKS: list[Perk] = [
@@ -135,6 +147,11 @@ ALL_PERKS: list[Perk] = [
         id="second_wind", name="Second Wind",
         description="Running out of time doesn't end the run -- refills a little time instead, once per run.",
         effect_key="second_wind", magnitude=SECOND_WIND_CHARGES_PER_LEVEL,
+    ),
+    Perk(
+        id="peek", name="Peek",
+        description="Pausing doesn't instantly black out the maze -- it fades to black over a few seconds instead, giving you time to study it.",
+        effect_key="peek", magnitude=PEEK_FADE_SECONDS_PER_LEVEL,
     ),
 ]
 

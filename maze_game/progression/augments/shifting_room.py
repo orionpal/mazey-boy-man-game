@@ -51,6 +51,7 @@ from maze_game.constants import (
     SHIFT_MANDATORY_COUNT_BASE, SHIFT_MANDATORY_COUNT_STEP,
     SHIFT_POCKET_MIN_SIZE, SHIFT_POCKET_MAX_SIZE,
     SHIFT_PLACEMENT_MAX_ATTEMPTS,
+    SHIFT_PELLET_FREQUENCY_MULTIPLIER, SHIFT_PELLET_VALUE_MULTIPLIER,
 )
 from maze_game.maze import bfs_reachable, is_stoppable_cell
 from maze_game.progression.augments import Augment, AugmentContext, nested_local_forbidden
@@ -73,6 +74,8 @@ class ShiftingRoomAugment(Augment):
         "Step on a pressure pad to permanently open a hidden wall elsewhere in the maze. "
         "Higher levels add more pads, and more of them mandatory to reach the goal."
     )
+    pellet_frequency_multiplier = SHIFT_PELLET_FREQUENCY_MULTIPLIER
+    pellet_value_multiplier = SHIFT_PELLET_VALUE_MULTIPLIER
 
     def apply(self, ctx: AugmentContext) -> None:
         pad_count = min(

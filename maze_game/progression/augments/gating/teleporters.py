@@ -44,6 +44,7 @@ from maze_game.constants import (
     TELEPORT_MANDATORY_COUNT_BASE, TELEPORT_MANDATORY_COUNT_STEP,
     TELEPORT_POCKET_MIN_SIZE, TELEPORT_POCKET_MAX_SIZE,
     TELEPORT_PLACEMENT_MAX_ATTEMPTS,
+    TELEPORT_PELLET_FREQUENCY_MULTIPLIER, TELEPORT_PELLET_VALUE_MULTIPLIER,
 )
 from maze_game.maze import bfs_reachable, is_stoppable_cell
 from maze_game.progression.augments import Augment, AugmentContext, nested_local_forbidden
@@ -65,6 +66,8 @@ class TeleportersAugment(Augment):
         "Step onto a pad to warp to its linked partner, and vice versa. "
         "Higher levels add more pairs, and more of them mandatory to reach the goal."
     )
+    pellet_frequency_multiplier = TELEPORT_PELLET_FREQUENCY_MULTIPLIER
+    pellet_value_multiplier = TELEPORT_PELLET_VALUE_MULTIPLIER
 
     def apply(self, ctx: AugmentContext) -> None:
         pair_count = min(

@@ -21,11 +21,10 @@ import pygame
 
 from maze_game.constants import FPS
 from maze_game.media import sound
-from maze_game.progression.run import LabyrinthRun, PauseMenu, PEEK_ID
+from maze_game.progression.run import LabyrinthRun, PauseMenu, peek_alpha
 from maze_game.progression.renderer import Renderer, Layout
 from maze_game.progression.meta import Base, MetaProgress, ALL_META_UPGRADES
 from maze_game.progression.meta.renderer import BaseRenderer
-from maze_game.progression.augments.runtime.peek import peek_alpha
 
 if TYPE_CHECKING:
     from pygame._sdl2.video import Window
@@ -76,11 +75,13 @@ async def _run_pause_loop(window: "Window | None", clock: pygame.time.Clock, run
     PauseMenu's own result strings, see run.py::PAUSE_OPTIONS.
 
     Opaque black the instant this loop starts, by default -- unless the
-    Peek augment is active, in which case the overlay starts transparent
-    and fades to opaque over PEEK_FADE_DURATION_SECONDS (see
-    augments/runtime/peek.py::peek_alpha()). `pause_started_at` is a fresh
-    local every call, so the fade window restarts on every ESC press
-    rather than carrying over from a previous pause.
+    player owns the Peek perk (build.peek_fade_seconds > 0), in which case
+    the overlay starts transparent and fades to opaque over that many
+    seconds (see run.py::peek_alpha(), which already collapses to
+    instantly-opaque when peek_fade_seconds is 0, so no separate "is Peek
+    active" branch is needed here). `pause_started_at` is a fresh local
+    every call, so the fade window restarts on every ESC press rather than
+    carrying over from a previous pause.
 
     Deliberately its own nested loop (mirrors main.py::run_menu()'s shape
     exactly) rather than folding pause handling into run_labyrinth()'s own
@@ -90,7 +91,6 @@ async def _run_pause_loop(window: "Window | None", clock: pygame.time.Clock, run
     threaded through the normal frame body.
     """
     menu = PauseMenu()
-    peek_active = run.augment_build.level_of(PEEK_ID) > 0
     pause_started_at = time.monotonic()
     while True:
         for event in pygame.event.get():
@@ -115,7 +115,7 @@ async def _run_pause_loop(window: "Window | None", clock: pygame.time.Clock, run
                         sound.play("menu_select")
                         return menu.selected
 
-        alpha = peek_alpha(time.monotonic() - pause_started_at) if peek_active else 255
+        alpha = peek_alpha(time.monotonic() - pause_started_at, run.build.peek_fade_seconds)
         renderer.draw_pause_overlay(run, menu, pygame.mouse.get_pos(), alpha=alpha)
         pygame.display.flip()
         clock.tick(FPS)

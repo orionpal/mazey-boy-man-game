@@ -96,7 +96,31 @@ def test_build_squares_has_one_slot_per_perk():
 def test_build_squares_are_within_the_left_sidebar():
     layout = Layout(cols=21, rows=21)
     for square in layout.build_squares:
-        assert layout.left.collidepoint(square.topleft)
+        # The whole square, not just its top-left corner -- a square whose
+        # origin is inside the sidebar but that extends past its right
+        # edge would still pass a topleft-only check while visibly
+        # clipping off-screen.
+        assert layout.left.contains(square)
+
+
+def test_build_squares_wrap_to_a_new_row_past_the_per_row_limit():
+    from maze_game.progression.renderer import BUILD_SQUARES_PER_ROW, BUILD_SQUARES_Y
+
+    layout = Layout(cols=21, rows=21)
+    assert len(ALL_PERKS) > BUILD_SQUARES_PER_ROW  # otherwise this test can't exercise wrapping at all
+    first_row = layout.build_squares[:BUILD_SQUARES_PER_ROW]
+    second_row = layout.build_squares[BUILD_SQUARES_PER_ROW:]
+    assert all(sq.y == BUILD_SQUARES_Y for sq in first_row)
+    assert all(sq.y > BUILD_SQUARES_Y for sq in second_row)  # wrapped to a lower row
+    assert len({sq.y for sq in second_row}) == 1  # every square in the second row shares one y
+
+
+def test_augments_section_shifts_down_to_clear_wrapped_perk_squares():
+    layout = Layout(cols=21, rows=21)
+    perk_squares_bottom = max(sq.bottom for sq in layout.build_squares)
+    assert layout.augments_title_y > perk_squares_bottom
+    assert layout.augments_subtitle_y > layout.augments_title_y
+    assert layout.augment_squares[0].y > layout.augments_subtitle_y
 
 
 # ── _wrap_text ────────────────────────────────────────────────────────────

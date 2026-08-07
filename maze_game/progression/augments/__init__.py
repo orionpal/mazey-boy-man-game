@@ -52,6 +52,19 @@ class Augment:
     name: str
     description: str
 
+    # Pellet-economy trade-off: every augment makes the maze itself either
+    # harder or easier in some way, so pellet spawns compensate in the
+    # opposite direction -- an augment that makes survival harder (fog of
+    # war's blind navigation, rotation's forced re-planning, a fetch-quest
+    # detour for a key) spawns more/richer pellets; one that makes the run
+    # easier (twin goals' second chance to end the maze) spawns fewer.
+    # Neutral (1.0) by default; concrete augments override what actually
+    # applies. Combined multiplicatively across every active augment (see
+    # AugmentBuild.pellet_frequency_multiplier/pellet_value_multiplier
+    # below), same stacking shape perk multipliers already use.
+    pellet_frequency_multiplier: float = 1.0
+    pellet_value_multiplier: float = 1.0
+
     def apply(self, ctx: "AugmentContext") -> None:
         raise NotImplementedError
 
@@ -116,6 +129,26 @@ class AugmentBuild:
     @property
     def active_ids(self) -> list[str]:
         return [aid for aid, count in self.picks.items() if count > 0]
+
+    @property
+    def pellet_frequency_multiplier(self) -> float:
+        """Every active augment's pellet_frequency_multiplier, combined multiplicatively -- see Augment's own docstring for why. Flat per augment *type*, not scaled by level (level already scales the augment's own difficulty; this is a separate, coarser trade-off)."""
+        result = 1.0
+        for augment_id in self.active_ids:
+            augment = AUGMENTS_BY_ID.get(augment_id)
+            if augment is not None:
+                result *= augment.pellet_frequency_multiplier
+        return result
+
+    @property
+    def pellet_value_multiplier(self) -> float:
+        """Same combination as pellet_frequency_multiplier above, for pellet value instead of count."""
+        result = 1.0
+        for augment_id in self.active_ids:
+            augment = AUGMENTS_BY_ID.get(augment_id)
+            if augment is not None:
+                result *= augment.pellet_value_multiplier
+        return result
 
 
 def run_pipeline(
@@ -387,7 +420,7 @@ AUGMENTS_BY_ID: dict[str, Augment] = {}
 # the file (that would be circular).
 from maze_game.progression.augments.gating import DoorsAugment, TeleportersAugment  # noqa: E402
 from maze_game.progression.augments.shifting_room import ShiftingRoomAugment  # noqa: E402
-from maze_game.progression.augments.runtime import FogOfWarAugment, RotatingMazeAugment, PeekAugment  # noqa: E402
+from maze_game.progression.augments.runtime import FogOfWarAugment, RotatingMazeAugment  # noqa: E402
 from maze_game.progression.augments.twin_goals import TwinGoalsAugment  # noqa: E402
 
 # Order matters for the first three: DoorsAugment must run after
@@ -400,7 +433,7 @@ from maze_game.progression.augments.twin_goals import TwinGoalsAugment  # noqa: 
 # generation at all.
 for _augment in (
     TeleportersAugment(), DoorsAugment(), ShiftingRoomAugment(),
-    RotatingMazeAugment(), FogOfWarAugment(), PeekAugment(), TwinGoalsAugment(),
+    RotatingMazeAugment(), FogOfWarAugment(), TwinGoalsAugment(),
 ):
     ALL_AUGMENTS.append(_augment)
     AUGMENTS_BY_ID[_augment.id] = _augment

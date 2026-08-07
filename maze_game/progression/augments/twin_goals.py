@@ -26,6 +26,7 @@ goal risks making a mandatory gate skippable.
 
 from __future__ import annotations
 
+from maze_game.constants import TWIN_GOAL_PELLET_FREQUENCY_MULTIPLIER, TWIN_GOAL_PELLET_VALUE_MULTIPLIER
 from maze_game.progression.augments import Augment, AugmentContext
 
 
@@ -36,6 +37,8 @@ class TwinGoalsAugment(Augment):
         "A second goal appears somewhere else in the maze -- reach either one to clear it. "
         "One of the two hides a small bonus pellet cluster."
     )
+    pellet_frequency_multiplier = TWIN_GOAL_PELLET_FREQUENCY_MULTIPLIER
+    pellet_value_multiplier = TWIN_GOAL_PELLET_VALUE_MULTIPLIER
 
     def apply(self, ctx: AugmentContext) -> None:
         ctx.extra["twin_goals_active"] = True

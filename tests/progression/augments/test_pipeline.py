@@ -47,6 +47,57 @@ def test_acquiring_an_augment_increments_its_level():
     assert build.active_ids == ["teleporters"]
 
 
+# ── AugmentBuild pellet-economy multipliers ────────────────────────────────
+
+
+def test_pellet_multipliers_are_neutral_with_no_augments_active():
+    build = AugmentBuild()
+    assert build.pellet_frequency_multiplier == pytest.approx(1.0)
+    assert build.pellet_value_multiplier == pytest.approx(1.0)
+
+
+def test_pellet_multipliers_read_the_active_augments_own_values(monkeypatch):
+    a = _StubAugment("a")
+    a.pellet_frequency_multiplier = 1.5
+    a.pellet_value_multiplier = 1.2
+    monkeypatch.setattr(augments_module, "AUGMENTS_BY_ID", {"a": a})
+
+    build = AugmentBuild()
+    build.acquire(a)
+    assert build.pellet_frequency_multiplier == pytest.approx(1.5)
+    assert build.pellet_value_multiplier == pytest.approx(1.2)
+
+
+def test_pellet_multipliers_combine_multiplicatively_across_active_augments(monkeypatch):
+    a = _StubAugment("a")
+    a.pellet_frequency_multiplier = 1.5
+    a.pellet_value_multiplier = 1.2
+    b = _StubAugment("b")
+    b.pellet_frequency_multiplier = 0.7
+    b.pellet_value_multiplier = 1.1
+    monkeypatch.setattr(augments_module, "AUGMENTS_BY_ID", {"a": a, "b": b})
+
+    build = AugmentBuild()
+    build.acquire(a)
+    build.acquire(b)
+    assert build.pellet_frequency_multiplier == pytest.approx(1.5 * 0.7)
+    assert build.pellet_value_multiplier == pytest.approx(1.2 * 1.1)
+
+
+def test_pellet_multipliers_are_unaffected_by_augment_level(monkeypatch):
+    """Flat per augment *type*, not scaled by pick count -- level already scales the augment's own mechanic separately."""
+    a = _StubAugment("a")
+    a.pellet_frequency_multiplier = 1.5
+    monkeypatch.setattr(augments_module, "AUGMENTS_BY_ID", {"a": a})
+
+    build = AugmentBuild()
+    build.acquire(a)
+    build.acquire(a)
+    build.acquire(a)
+    assert build.level_of("a") == 3
+    assert build.pellet_frequency_multiplier == pytest.approx(1.5)  # not 1.5**3
+
+
 # ── run_pipeline ──────────────────────────────────────────────────────────
 
 
@@ -250,3 +301,28 @@ def test_offer_with_explicit_rng_is_deterministic(monkeypatch):
     a = offer_augment_cards(build, rng=random.Random(77))
     b = offer_augment_cards(build, rng=random.Random(77))
     assert [c.id for c in a] == [c.id for c in b]
+
+
+# ── Real augments' pellet-economy declarations ────────────────────────────
+
+
+def test_every_real_augment_declares_a_pellet_economy_trade_off():
+    """Sanity check against typos/copy-paste mistakes wiring each augment's constant -- every registered augment should have *some* opinion here, even if neutral (1.0), not silently fall through to the base class default by accident."""
+    from maze_game.progression.augments import ALL_AUGMENTS
+
+    for augment in ALL_AUGMENTS:
+        assert isinstance(augment.pellet_frequency_multiplier, float)
+        assert isinstance(augment.pellet_value_multiplier, float)
+        assert augment.pellet_frequency_multiplier > 0
+        assert augment.pellet_value_multiplier > 0
+
+
+def test_fog_of_war_and_twin_goals_pull_in_opposite_directions():
+    """The two augments the trade-off design was explicitly motivated by: fog of war (much harder -- boosts pellets) and twin goals (a net advantage -- reduces frequency)."""
+    from maze_game.progression.augments import AUGMENTS_BY_ID
+
+    fog = AUGMENTS_BY_ID["fog_of_war"]
+    twin_goals = AUGMENTS_BY_ID["twin_goals"]
+    assert fog.pellet_frequency_multiplier > 1.0
+    assert fog.pellet_value_multiplier > 1.0
+    assert twin_goals.pellet_frequency_multiplier < 1.0

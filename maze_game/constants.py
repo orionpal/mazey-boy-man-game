@@ -184,6 +184,7 @@ MOMENTUM_PELLET_VALUE_BONUS_PER_LEVEL = 0.1   # Momentum: permanent pellet-value
 COMPOUND_INTEREST_RATE_PER_LEVEL      = 0.01  # Compound Interest: seconds of time per held gold per second, per pick
 SECOND_WIND_CHARGES_PER_LEVEL         = 1     # Second Wind: extra "don't actually fail" charges this run, per pick
 SECOND_WIND_REFILL_SECONDS            = 5.0   # time refilled to when a Second Wind charge is spent
+PEEK_FADE_SECONDS_PER_LEVEL           = 4.0   # Peek: pause overlay fade-in duration, per pick (0 = instantly opaque, the no-perk default)
 
 # Feedback popups: a brief floating "+Xs"/"-Xs" label wherever a pellet,
 # hazard, or maze-clear speed bonus changes the time resource, so the effect
@@ -237,6 +238,12 @@ TELEPORT_MANDATORY_COUNT_STEP   = 1   # extra mandatory pairs per level, capped 
 TELEPORT_POCKET_MIN_SIZE        = 3   # cells sealed off behind one mandatory pair
 TELEPORT_POCKET_MAX_SIZE        = 8
 TELEPORT_PLACEMENT_MAX_ATTEMPTS = 10  # retries per gated pocket before giving up on it (graceful degradation, never a crash/hang)
+# Pellet-economy trade-off (see augments/__init__.py's Augment docstring):
+# a mandatory teleporter gate plus decorative shortcuts is a moderate
+# difficulty increase (find the hidden linked pair), so pellets compensate
+# a little.
+TELEPORT_PELLET_FREQUENCY_MULTIPLIER = 1.15
+TELEPORT_PELLET_VALUE_MULTIPLIER     = 1.1
 
 # Doors & Keys (progression/augments/doors.py): the second maze augment. A
 # locked door blocks progress until its matching key -- placed somewhere
@@ -253,6 +260,11 @@ DOOR_MANDATORY_COUNT_STEP   = 1
 DOOR_FAR_SIDE_MIN_SIZE      = 3   # cells gated behind one mandatory door
 DOOR_FAR_SIDE_MAX_SIZE      = 10
 DOOR_PLACEMENT_MAX_ATTEMPTS = 10  # retries per gated region before giving up on it (graceful degradation, never a crash/hang)
+# Pellet-economy trade-off: a mandatory door is a fetch-quest detour (find
+# the key, backtrack to the door) -- extra distance/time pressure beyond
+# what a teleporter gate costs, so a slightly stronger compensation.
+DOOR_PELLET_FREQUENCY_MULTIPLIER = 1.2
+DOOR_PELLET_VALUE_MULTIPLIER     = 1.15
 
 # Shifting Room (progression/augments/shifting_room.py): the third gating
 # augment. A pocket is sealed *completely* (a real wall, not a behavioral
@@ -271,6 +283,11 @@ SHIFT_MANDATORY_COUNT_STEP  = 1
 SHIFT_POCKET_MIN_SIZE       = 3   # cells sealed off behind one mandatory pad
 SHIFT_POCKET_MAX_SIZE       = 10
 SHIFT_PLACEMENT_MAX_ATTEMPTS = 10  # retries per gated pocket before giving up on it (graceful degradation, never a crash/hang)
+# Pellet-economy trade-off: a pocket sealed behind a hidden pressure pad is
+# comparable in difficulty to a mandatory door/teleporter gate (find the
+# trigger, no visible indication where it is until stepped on).
+SHIFT_PELLET_FREQUENCY_MULTIPLIER = 1.15
+SHIFT_PELLET_VALUE_MULTIPLIER     = 1.1
 
 # Rotating maze (progression/augments/runtime/rotation.py): the whole grid
 # rotates 90 degrees clockwise on a fixed timer, with a warning arrow
@@ -286,12 +303,19 @@ ROTATE_INTERVAL_BASE_SECONDS = 2.0
 ROTATE_INTERVAL_STEP_SECONDS = -0.3   # faster per level above 1
 ROTATE_INTERVAL_MIN_SECONDS  = 1.0
 ROTATE_WARNING_LEAD_SECONDS  = 0.75   # the warning arrow shows for this long before each rotation
+# Pellet-economy trade-off: periodic forced re-planning (everything you'd
+# memorized gets rotated out from under you) is an ongoing difficulty tax,
+# not a one-time gate -- compensated a bit more than the gating augments
+# above.
+ROTATE_PELLET_FREQUENCY_MULTIPLIER = 1.25
+ROTATE_PELLET_VALUE_MULTIPLIER     = 1.2
 
-# Peek (progression/augments/runtime/peek.py): makes the pause menu's
-# overlay start transparent (you can see -- and study -- the maze) and
-# fade to fully opaque over this many seconds, instead of snapping opaque
-# the instant you pause. Restarts fresh every time the pause menu opens.
-PEEK_FADE_DURATION_SECONDS = 8.0
+# Fog of War (progression/augments/runtime/fog.py): only line-of-sight is
+# visible, though discovered cells stay revealed once seen. By far the
+# biggest difficulty increase of any augment here -- blind navigation --
+# so it gets the strongest pellet compensation.
+FOG_PELLET_FREQUENCY_MULTIPLIER = 1.5
+FOG_PELLET_VALUE_MULTIPLIER     = 1.5
 
 # Twin Goals (progression/augments/twin_goals.py): a second, independently
 # reachable goal cell -- reaching either one clears the maze. Candidates
@@ -306,6 +330,13 @@ TWIN_GOAL_MIN_GOAL_DISTANCE_FRACTION  = 0.3
 # picked (see progression/entities/hazards.py::spawn_pellet_cluster_near()).
 TWIN_GOAL_CLUSTER_SIZE   = 3
 TWIN_GOAL_CLUSTER_RADIUS = 3
+# Pellet-economy trade-off: two independent chances to end the maze is a
+# genuine advantage (net easier, not harder, despite adding content) --
+# scattered pellet frequency is reduced to compensate. Value is left
+# untouched: the bonus cluster near one of the two goals is already this
+# augment's own separate reward, not something to also boost here.
+TWIN_GOAL_PELLET_FREQUENCY_MULTIPLIER = 0.7
+TWIN_GOAL_PELLET_VALUE_MULTIPLIER     = 1.0
 
 # ── Colours  (R, G, B) ────────────────────────────────────────────────────
 # Identity colours (player/goal/pellet/gold/hazard/door/speed-bonus) are

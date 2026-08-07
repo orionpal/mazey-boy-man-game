@@ -30,6 +30,7 @@ runtime timer/state-machine plumbing.
 
 from __future__ import annotations
 
+from maze_game.constants import ROTATE_PELLET_FREQUENCY_MULTIPLIER, ROTATE_PELLET_VALUE_MULTIPLIER
 from maze_game.progression.augments import Augment, AugmentContext
 
 
@@ -40,6 +41,8 @@ class RotatingMazeAugment(Augment):
         "Every couple of seconds, the whole maze spins 90 degrees clockwise -- watch for the warning arrow. "
         "Higher levels rotate faster."
     )
+    pellet_frequency_multiplier = ROTATE_PELLET_FREQUENCY_MULTIPLIER
+    pellet_value_multiplier = ROTATE_PELLET_VALUE_MULTIPLIER
 
     def apply(self, ctx: AugmentContext) -> None:
         pass  # runtime-only effect -- see this module's docstring

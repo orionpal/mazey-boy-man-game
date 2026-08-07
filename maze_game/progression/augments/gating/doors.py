@@ -71,6 +71,7 @@ from maze_game.constants import (
     DOOR_PAIR_COUNT_BASE, DOOR_PAIR_COUNT_STEP, DOOR_PAIR_COUNT_MAX,
     DOOR_MANDATORY_COUNT_BASE, DOOR_MANDATORY_COUNT_STEP,
     DOOR_FAR_SIDE_MIN_SIZE, DOOR_FAR_SIDE_MAX_SIZE, DOOR_PLACEMENT_MAX_ATTEMPTS,
+    DOOR_PELLET_FREQUENCY_MULTIPLIER, DOOR_PELLET_VALUE_MULTIPLIER,
     C_DOOR_KEY_PAIRS,
 )
 from maze_game.maze import is_stoppable_cell
@@ -115,6 +116,8 @@ class DoorsAugment(Augment):
         "A locked door blocks the way until you find its key. "
         "Higher levels add more door/key pairs, and more of them mandatory to reach the goal."
     )
+    pellet_frequency_multiplier = DOOR_PELLET_FREQUENCY_MULTIPLIER
+    pellet_value_multiplier = DOOR_PELLET_VALUE_MULTIPLIER
 
     def apply(self, ctx: AugmentContext) -> None:
         pair_count = min(

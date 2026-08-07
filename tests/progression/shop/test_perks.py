@@ -19,6 +19,7 @@ def test_build_starts_with_no_picks_and_unit_multipliers():
     assert build.momentum_bonus_per_clear == 0.0
     assert build.compound_interest_rate == 0.0
     assert build.second_wind_charges == 0
+    assert build.peek_fade_seconds == 0.0
 
 
 def test_acquiring_a_perk_records_the_pick_and_applies_its_effect():
@@ -76,6 +77,14 @@ def test_acquiring_a_compound_interest_effect_adds_the_rate_additively():
     build.acquire(perk)
     build.acquire(perk)
     assert build.compound_interest_rate == pytest.approx(0.02)
+
+
+def test_acquiring_a_peek_effect_adds_fade_seconds_additively():
+    build = Build()
+    perk = Perk(id="x", name="X", description="d", effect_key="peek", magnitude=4.0)
+    build.acquire(perk)
+    build.acquire(perk)
+    assert build.peek_fade_seconds == pytest.approx(8.0)  # 4.0 + 4.0, additive not compounding
 
 
 def test_acquiring_a_second_wind_effect_adds_charges_additively():

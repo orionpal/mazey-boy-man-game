@@ -31,6 +31,7 @@ clearly ending at a wall.
 
 from __future__ import annotations
 
+from maze_game.constants import FOG_PELLET_FREQUENCY_MULTIPLIER, FOG_PELLET_VALUE_MULTIPLIER
 from maze_game.progression.augments import Augment, AugmentContext
 
 _DIRECTIONS = ((0, -1), (0, 1), (-1, 0), (1, 0))
@@ -43,6 +44,8 @@ class FogOfWarAugment(Augment):
         "You can only see what's within line of sight -- but once you've discovered a part of the maze, "
         "it stays revealed."
     )
+    pellet_frequency_multiplier = FOG_PELLET_FREQUENCY_MULTIPLIER
+    pellet_value_multiplier = FOG_PELLET_VALUE_MULTIPLIER
 
     def apply(self, ctx: AugmentContext) -> None:
         pass  # runtime-only effect -- see this module's docstring

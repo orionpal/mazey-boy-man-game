@@ -19,7 +19,7 @@ from maze_game.constants import (
 )
 from maze_game.progression.run import (
     dimensions_for_maze, is_milestone_maze, TimeResource, LabyrinthRun,
-    TeleportAnimation, RotationTimer, PauseMenu, PAUSE_OPTIONS,
+    TeleportAnimation, RotationTimer, PauseMenu, PAUSE_OPTIONS, peek_alpha,
 )
 from maze_game.progression.entities.hazards import Pellet, GoldPellet, Hazard, load_gold_total
 from maze_game.progression.shop.perks import ALL_PERKS, Perk
@@ -1147,6 +1147,21 @@ def test_begin_maze_seeds_discovered_cells_with_the_starting_view():
     assert run.discovered_cells  # non-empty -- START_POS always sees at least itself
 
 
+def test_fog_of_war_boosts_pellet_frequency_and_value_via_begin_maze():
+    """Integration check that _begin_maze() actually applies AugmentBuild.pellet_frequency_multiplier/pellet_value_multiplier to spawn_pellets(), not just that the augment declares the right numbers in isolation."""
+    with_fog = _fog_run(seed=9)
+    plain = LabyrinthRun(seed=9)
+    plain.maze_index = with_fog.maze_index = 21  # bigger maze -- more pellets to compare, less rounding noise
+    with_fog._begin_maze()
+    plain._begin_maze()
+    assert len(with_fog.pellets) >= len(plain.pellets)
+    # Same rng state entering spawn_pellets() (fog's apply() is a no-op, no
+    # extra rng draws) -- kind selection is therefore identical between the
+    # two runs, so summed value differing only reflects the value
+    # multiplier, not a different kind mix.
+    assert sum(p.value for p in with_fog.pellets) > sum(p.value for p in plain.pellets)
+
+
 def test_discovered_cells_stays_empty_when_the_augment_is_inactive():
     run = LabyrinthRun(seed=1)
     run._begin_maze()
@@ -1538,3 +1553,40 @@ def test_pause_menu_selected_matches_the_option_at_the_cursor():
     for i in range(len(PAUSE_OPTIONS)):
         menu.cursor = i
         assert menu.selected == PAUSE_OPTIONS[i][0]
+
+
+# ── peek_alpha (Peek perk) ────────────────────────────────────────────────
+
+
+def test_peek_alpha_is_instantly_opaque_with_zero_fade_seconds():
+    """fade_seconds=0 is the no-perk default -- matches the original pre-Peek pause behaviour with no separate "is Peek active" branch needed anywhere."""
+    assert peek_alpha(0.0, 0.0) == 255
+    assert peek_alpha(5.0, 0.0) == 255
+
+
+def test_peek_alpha_starts_fully_transparent():
+    assert peek_alpha(0.0, 8.0) == 0
+
+
+def test_peek_alpha_is_fully_opaque_at_the_fade_duration():
+    assert peek_alpha(8.0, 8.0) == 255
+
+
+def test_peek_alpha_clamps_at_255_beyond_the_fade_duration():
+    assert peek_alpha(108.0, 8.0) == 255
+
+
+def test_peek_alpha_never_goes_negative_for_negative_elapsed():
+    assert peek_alpha(-1.0, 8.0) == 0
+
+
+def test_peek_alpha_increases_monotonically():
+    duration = 8.0
+    steps = 20
+    values = [peek_alpha(duration * i / steps, duration) for i in range(steps + 1)]
+    assert values == sorted(values)
+
+
+def test_peek_alpha_scales_with_fade_seconds():
+    """A longer fade_seconds (more Peek perk levels) means the same elapsed time is still-more transparent."""
+    assert peek_alpha(4.0, 8.0) > peek_alpha(4.0, 16.0)

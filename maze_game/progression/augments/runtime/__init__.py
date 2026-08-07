@@ -15,6 +15,5 @@ registration step doesn't need to know about this split.
 
 from maze_game.progression.augments.runtime.fog import FogOfWarAugment
 from maze_game.progression.augments.runtime.rotation import RotatingMazeAugment
-from maze_game.progression.augments.runtime.peek import PeekAugment
 
-__all__ = ["FogOfWarAugment", "RotatingMazeAugment", "PeekAugment"]
+__all__ = ["FogOfWarAugment", "RotatingMazeAugment"]

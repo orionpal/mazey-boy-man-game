@@ -60,7 +60,6 @@ from maze_game.progression.meta import MetaProgress, DEFAULT_META_UPGRADES_PATH
 
 ROTATING_MAZE_ID = "rotating_maze"
 FOG_OF_WAR_ID = "fog_of_war"
-PEEK_ID = "peek"  # checked directly by app.py::_run_pause_loop(), not read anywhere in this module
 
 START_POS: tuple[int, int] = (1, 1)
 
@@ -597,8 +596,10 @@ class LabyrinthRun:
         if self.secondary_goal is not None:
             exclude = exclude | {self.secondary_goal}
         self.pellets = spawn_pellets(
-            self.grid, exclude, self.build.pellet_frequency_multiplier,
-            value_multiplier=pellet_value_ramp(self.maze_index), rng=self.rng,
+            self.grid, exclude,
+            self.build.pellet_frequency_multiplier * self.augment_build.pellet_frequency_multiplier,
+            value_multiplier=pellet_value_ramp(self.maze_index) * self.augment_build.pellet_value_multiplier,
+            rng=self.rng,
         )
         exclude = exclude | {p.pos for p in self.pellets}
         if self.secondary_goal is not None:
@@ -785,3 +786,24 @@ class PauseMenu:
     @property
     def selected(self) -> str:
         return PAUSE_OPTIONS[self.cursor][0]
+
+
+def peek_alpha(elapsed: float, fade_seconds: float) -> int:
+    """
+    Pause overlay alpha (0 = fully transparent, 255 = fully opaque)
+    `elapsed` seconds into a pause, ramping linearly over `fade_seconds`
+    and clamped at the ends. `fade_seconds` is the Peek perk's
+    `build.peek_fade_seconds` (see shop/perks.py) -- 0 (the no-perk
+    default) collapses this to instantly opaque, matching the original
+    pre-Peek pause behaviour with no separate "is Peek active" branch
+    needed anywhere that calls this.
+
+    A pure function of elapsed time, not tied to any persistent
+    LabyrinthRun state -- app.py::_run_pause_loop() computes `elapsed`
+    from when *that specific pause* began, so the fade always restarts
+    fresh on the next ESC press rather than carrying over.
+    """
+    if fade_seconds <= 0:
+        return 255
+    progress = max(0.0, min(1.0, elapsed / fade_seconds))
+    return round(255 * progress)

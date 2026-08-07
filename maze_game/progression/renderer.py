@@ -68,9 +68,14 @@ PAUSE_OPTION_START_Y_OFFSET = 20  # relative to vertical center, where the optio
 
 BUILD_SQUARE_SIZE = 36
 BUILD_SQUARE_GAP = 12
-AUGMENTS_TITLE_Y = 180
-AUGMENTS_SUBTITLE_Y = 224
-AUGMENT_SQUARES_Y = 274
+BUILD_SQUARES_Y = 110
+# How many squares fit across the sidebar before wrapping to a new row --
+# SIDEBAR_W(230) minus a 16px left margin leaves 214px; 5*36 + 4*12 = 228
+# doesn't fit, 4*36 + 3*12 = 180 does. Perks show their entire (still-
+# growing) static catalog every run (see Layout.build_squares' comment),
+# so this needs to keep working as more perks are added, not just fit
+# today's count -- hence wrapping instead of a fixed single row.
+BUILD_SQUARES_PER_ROW = 4
 TOOLTIP_PADDING = 8
 TOOLTIP_MAX_WIDTH = 260
 
@@ -145,17 +150,34 @@ class Layout:
         ]
 
         bx = self.left.x + 16
+        row_step = BUILD_SQUARE_SIZE + BUILD_SQUARE_GAP
         self.build_squares = [
-            pygame.Rect(bx + i * (BUILD_SQUARE_SIZE + BUILD_SQUARE_GAP), 110, BUILD_SQUARE_SIZE, BUILD_SQUARE_SIZE)
+            pygame.Rect(
+                bx + (i % BUILD_SQUARES_PER_ROW) * row_step,
+                BUILD_SQUARES_Y + (i // BUILD_SQUARES_PER_ROW) * row_step,
+                BUILD_SQUARE_SIZE, BUILD_SQUARE_SIZE,
+            )
             for i in range(len(ALL_PERKS))
         ]
+        # Everything below the perk squares shifts down to fit however many
+        # rows they wrapped into (see BUILD_SQUARES_PER_ROW) -- these were
+        # fixed pixel constants before perks could wrap to a second row;
+        # now derived from build_squares' own actual bottom edge, plus the
+        # same gaps the original fixed values used (34 / 44 / 50px) when
+        # everything still fit on one row.
+        build_rows = -(-len(ALL_PERKS) // BUILD_SQUARES_PER_ROW)  # ceil division
+        build_squares_bottom = BUILD_SQUARES_Y + (build_rows - 1) * row_step + BUILD_SQUARE_SIZE
+        self.augments_title_y = build_squares_bottom + 34
+        self.augments_subtitle_y = self.augments_title_y + 44
+        augment_squares_y = self.augments_subtitle_y + 50
+
         # Sized to MAX_ACTIVE_AUGMENTS fixed slots, not the full (still-growing)
         # augment catalog -- unlike perks, which show their entire static
         # catalog filled-or-not, only up to MAX_ACTIVE_AUGMENTS can ever be
         # active at once, so that's the right slot count regardless of how
         # many augments eventually exist.
         self.augment_squares = [
-            pygame.Rect(bx + i * (BUILD_SQUARE_SIZE + BUILD_SQUARE_GAP), AUGMENT_SQUARES_Y, BUILD_SQUARE_SIZE, BUILD_SQUARE_SIZE)
+            pygame.Rect(bx + i * row_step, augment_squares_y, BUILD_SQUARE_SIZE, BUILD_SQUARE_SIZE)
             for i in range(MAX_ACTIVE_AUGMENTS)
         ]
 
@@ -449,9 +471,9 @@ class Renderer:
 
     def _draw_augment_sidebar(self, augment_build, layout: Layout, mouse_pos) -> None:
         title = self.font_big.render("AUGMENTS", True, C_TEXT)
-        self.surface.blit(title, (layout.left.x + 16, AUGMENTS_TITLE_Y))
+        self.surface.blit(title, (layout.left.x + 16, layout.augments_title_y))
         section = self.font_small.render("Maze modifiers, chosen every 10 mazes", True, C_DIM)
-        self.surface.blit(section, (layout.left.x + 16, AUGMENTS_SUBTITLE_Y))
+        self.surface.blit(section, (layout.left.x + 16, layout.augments_subtitle_y))
 
         active_ids = augment_build.active_ids
         hovered = None
