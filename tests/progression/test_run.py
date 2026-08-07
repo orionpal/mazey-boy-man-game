@@ -286,6 +286,25 @@ def test_compound_interest_adds_nothing_without_the_perk():
     assert run.time.amount == pytest.approx(before - 1.0, abs=0.05)  # only the normal tick-down, no trickle
 
 
+def test_compound_interest_does_not_prevent_failure_when_time_actually_runs_out():
+    """
+    Regression test: Compound Interest used to be applied *before* the
+    depletion check, so a frame that ticked exactly to (or below) 0 got
+    immediately topped back up by the trickle before `depleted` was ever
+    checked -- as long as gold > 0, self.time.add() there is unconditional,
+    so the run became literally unloseable. Reported as a real bug found
+    in actual play, not a hypothetical.
+    """
+    run = LabyrinthRun()
+    compound_interest = next(p for p in ALL_PERKS if p.effect_key == "compound_interest")
+    run.build.acquire(compound_interest)
+    run.gold = 10_000  # a lot of gold -- if the bug were still present, the trickle here would be substantial
+    run.time.amount = 0.0
+    run.update()
+    assert run.failed is True
+    assert "fail" in run.events
+
+
 def test_second_wind_refills_instead_of_failing_on_depletion():
     run = LabyrinthRun()
     second_wind = next(p for p in ALL_PERKS if p.effect_key == "second_wind")

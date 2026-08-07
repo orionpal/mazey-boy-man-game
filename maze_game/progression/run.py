@@ -341,13 +341,6 @@ class LabyrinthRun:
         if self.on_break or self.failed or self.completed_run or self.finished:
             return
         elapsed = self.time.tick()
-        if self.build.compound_interest_rate > 0:
-            # Continuous, not event-driven like every other pellet/perk
-            # effect -- gold can change at arbitrary times (a gold pellet
-            # pickup), so this has to be evaluated every frame rather than
-            # cached. No popup: at 60fps that would be constant spam: the
-            # live HUD timer readout is the only feedback for this one.
-            self.time.add(self.gold * self.build.compound_interest_rate * elapsed)
         frozen = self.freeze_active
         rotation_level = self.augment_build.level_of(ROTATING_MAZE_ID)
         if rotation_level > 0 and not frozen:
@@ -373,6 +366,23 @@ class LabyrinthRun:
             self.failed = True
             self.events.append("fail")
             return
+        if self.build.compound_interest_rate > 0:
+            # Continuous, not event-driven like every other pellet/perk
+            # effect -- gold can change at arbitrary times (a gold pellet
+            # pickup), so this has to be evaluated every frame rather than
+            # cached. No popup: at 60fps that would be constant spam: the
+            # live HUD timer readout is the only feedback for this one.
+            #
+            # Deliberately applied *after* the depletion check above, not
+            # before: applying it first meant a frame that ticked exactly
+            # to 0 got immediately topped back up before depleted was ever
+            # checked, since self.time.add() runs unconditionally whenever
+            # gold > 0. That made the run literally unloseable while this
+            # perk was owned and any gold was held -- confirmed as a real,
+            # reported bug, not a hypothetical. Checking depletion first
+            # means Compound Interest can still sustain you *before* you'd
+            # otherwise run out, but can't un-fail the exact frame you do.
+            self.time.add(self.gold * self.build.compound_interest_rate * elapsed)
         if self._maze_cleared():
             if time.monotonic() - self._maze_started_at <= self._par_seconds:
                 self.time.add(SPEED_BONUS_TIME)
