@@ -15,7 +15,7 @@ from maze_game.constants import (
     LABYRINTH_GROUP_SIZE, LABYRINTH_TOTAL_MAZES, LABYRINTH_START_TIME,
     HAZARD_TIME_PENALTY, SPEED_BONUS_TIME, POPUP_DURATION_SECONDS,
     ROTATE_INTERVAL_BASE_SECONDS, SECOND_WIND_REFILL_SECONDS,
-    TWIN_GOAL_CLUSTER_SIZE,
+    TWIN_GOAL_CLUSTER_SIZE, COMPOUND_INTEREST_MAX_RATE,
 )
 from maze_game.progression.run import (
     dimensions_for_maze, is_milestone_maze, TimeResource, LabyrinthRun,
@@ -267,7 +267,7 @@ def test_compound_interest_adds_time_proportional_to_gold_and_elapsed_time():
     run = LabyrinthRun()
     compound_interest = next(p for p in ALL_PERKS if p.effect_key == "compound_interest")
     run.build.acquire(compound_interest)
-    run.gold = 100
+    run.gold = 5  # gold * rate (0.05) stays comfortably below COMPOUND_INTEREST_MAX_RATE (0.1) -- proportional, not the capped case
     run.time._last_tick -= 1.0  # simulate exactly 1s having passed
     before = run.time.amount
     run.update()
@@ -275,6 +275,44 @@ def test_compound_interest_adds_time_proportional_to_gold_and_elapsed_time():
     # compound interest is on top of that, not instead of it.
     expected_gain = run.gold * run.build.compound_interest_rate * 1.0
     assert run.time.amount == pytest.approx(before - 1.0 + expected_gain, abs=0.05)
+
+
+def test_compound_interest_rate_is_capped_regardless_of_gold():
+    """
+    Regression test: gold * compound_interest_rate used to be unbounded --
+    enough gold (or enough stacked levels) let it exceed 1.0, meaning the
+    trickle outpaced the time resource's own drain and the timer counted
+    *up* instead of down, forever. Reported from actual play.
+    """
+    run = LabyrinthRun()
+    compound_interest = next(p for p in ALL_PERKS if p.effect_key == "compound_interest")
+    for _ in range(10):  # stack it hard
+        run.build.acquire(compound_interest)
+    run.gold = 100_000  # an absurd amount of gold
+    run.time._last_tick -= 1.0
+    before = run.time.amount
+    run.update()
+    # Even with this much gold and stacking, the gain this frame can't
+    # exceed the cap -- and must still net *below* the tick-down, so the
+    # timer keeps counting down, never up or flat.
+    assert run.time.amount < before
+    assert run.time.amount == pytest.approx(before - 1.0 + COMPOUND_INTEREST_MAX_RATE, abs=0.05)
+
+
+def test_compound_interest_time_never_nets_positive_over_many_frames():
+    """The actual bug this fix addresses: simulate several frames with an absurd stacked build and confirm the timer trends strictly downward, never flat or increasing."""
+    run = LabyrinthRun()
+    compound_interest = next(p for p in ALL_PERKS if p.effect_key == "compound_interest")
+    for _ in range(20):
+        run.build.acquire(compound_interest)
+    run.gold = 1_000_000
+    readings = [run.time.amount]
+    for _ in range(20):
+        run.time._last_tick -= 1.0  # simulate 1s passing each "frame"
+        run.update()
+        readings.append(run.time.amount)
+    assert readings == sorted(readings, reverse=True)  # strictly non-increasing
+    assert readings[-1] < readings[0]  # and genuinely decreased overall, not just flat
 
 
 def test_compound_interest_adds_nothing_without_the_perk():
@@ -487,6 +525,12 @@ def test_restart_resets_time_and_build():
         run.player = run.goal
         run.update()
     run.choose_shop_card(0)
+    # This test is about restart() resetting state after a failure, not
+    # about any specific perk -- whichever perk offer_shop_cards() (unseeded
+    # here) happened to offer at index 0 shouldn't change that. Without
+    # this, an occasional Second Wind pick would correctly (by design; see
+    # its own dedicated tests) prevent the failure below, flaking this test.
+    run.build.second_wind_charges = 0
     run.time.amount = 0.0
     run.update()
     assert run.failed is True

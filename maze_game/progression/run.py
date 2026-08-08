@@ -35,7 +35,7 @@ from maze_game.constants import (
     MIN_DIMENSION, MAX_DIMENSION, DIMENSION_STEP,
     MILESTONE_INTERVAL, MILESTONE_DIMENSION_BOOST, MILESTONE_MAX_DIMENSION,
     AUGMENT_INTERVAL, HAZARD_UNLOCK_MAZE,
-    SPEED_BONUS_TIME, SPEED_BONUS_SECONDS_PER_CELL, SECOND_WIND_REFILL_SECONDS,
+    SPEED_BONUS_TIME, SPEED_BONUS_SECONDS_PER_CELL, SECOND_WIND_REFILL_SECONDS, COMPOUND_INTEREST_MAX_RATE,
     POPUP_DURATION_SECONDS, C_SPEED_BONUS, C_GOLD, C_PRESSURE_PADS,
     ZIP_ANIMATION_DURATION_SECONDS,
     ROTATE_INTERVAL_BASE_SECONDS, ROTATE_INTERVAL_STEP_SECONDS, ROTATE_INTERVAL_MIN_SECONDS,
@@ -381,7 +381,19 @@ class LabyrinthRun:
             # reported bug, not a hypothetical. Checking depletion first
             # means Compound Interest can still sustain you *before* you'd
             # otherwise run out, but can't un-fail the exact frame you do.
-            self.time.add(self.gold * self.build.compound_interest_rate * elapsed)
+            #
+            # gold * compound_interest_rate is also hard-capped at
+            # COMPOUND_INTEREST_MAX_RATE, a second, independent defense
+            # against the same class of bug: with enough gold and/or
+            # enough stacked levels, that product alone could exceed 1.0 --
+            # meaning the trickle outpaced the time resource's own drain
+            # and the run's timer counted *up* instead of down, forever,
+            # regardless of the ordering fix above (that fix only protects
+            # the exact depletion frame; an always-net-positive rate never
+            # reaches depletion in the first place). Also reported as a
+            # real, reproduced bug, not a hypothetical.
+            effective_rate = min(self.gold * self.build.compound_interest_rate, COMPOUND_INTEREST_MAX_RATE)
+            self.time.add(effective_rate * elapsed)
         if self._maze_cleared():
             if time.monotonic() - self._maze_started_at <= self._par_seconds:
                 self.time.add(SPEED_BONUS_TIME)

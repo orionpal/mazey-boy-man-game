@@ -182,6 +182,14 @@ HAZARD_SHIELD_CHARGES_PER_LEVEL = 1  # Bulwark: ignored hazard contacts per maze
 GOLD_RUSH_BONUS_PER_LEVEL      = 1  # Speedrunner: bonus gold on an under-par clear, per pick
 MOMENTUM_PELLET_VALUE_BONUS_PER_LEVEL = 0.1   # Momentum: permanent pellet-value bump per hazard-free maze clear, per pick
 COMPOUND_INTEREST_RATE_PER_LEVEL      = 0.01  # Compound Interest: seconds of time per held gold per second, per pick
+# Hard ceiling on gold * compound_interest_rate (the effective seconds-
+# gained-per-second-elapsed multiplier), regardless of how much gold is
+# held or how many levels are stacked -- enough gold/levels previously let
+# this exceed 1.0, meaning the passive trickle outpaced the time
+# resource's own drain and the run's timer would literally count up
+# instead of down. 0.1 means "at most 1 second back for every 10 seconds
+# elapsed," comfortably below the 1.0x drain rate no matter what.
+COMPOUND_INTEREST_MAX_RATE            = 0.1
 SECOND_WIND_CHARGES_PER_LEVEL         = 1     # Second Wind: extra "don't actually fail" charges this run, per pick
 SECOND_WIND_REFILL_SECONDS            = 5.0   # time refilled to when a Second Wind charge is spent
 PEEK_FADE_SECONDS_PER_LEVEL           = 4.0   # Peek: pause overlay fade-in duration, per pick (0 = instantly opaque, the no-perk default)
