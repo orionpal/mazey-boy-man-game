@@ -30,6 +30,10 @@ DIRECTION_MAP: dict[int, tuple[int, int]] = {
     pygame.K_DOWN:  ( 0,  1),
     pygame.K_LEFT:  (-1,  0),
     pygame.K_RIGHT: ( 1,  0),
+    pygame.K_w:     ( 0, -1),
+    pygame.K_s:     ( 0,  1),
+    pygame.K_a:     (-1,  0),
+    pygame.K_d:     ( 1,  0),
 }
 
 

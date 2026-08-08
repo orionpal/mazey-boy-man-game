@@ -115,7 +115,7 @@ any maze ends the run back at maze 1.
 
 | Key | Action |
 |-----|--------|
-| `↑ ↓ ← →` | Slide the player |
+| `↑ ↓ ← →` / `WASD` | Slide the player |
 | `Space` | Resume from a between-group break |
 | `R` | Restart from maze 1 (after a fail or a full clear) |
 | `Esc` | Pause (Resume / Return to Base); `Esc` again resumes |
@@ -136,7 +136,7 @@ time, date — persisted to `run_history.json` between sessions).
 
 | Key | Action |
 |-----|--------|
-| `↑ ↓ ← →` | Slide the player in that direction |
+| `↑ ↓ ← →` / `WASD` | Slide the player in that direction |
 | `R` | Generate a new maze and restart the timer |
 | `Esc` / `Q` | Quit |
 

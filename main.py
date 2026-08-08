@@ -88,10 +88,10 @@ async def run_menu(window: "Window | None", clock: pygame.time.Clock) -> str | N
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
                     return None
-                elif event.key in (pygame.K_UP, pygame.K_LEFT):
+                elif event.key in (pygame.K_UP, pygame.K_LEFT, pygame.K_w, pygame.K_a):
                     menu.move_cursor(-1)
                     sound.play("menu_move")
-                elif event.key in (pygame.K_DOWN, pygame.K_RIGHT):
+                elif event.key in (pygame.K_DOWN, pygame.K_RIGHT, pygame.K_s, pygame.K_d):
                     menu.move_cursor(1)
                     sound.play("menu_move")
                 elif event.key in (pygame.K_RETURN, pygame.K_SPACE):

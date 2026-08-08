@@ -34,6 +34,10 @@ DIRECTION_MAP: dict[int, tuple[int, int]] = {
     pygame.K_DOWN:  ( 0,  1),
     pygame.K_LEFT:  (-1,  0),
     pygame.K_RIGHT: ( 1,  0),
+    pygame.K_w:     ( 0, -1),
+    pygame.K_s:     ( 0,  1),
+    pygame.K_a:     (-1,  0),
+    pygame.K_d:     ( 1,  0),
 }
 
 SHOP_CHOICE_KEYS: dict[int, int] = {
@@ -99,10 +103,10 @@ async def _run_pause_loop(window: "Window | None", clock: pygame.time.Clock, run
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
                     return "resumed"
-                elif event.key in (pygame.K_UP, pygame.K_LEFT):
+                elif event.key in (pygame.K_UP, pygame.K_LEFT, pygame.K_w, pygame.K_a):
                     menu.move_cursor(-1)
                     sound.play("menu_move")
-                elif event.key in (pygame.K_DOWN, pygame.K_RIGHT):
+                elif event.key in (pygame.K_DOWN, pygame.K_RIGHT, pygame.K_s, pygame.K_d):
                     menu.move_cursor(1)
                     sound.play("menu_move")
                 elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
@@ -157,9 +161,9 @@ async def run_labyrinth(window: "Window | None", clock: pygame.time.Clock) -> st
                 elif event.key == pygame.K_r and (run.failed or run.completed_run):
                     return "base"
                 elif run.on_break:
-                    if event.key in (pygame.K_LEFT, pygame.K_UP):
+                    if event.key in (pygame.K_LEFT, pygame.K_UP, pygame.K_a, pygame.K_w):
                         run.move_break_cursor(-1)
-                    elif event.key in (pygame.K_RIGHT, pygame.K_DOWN):
+                    elif event.key in (pygame.K_RIGHT, pygame.K_DOWN, pygame.K_d, pygame.K_s):
                         run.move_break_cursor(1)
                     elif event.key == pygame.K_SPACE:
                         run.choose_break_card(run.break_cursor)
@@ -212,10 +216,10 @@ async def run_base(window: "Window | None", clock: pygame.time.Clock) -> str:
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
                     return "menu"
-                elif event.key in (pygame.K_LEFT, pygame.K_UP):
+                elif event.key in (pygame.K_LEFT, pygame.K_UP, pygame.K_a, pygame.K_w):
                     base.move_cursor(-1)
                     sound.play("menu_move")
-                elif event.key in (pygame.K_RIGHT, pygame.K_DOWN):
+                elif event.key in (pygame.K_RIGHT, pygame.K_DOWN, pygame.K_d, pygame.K_s):
                     base.move_cursor(1)
                     sound.play("menu_move")
                 elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
