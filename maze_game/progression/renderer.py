@@ -21,6 +21,7 @@ which don't scale with maze size at all) visually stable across the whole
 run.
 """
 
+import copy
 import time
 
 import pygame
@@ -33,7 +34,7 @@ from maze_game.constants import (
     C_GOLD, C_HAZARD, C_TELEPORT_PAIRS, C_DOOR_LOCKED, C_DOOR_UNLOCKED, C_DOOR_KEY_PAIRS,
     C_SPEED_BONUS, C_ROTATE_WARNING, C_PRESSURE_PADS,
     POPUP_DURATION_SECONDS, POPUP_RISE_PIXELS,
-    ZIP_ANIMATION_DURATION_SECONDS,
+    ZIP_ANIMATION_DURATION_SECONDS, ROTATE_ANIMATION_DURATION_SECONDS,
     PELLET_KIND_PLAIN, PELLET_KIND_DOUBLE, PELLET_KIND_VOLATILE,
     PELLET_KIND_CHAIN, PELLET_KIND_FREEZE, PELLET_KIND_GAMBLE,
 )
@@ -120,6 +121,32 @@ def animated_player_position(run: LabyrinthRun, now: float) -> tuple[float, floa
     fx, fy = anim.from_cell
     tx, ty = anim.to_cell
     return fx + (tx - fx) * t, fy + (ty - fy) * t
+
+
+def animated_maze_rotation_angle(run: LabyrinthRun, now: float) -> float:
+    """
+    Degrees to rotate the rendered maze image by so the rotating maze
+    augment's already-atomic grid/entity transform (LabyrinthRun._rotate_maze()
+    updates everything instantly, for correctness -- see that method's
+    docstring) eases into view instead of snapping. 0.0 means "draw
+    normally, no animation in flight".
+
+    Drawing a maze is a direct pixel-for-pixel visualization of the grid, so
+    rotating the just-rendered *final* image back by +90 degrees (pygame's
+    rotate() is counterclockwise for positive angles) reproduces the exact
+    pre-rotation frame -- no need to keep the pre-rotation grid/entities
+    around anywhere. Easing that angle from 90 down to 0 over
+    ROTATE_ANIMATION_DURATION_SECONDS animates the spin; _draw_rotating_maze()
+    is what actually renders-then-rotates using this angle.
+    """
+    anim = run.rotation_animation
+    if anim is None:
+        return 0.0
+    age = now - anim.started_at
+    if age >= ROTATE_ANIMATION_DURATION_SECONDS:
+        return 0.0
+    t = max(0.0, min(1.0, age / ROTATE_ANIMATION_DURATION_SECONDS))
+    return 90.0 * (1.0 - t)
 
 
 class Layout:
@@ -210,18 +237,11 @@ class Renderer:
             self._draw_break_cards(run, layout, mouse_pos)
         else:
             visible = run.visible_and_discovered_cells()  # None == fog of war inactive, draw everything
-            self._draw_maze(run.grid, layout, visible)
-            self._draw_pellets(run.pellets, layout, visible)
-            self._draw_gold_pellets(run.gold_pellets, layout, visible)
-            self._draw_hazards(run.hazards, layout, visible)
-            self._draw_teleporters(run.teleporters, layout, visible)
-            self._draw_doors_and_keys(run, layout, visible)
-            self._draw_pressure_pads(run.pressure_pads, layout, visible)
-            self._draw_goal(run.goal, layout, visible)
-            if run.secondary_goal is not None:
-                self._draw_goal(run.secondary_goal, layout, visible)  # Twin Goals -- same visual as the primary goal, either one clears the maze
-            self._draw_player(run, layout)
-            self._draw_popups(run, layout)
+            angle = animated_maze_rotation_angle(run, time.monotonic())
+            if angle:
+                self._draw_rotating_maze(run, layout, visible, angle)
+            else:
+                self._draw_maze_contents(run, layout, visible)
 
         self._draw_hud(run, layout)
         if run.rotation_warning_active:
@@ -242,6 +262,45 @@ class Renderer:
             )
 
     # ── Maze / entities ──────────────────────────────────────────────────
+
+    def _draw_maze_contents(self, run: LabyrinthRun, layout: Layout, visible: set | None) -> None:
+        """The maze grid plus everything living in it (pellets/hazards/teleporters/doors/keys/pads/goal(s)/player), at `layout`'s origin -- everything draw() shows in the maze area besides HUD/sidebars/popups-adjacent overlays."""
+        self._draw_maze(run.grid, layout, visible)
+        self._draw_pellets(run.pellets, layout, visible)
+        self._draw_gold_pellets(run.gold_pellets, layout, visible)
+        self._draw_hazards(run.hazards, layout, visible)
+        self._draw_teleporters(run.teleporters, layout, visible)
+        self._draw_doors_and_keys(run, layout, visible)
+        self._draw_pressure_pads(run.pressure_pads, layout, visible)
+        self._draw_goal(run.goal, layout, visible)
+        if run.secondary_goal is not None:
+            self._draw_goal(run.secondary_goal, layout, visible)  # Twin Goals -- same visual as the primary goal, either one clears the maze
+        self._draw_player(run, layout)
+        self._draw_popups(run, layout)
+
+    def _draw_rotating_maze(self, run: LabyrinthRun, layout: Layout, visible: set | None, angle: float) -> None:
+        """
+        Same content as _draw_maze_contents(), but drawn to an offscreen,
+        per-pixel-alpha surface first and then rotated by `angle` into place
+        -- see animated_maze_rotation_angle()'s docstring for why rotating
+        the already-final rendered image reproduces the mid-spin frame with
+        no extra state to track. Per-pixel alpha (not a colorkey) so the
+        corners pygame.transform.rotate() can't fill from the square source
+        image come out transparent regardless of C_BG's actual value,
+        letting draw()'s background fill show through them cleanly.
+        """
+        maze_surface = pygame.Surface((layout.maze_w, layout.maze_h), pygame.SRCALPHA)
+        maze_surface.fill((*C_BG, 255))
+        sub_layout = copy.copy(layout)
+        sub_layout.maze_origin = (0, 0)
+        real_surface, self.surface = self.surface, maze_surface
+        self._draw_maze_contents(run, sub_layout, visible)
+        self.surface = real_surface
+
+        rotated = pygame.transform.rotate(maze_surface, angle)
+        ox, oy = layout.maze_origin
+        rect = rotated.get_rect(center=(ox + layout.maze_w // 2, oy + layout.maze_h // 2))
+        self.surface.blit(rotated, rect)
 
     def _draw_maze(self, grid, layout: Layout, visible: set | None = None) -> None:
         ox, oy = layout.maze_origin

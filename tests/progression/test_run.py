@@ -1151,6 +1151,33 @@ def test_rotate_maze_clears_any_in_flight_teleport_animation():
     assert run.teleport_animation is None
 
 
+def test_rotate_maze_starts_a_rotation_animation():
+    run = _rotating_run()
+    assert run.rotation_animation is None
+    run._rotate_maze()
+    assert run.rotation_animation is not None
+    assert run.rotation_animation.started_at == pytest.approx(time.monotonic(), abs=0.5)
+
+
+def test_rotation_animation_expires_after_its_duration():
+    from maze_game.constants import ROTATE_ANIMATION_DURATION_SECONDS
+
+    run = _rotating_run()
+    run._rotate_maze()
+    assert run.rotation_animation is not None
+    run.rotation_animation.started_at -= ROTATE_ANIMATION_DURATION_SECONDS + 0.1  # simulate time passing
+    run.update()
+    assert run.rotation_animation is None
+
+
+def test_restart_clears_rotation_animation():
+    run = _rotating_run()
+    run._rotate_maze()
+    assert run.rotation_animation is not None
+    run.restart()
+    assert run.rotation_animation is None
+
+
 def test_rotation_warning_active_flips_true_within_the_lead_time():
     from maze_game.constants import ROTATE_WARNING_LEAD_SECONDS
 
