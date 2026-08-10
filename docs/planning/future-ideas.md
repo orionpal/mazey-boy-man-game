@@ -97,15 +97,13 @@ Starting list:
   the gating augments above it needs no forced-use/solvability
   verification machinery at all -- the maze is exactly as solvable after
   rotating as before.
-- **Fog of war -- SHIPPED**, `progression/augments/runtime/fog.py`. Only
-  cells within the player's line of sight (4 straight rays from their
-  cell, each walked until a wall) are visible; discovered cells stay
-  revealed permanently by default (`LabyrinthRun.discovered_cells`),
-  structured so that default is easy to swap later for something
-  narrower (e.g. an item that grants permanent memory, rather than it
-  being everyone's baseline) -- see
-  `LabyrinthRun.visible_and_discovered_cells()`'s docstring for exactly
-  where that swap would go.
+- **Fog of war** -- built and shipped, then scrapped after playtesting
+  (`progression/augments/runtime/fog.py`, removed). Only cells within the
+  player's line of sight (4 straight rays from their cell, each walked
+  until a wall) were visible, with discovered cells staying revealed
+  permanently. Mechanically sound (full test coverage) but reported as
+  just not fun -- not a tuning problem, so scrapped outright rather than
+  iterated on. Not started again unless revisited.
 - **Shifting room -- SHIPPED**, `progression/augments/shifting_room.py`.
   Pressure pads that permanently open a hidden wall elsewhere in the maze
   when the player slides over them (pass-through trigger, one-shot,

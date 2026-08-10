@@ -209,17 +209,16 @@ class Renderer:
         if run.on_break:
             self._draw_break_cards(run, layout, mouse_pos)
         else:
-            visible = run.visible_and_discovered_cells()  # None == fog of war inactive, draw everything
-            self._draw_maze(run.grid, layout, visible)
-            self._draw_pellets(run.pellets, layout, visible)
-            self._draw_gold_pellets(run.gold_pellets, layout, visible)
-            self._draw_hazards(run.hazards, layout, visible)
-            self._draw_teleporters(run.teleporters, layout, visible)
-            self._draw_doors_and_keys(run, layout, visible)
-            self._draw_pressure_pads(run.pressure_pads, layout, visible)
-            self._draw_goal(run.goal, layout, visible)
+            self._draw_maze(run.grid, layout)
+            self._draw_pellets(run.pellets, layout)
+            self._draw_gold_pellets(run.gold_pellets, layout)
+            self._draw_hazards(run.hazards, layout)
+            self._draw_teleporters(run.teleporters, layout)
+            self._draw_doors_and_keys(run, layout)
+            self._draw_pressure_pads(run.pressure_pads, layout)
+            self._draw_goal(run.goal, layout)
             if run.secondary_goal is not None:
-                self._draw_goal(run.secondary_goal, layout, visible)  # Twin Goals -- same visual as the primary goal, either one clears the maze
+                self._draw_goal(run.secondary_goal, layout)  # Twin Goals -- same visual as the primary goal, either one clears the maze
             self._draw_player(run, layout)
             self._draw_popups(run, layout)
 
@@ -243,19 +242,15 @@ class Renderer:
 
     # ── Maze / entities ──────────────────────────────────────────────────
 
-    def _draw_maze(self, grid, layout: Layout, visible: set | None = None) -> None:
+    def _draw_maze(self, grid, layout: Layout) -> None:
         ox, oy = layout.maze_origin
         cell = layout.cell
         for row in range(len(grid)):
             for col in range(len(grid[0])):
-                if visible is not None and (col, row) not in visible:
-                    continue  # self.surface.fill(C_BG) already ran -- an undiscovered cell just stays background-coloured
                 colour = C_WALL if grid[row][col] == 1 else C_FLOOR
                 pygame.draw.rect(self.surface, colour, pygame.Rect(ox + col * cell, oy + row * cell, cell, cell))
 
-    def _draw_goal(self, goal, layout: Layout, visible: set | None = None) -> None:
-        if visible is not None and goal not in visible:
-            return
+    def _draw_goal(self, goal, layout: Layout) -> None:
         ox, oy = layout.maze_origin
         cell = layout.cell
         gx, gy = goal
@@ -279,14 +274,12 @@ class Renderer:
         pygame.draw.circle(self.surface, C_PLAYER, center, radius)
         draw_smiley_face(self.surface, C_BG, center, radius)
 
-    def _draw_pellets(self, pellets, layout: Layout, visible: set | None = None) -> None:
+    def _draw_pellets(self, pellets, layout: Layout) -> None:
         ox, oy = layout.maze_origin
         cell = layout.cell
         icon = sprites.get("pellet", cell)
         for pellet in pellets:
             x, y = pellet.pos
-            if visible is not None and (x, y) not in visible:
-                continue
             if icon is not None:
                 self.surface.blit(icon, (ox + x * cell, oy + y * cell))
                 continue
@@ -294,29 +287,25 @@ class Renderer:
             colour = PELLET_KIND_COLOURS.get(pellet.kind, C_PELLET)
             pygame.draw.circle(self.surface, colour, (ox + x * cell + cell // 2, oy + y * cell + cell // 2), r)
 
-    def _draw_gold_pellets(self, gold_pellets, layout: Layout, visible: set | None = None) -> None:
+    def _draw_gold_pellets(self, gold_pellets, layout: Layout) -> None:
         ox, oy = layout.maze_origin
         cell = layout.cell
         icon = sprites.get("gold", cell)
         for gold_pellet in gold_pellets:
             x, y = gold_pellet.pos
-            if visible is not None and (x, y) not in visible:
-                continue
             if icon is not None:
                 self.surface.blit(icon, (ox + x * cell, oy + y * cell))
                 continue
             r = max(1, cell // 5)
             pygame.draw.circle(self.surface, C_GOLD, (ox + x * cell + cell // 2, oy + y * cell + cell // 2), r)
 
-    def _draw_hazards(self, hazards, layout: Layout, visible: set | None = None) -> None:
+    def _draw_hazards(self, hazards, layout: Layout) -> None:
         ox, oy = layout.maze_origin
         cell = layout.cell
         pad = max(1, cell // 5)
         icon = sprites.get("hazard", cell)
         for hazard in hazards:
             x, y = hazard.pos
-            if visible is not None and (x, y) not in visible:
-                continue
             if icon is not None:
                 self.surface.blit(icon, (ox + x * cell, oy + y * cell))
                 continue
@@ -325,19 +314,17 @@ class Renderer:
                 pygame.Rect(ox + x * cell + pad, oy + y * cell + pad, cell - 2 * pad, cell - 2 * pad),
             )
 
-    def _draw_teleporters(self, teleporters, layout: Layout, visible: set | None = None) -> None:
+    def _draw_teleporters(self, teleporters, layout: Layout) -> None:
         ox, oy = layout.maze_origin
         cell = layout.cell
         pad = max(1, cell // 5)
         for pair in teleporters:
             colour = C_TELEPORT_PAIRS[pair.color_index % len(C_TELEPORT_PAIRS)]
             for x, y in (pair.a, pair.b):
-                if visible is not None and (x, y) not in visible:
-                    continue
                 rect = pygame.Rect(ox + x * cell + pad, oy + y * cell + pad, cell - 2 * pad, cell - 2 * pad)
                 pygame.draw.rect(self.surface, colour, rect, width=max(2, cell // 8))
 
-    def _draw_doors_and_keys(self, run: LabyrinthRun, layout: Layout, visible: set | None = None) -> None:
+    def _draw_doors_and_keys(self, run: LabyrinthRun, layout: Layout) -> None:
         ox, oy = layout.maze_origin
         cell = layout.cell
 
@@ -345,8 +332,6 @@ class Renderer:
         unlocked_icon = sprites.get("door_unlocked", cell)
         for pair in run.doors:
             x, y = pair.door
-            if visible is not None and (x, y) not in visible:
-                continue
             locked = pair.door in run._locked_doors
             icon = locked_icon if locked else unlocked_icon
             if icon is not None:
@@ -363,8 +348,6 @@ class Renderer:
         pair_colour = {pair.door: C_DOOR_KEY_PAIRS[pair.color_index % len(C_DOOR_KEY_PAIRS)] for pair in run.doors}
         for key in run.keys:
             x, y = key.pos
-            if visible is not None and (x, y) not in visible:
-                continue
             if key_icon is not None:
                 self.surface.blit(key_icon, (ox + x * cell, oy + y * cell))
                 continue
@@ -372,7 +355,7 @@ class Renderer:
             r = max(1, cell // 5)
             pygame.draw.circle(self.surface, colour, (ox + x * cell + cell // 2, oy + y * cell + cell // 2), r)
 
-    def _draw_pressure_pads(self, pressure_pads, layout: Layout, visible: set | None = None) -> None:
+    def _draw_pressure_pads(self, pressure_pads, layout: Layout) -> None:
         """
         The pad markers themselves -- the wall segment they control needs
         no drawing of its own: it's a plain cell in run.grid, so
@@ -384,8 +367,6 @@ class Renderer:
         pad_px = max(1, cell // 5)
         for shift_pad in pressure_pads:
             x, y = shift_pad.pad
-            if visible is not None and (x, y) not in visible:
-                continue
             colour = C_PRESSURE_PADS[shift_pad.color_index % len(C_PRESSURE_PADS)]
             rect = pygame.Rect(ox + x * cell + pad_px, oy + y * cell + pad_px, cell - 2 * pad_px, cell - 2 * pad_px)
             pygame.draw.rect(self.surface, colour, rect, border_radius=max(2, cell // 6))
