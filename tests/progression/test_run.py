@@ -661,6 +661,7 @@ def _corridor_run() -> LabyrinthRun:
     run.goal = (3, 1)
     run.pellets = []
     run.gold_pellets = []
+    run.shop_tiles = []
     run.hazards = []
     return run
 
@@ -756,6 +757,7 @@ def _teleport_run() -> LabyrinthRun:
     run.player = (1, 1)
     run.goal = (3, 1)
     run.pellets = []
+    run.shop_tiles = []
     run.hazards = []
     run._teleport_map = {(2, 1): (3, 1)}
     return run
@@ -781,6 +783,7 @@ def _door_run() -> LabyrinthRun:
     run.player = (1, 1)
     run.goal = (3, 1)
     run.pellets = []
+    run.shop_tiles = []
     run.hazards = []
     pair = DoorKeyPair(door=(3, 1), key=(2, 1), mandatory=True, color_index=0)
     run.doors = [pair]
@@ -857,6 +860,7 @@ def _junction_corridor_run() -> LabyrinthRun:
     run.player = (1, 1)
     run.goal = (4, 1)
     run.pellets = []
+    run.shop_tiles = []
     run.hazards = []
     return run
 

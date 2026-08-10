@@ -30,11 +30,12 @@ from maze_game.constants import (
     C_BG, C_WALL, C_FLOOR, C_PLAYER, C_GOAL, C_TEXT, C_DIM, C_CARD_DESC, C_FLASH, C_HUD_BG,
     C_PANEL_BG, C_PANEL_LINE, C_BUTTON, C_BUTTON_HOVER,
     C_PELLET, C_GOLD, C_HAZARD, C_TELEPORT_PAIRS, C_DOOR_LOCKED, C_DOOR_UNLOCKED, C_DOOR_KEY_PAIRS,
-    C_SPEED_BONUS, C_STAIRS_PAIRS,
+    C_SPEED_BONUS, C_STAIRS_PAIRS, C_SHOP,
     POPUP_DURATION_SECONDS, POPUP_RISE_PIXELS,
 )
 from maze_game.media import sprites
 from maze_game.media.shapes import draw_smiley_face
+from maze_game.progression.shop import renderer as shop_renderer
 from maze_game.progression.shop.perks import ALL_PERKS
 from maze_game.progression.augments import AUGMENTS_BY_ID
 from maze_game.progression.run import LabyrinthRun
@@ -119,6 +120,13 @@ class Layout:
             for i in range(MAX_ACTIVE_AUGMENTS)
         ]
 
+        # In-maze shop panel -- centred over the maze viewport, shared by
+        # draw()'s overlay and run_labyrinth()'s click handling, same
+        # convention as self.cards above. Geometry owned by
+        # progression/shop/renderer.py (mirrors this module owning self.cards).
+        self.shop_panel = shop_renderer.panel_rect(MAZE_AREA_SIZE, SIDEBAR_W)
+        self.shop_items = shop_renderer.item_rects(self.shop_panel)
+
 
 class Renderer:
     def __init__(self, surface: pygame.Surface) -> None:
@@ -150,6 +158,7 @@ class Renderer:
             self._draw_maze(run.grid, layout)
             self._draw_pellets(run.pellets, layout)
             self._draw_gold_pellets(run.gold_pellets, layout)
+            self._draw_shop_tiles(run.shop_tiles, layout)
             self._draw_hazards(run.hazards, layout)
             self._draw_teleporters(run.teleporters, layout)
             self._draw_floors(run.floors, layout)
@@ -162,6 +171,12 @@ class Renderer:
         self._draw_build_sidebar(run.build, layout, mouse_pos)
         self._draw_augment_sidebar(run.augment_build, layout, mouse_pos)
         self._draw_legend(layout)
+
+        if run.in_shop:
+            shop_renderer.draw(
+                self.surface, run, layout.shop_panel, layout.shop_items,
+                self.font_big, self.font_huge, self.font_small, mouse_pos,
+            )
 
         if run.failed:
             self._draw_overlay(
@@ -231,6 +246,19 @@ class Renderer:
                 continue
             r = max(1, cell // 5)
             pygame.draw.circle(self.surface, C_GOLD, (ox + x * cell + cell // 2, oy + y * cell + cell // 2), r)
+
+    def _draw_shop_tiles(self, shop_tiles, layout: Layout) -> None:
+        ox, oy = layout.maze_origin
+        cell = layout.cell
+        icon = sprites.get("shop", cell)
+        pad = max(1, cell // 6)
+        for shop_tile in shop_tiles:
+            x, y = shop_tile.pos
+            if icon is not None:
+                self.surface.blit(icon, (ox + x * cell, oy + y * cell))
+                continue
+            rect = pygame.Rect(ox + x * cell + pad, oy + y * cell + pad, cell - 2 * pad, cell - 2 * pad)
+            pygame.draw.rect(self.surface, C_SHOP, rect, border_radius=max(2, cell // 6))
 
     def _draw_hazards(self, hazards, layout: Layout) -> None:
         ox, oy = layout.maze_origin
@@ -342,8 +370,9 @@ class Renderer:
         pygame.draw.rect(self.surface, C_HUD_BG, layout.hud)
 
         remaining = run.time.amount
-        colour = C_FLASH if remaining <= LOW_TIME_WARNING_SECONDS else C_TEXT
-        timer_label = self.font_big.render(f"{remaining:4.1f}s", True, colour)
+        colour = C_SHOP if run.in_shop else (C_FLASH if remaining <= LOW_TIME_WARNING_SECONDS else C_TEXT)
+        timer_text = f"{remaining:4.1f}s (paused)" if run.in_shop else f"{remaining:4.1f}s"
+        timer_label = self.font_big.render(timer_text, True, colour)
         self.surface.blit(timer_label, (layout.hud.x + 10, layout.hud.y + 8))
 
         progress = self.font_small.render(
@@ -427,6 +456,7 @@ class Renderer:
             (C_GOAL, "circle", "Goal"),
             (C_PELLET, "circle", "Time Pellet"),
             (C_GOLD, "circle", "Gold Pellet"),
+            (C_SHOP, "square", "Shop Tile"),
             (C_HAZARD, "square", "Hazard"),
             (C_DOOR_LOCKED, "square", "Locked Door"),
             (C_DOOR_UNLOCKED, "square", "Unlocked Door"),
