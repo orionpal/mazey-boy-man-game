@@ -20,6 +20,10 @@ MULTI_LEVEL_* constants), each successive mandatory floor nested one level
 deeper than the last -- walking into floor N's stairs and searching *from
 there* for floor N+1 naturally confines the search to floor N's own,
 already-isolated interior (identical nesting trick to teleporters.py).
+The *first* mandatory floor is rooted at `ctx.mandatory_frontier`, not
+`ctx.start` -- if an earlier gating augment (teleporters, doors) already
+placed a mandatory gate, this floor nests behind it instead of ignoring it
+(see augments/__init__.py's `AugmentContext.mandatory_frontier` docstring).
 
 Must run after TeleportersAugment and DoorsAugment in
 augments/__init__.py's ALL_AUGMENTS registry -- a floor candidate is
@@ -43,11 +47,14 @@ anything *inside* the pocket's own interior.
 kept-open crossing at all (unlike doors.py's seal_pocket(..., keep_open=)),
 so plain grid adjacency (bfs_reachable/shortest_path) can never reach past
 its boundary -- the stairs pair is the *only* way in, exactly like a
-teleporter's mandatory pocket. The goal itself is then relocated
-(farthest_reachable_cell) into the deepest mandatory floor's own recarved
-interior once every mandatory floor is placed, so finishing the maze is
-only possible by walking onto every mandatory floor's `down` stairs in
-turn. See tests/progression/augments/test_multi_level.py's
+teleporter's mandatory pocket. Once every mandatory floor is placed, this
+augment advances the shared `ctx.mandatory_frontier` to the deepest one's
+own recarved interior rather than relocating `ctx.goal` itself --
+run_pipeline() picks the actual final goal (via farthest_reachable_cell)
+once every active augment has had a turn, so finishing the maze is only
+possible by walking onto every mandatory floor's `down` stairs in turn
+*and* satisfying whatever mandatory gate any other active augment placed,
+in registry order. See tests/progression/augments/test_multi_level.py's
 "forced-use" tests for the bfs_reachable()-must-fail /
 sequentially_reachable()-must-succeed pair that proves this, mirroring the
 same standard doors.py's own test suite holds itself to.
@@ -63,7 +70,7 @@ from maze_game.constants import (
     MULTI_LEVEL_FLOOR_MIN_SIZE, MULTI_LEVEL_FLOOR_MAX_SIZE,
     MULTI_LEVEL_PLACEMENT_MAX_ATTEMPTS,
 )
-from maze_game.maze import is_stoppable_cell, farthest_reachable_cell, bfs_reachable
+from maze_game.maze import is_stoppable_cell, bfs_reachable
 from maze_game.progression.augments import Augment, AugmentContext
 from maze_game.progression.augments._movement import pendant_subtree_map, seal_pocket
 from maze_game.progression.augments.doors import sequentially_reachable
@@ -107,7 +114,7 @@ class MultiLevelAugment(Augment):
         doors = ctx.extra.get("doors", [])
 
         floors: list[FloorLink] = []
-        current_start = ctx.start
+        current_start = ctx.mandatory_frontier
         for depth in range(1, mandatory_count + 1):
             link = _place_floor(
                 ctx, current_start, tmap, doors,
@@ -119,7 +126,14 @@ class MultiLevelAugment(Augment):
             current_start = link.up
 
         if floors:
-            ctx.goal = farthest_reachable_cell(ctx.grid, current_start)
+            # Advance the shared cross-augment checkpoint rather than
+            # relocating ctx.goal ourselves -- see run_pipeline()'s
+            # docstring. MultiLevelAugment runs last in the registry, but
+            # doesn't get to assume it's the last *active* gating augment
+            # (the player could be at a lower level for a later-added
+            # augment, or none at all) -- so it defers final goal placement
+            # exactly the same way teleporters/doors now do.
+            ctx.mandatory_frontier = current_start
 
         decorative_count = floor_count - len(floors)
         for i in range(decorative_count):
@@ -210,16 +224,26 @@ def _place_floor(
     verified with the full sequentially_reachable() (folding in every
     already-placed door's key-collection order and every teleporter link)
     before committing, the same standard doors.py's own placement holds
-    itself to.
+    itself to. The reachability target checked is `current_start`
+    (mandatory) or `ctx.mandatory_frontier` (decorative), not `ctx.goal` --
+    see the inline comment above the check for why.
 
     Mutates ctx.grid/ctx.reserved in place on success. Returns None if no
     candidate works out (graceful degradation).
     """
     order, subtree, _parent = pendant_subtree_map(ctx.grid, current_start)
-    forbidden = ctx.reserved | {current_start}
+    # See teleporters.py::_place_mandatory_pair's identical line for why:
+    # current_start's own local territory is necessarily already in
+    # ctx.reserved (it's the pocket the previous chain step just sealed),
+    # so it has to be subtracted back out here or nesting a mandatory floor
+    # inside it could never find a candidate. Cells belonging to *other*
+    # (non-ancestor) pockets stay excluded via the subtree-overlap check
+    # below, same as before.
+    local = set(order)
+    forbidden = (ctx.reserved - local) | {current_start}
     candidates = [
         c for c in order
-        if c != current_start and c not in forbidden and not (subtree[c] & ctx.reserved)
+        if c != current_start and c not in forbidden and not (subtree[c] & (ctx.reserved - local))
     ]
     if not candidates:
         return None
@@ -267,7 +291,16 @@ def _place_floor(
         reachable = sequentially_reachable(
             floor_grid, ctx.start, doors, teleport=lambda x, y: tentative_tmap.get((x, y)),
         )
-        if up not in reachable or ctx.goal not in reachable:
+        # A mandatory floor protects its own inherited chain frontier
+        # (current_start -- which IS ctx.mandatory_frontier for the first
+        # mandatory floor, or a deeper one nested by this same augment's
+        # own earlier iterations); a decorative floor -- always rooted at
+        # ctx.start, so current_start itself is a trivial check -- instead
+        # protects whatever ctx.mandatory_frontier currently holds, since
+        # that's the established mandatory chain it must not sever. Neither
+        # checks ctx.goal: it isn't final until run_pipeline() finishes.
+        protect_target = current_start if mandatory else ctx.mandatory_frontier
+        if up not in reachable or protect_target not in reachable:
             continue  # this stairs pair -- or sealing its pocket -- broke solvability somewhere; try another
 
         ctx.grid = floor_grid

@@ -40,6 +40,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from maze_game.constants import MAX_ACTIVE_AUGMENTS
+from maze_game.maze import farthest_reachable_cell
 
 AUGMENT_CARDS_OFFERED = 3  # mirrors shop/__init__.py::SHOP_CARDS_OFFERED
 
@@ -58,13 +59,33 @@ class Augment:
 @dataclass
 class AugmentContext:
     """
-    Mutable bundle threaded through the augment pipeline. `grid`/`goal` may
-    be reassigned by an augment's apply() (e.g. teleporters seals off part
-    of the grid and moves the goal into the sealed pocket) -- later
-    augments in the pipeline must treat these as already-possibly-mutated,
-    not the raw generate_maze() output. `reserved` accumulates cells any
-    augment has claimed (teleporter pads, sealed-pocket boundaries, ...) so
-    later augments and entity spawning (pellets/hazards) can avoid them.
+    Mutable bundle threaded through the augment pipeline. `grid` may be
+    reassigned by an augment's apply() (e.g. teleporters seals off part of
+    the grid) -- later augments in the pipeline must treat this as
+    already-possibly-mutated, not the raw generate_maze() output. `reserved`
+    accumulates cells any augment has claimed (teleporter pads, door/key
+    cells, sealed-pocket boundaries, ...) so later augments and entity
+    spawning (pellets/hazards) can avoid them.
+
+    `goal` is *not* reassigned by individual augments any more -- see
+    `mandatory_frontier` below and `run_pipeline()`'s single relocation step
+    at the end of the pipeline, which is what actually owns final goal
+    placement now.
+
+    `mandatory_frontier` is the shared, cross-augment "you must have gotten
+    this far for real" checkpoint: every gating augment (teleporters, doors,
+    multi-level) that places at least one *mandatory* gate roots its own
+    mandatory-chain search at whatever `mandatory_frontier` currently holds
+    (not blindly at `start`), and advances it to its own chain's endpoint
+    once done -- so a second active gating augment necessarily nests its
+    mandatory gate(s) *behind* the first one's, instead of both
+    independently gating the same original goal (which is what let a
+    Teleporters placement strand DoorsAugment at 0 mandatory doors: see
+    `run_pipeline()`'s docstring for the full story). Verification checks
+    inside each augment's placement helpers use this same field (or the
+    `current_start` parameter threaded from it) as the "must remain
+    reachable" target instead of `ctx.goal`, since `ctx.goal` isn't final
+    until the whole pipeline completes.
     """
 
     grid: list[list[int]]
@@ -76,6 +97,7 @@ class AugmentContext:
     level: int = 0
     reserved: set[tuple[int, int]] = field(default_factory=set)
     extra: dict[str, Any] = field(default_factory=dict)
+    mandatory_frontier: tuple[int, int] = (0, 0)
 
 
 class AugmentBuild:
@@ -112,18 +134,39 @@ def run_pipeline(
     Apply every active augment (level > 0) in ALL_AUGMENTS *registry order*
     -- not pick order -- to the generated maze. Registry order is a hard
     contract: every augment's apply() must assume any earlier augment in
-    ALL_AUGMENTS may have already mutated ctx.grid/ctx.goal/ctx.reserved,
-    and must fold its own effect on top rather than starting from a
-    pristine grid.
+    ALL_AUGMENTS may have already mutated ctx.grid/ctx.reserved/
+    ctx.mandatory_frontier, and must fold its own effect on top rather than
+    starting from a pristine grid.
+
+    **Final goal placement is deferred to here, once, after every augment
+    has run** -- individual augments no longer reassign ctx.goal themselves.
+    Playtesting found a maze where a Teleporters placement let the goal
+    (moved by TeleportersAugment into its own sealed pocket) become invisible
+    to DoorsAugment's plain-grid pocket search, silently degrading it to 0
+    mandatory doors -- Doors was "active" but the maze never actually
+    required opening one. The fix: every gating augment now nests its
+    mandatory chain onto the shared `ctx.mandatory_frontier` (starting at
+    `start`) instead of independently searching for a pocket that happens to
+    contain whatever `ctx.goal` currently is, and advances that frontier to
+    its own chain's endpoint instead of relocating the goal mid-pipeline.
+    Once every active augment has had a turn, the true goal is exactly the
+    farthest reachable cell from the final frontier -- guaranteeing the
+    player must pass every active gating augment's mandatory gate, each
+    nested inside the last, to reach it. If no active augment placed a
+    mandatory gate, the frontier never moves off `start` and the
+    caller-supplied `goal` is left untouched.
     """
     ctx = AugmentContext(grid=grid, cols=cols, rows=rows, start=start, goal=goal, rng=rng)
     ctx.reserved = {start, goal}
+    ctx.mandatory_frontier = start
     for augment in ALL_AUGMENTS:
         level = build.level_of(augment.id)
         if level <= 0:
             continue
         ctx.level = level
         augment.apply(ctx)
+    if ctx.mandatory_frontier != start:
+        ctx.goal = farthest_reachable_cell(ctx.grid, ctx.mandatory_frontier)
     return ctx
 
 

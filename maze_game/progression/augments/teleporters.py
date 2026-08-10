@@ -34,7 +34,7 @@ from maze_game.constants import (
     TELEPORT_POCKET_MIN_SIZE, TELEPORT_POCKET_MAX_SIZE,
     TELEPORT_PLACEMENT_MAX_ATTEMPTS,
 )
-from maze_game.maze import bfs_reachable, is_stoppable_cell, farthest_reachable_cell
+from maze_game.maze import bfs_reachable, is_stoppable_cell
 from maze_game.progression.augments import Augment, AugmentContext
 from maze_game.progression.augments._movement import pendant_subtree_map, real_move_reachable, seal_pocket
 
@@ -66,7 +66,7 @@ class TeleportersAugment(Augment):
         )
 
         pairs: list[TeleporterPair] = []
-        current_start = ctx.start
+        current_start = ctx.mandatory_frontier
         for i in range(mandatory_count):
             pair = _place_mandatory_pair(ctx, current_start, color_index=i, committed=pairs)
             if pair is None:
@@ -75,7 +75,12 @@ class TeleportersAugment(Augment):
             current_start = pair.b
 
         if pairs:
-            ctx.goal = farthest_reachable_cell(ctx.grid, current_start)
+            # Advance the shared cross-augment checkpoint rather than
+            # relocating ctx.goal ourselves -- a later gating augment (doors,
+            # multi-level) may still nest its own mandatory gate behind this
+            # one. run_pipeline() picks the actual final goal once every
+            # active augment has had a turn (see its docstring).
+            ctx.mandatory_frontier = current_start
 
         decorative_count = pair_count - len(pairs)
         pairs.extend(_place_decorative_pairs(ctx, decorative_count, start_index=len(pairs), committed=pairs))
@@ -116,7 +121,17 @@ def _place_mandatory_pair(
     mandatory pairs than the level formula asked for).
     """
     order, subtree, _parent = pendant_subtree_map(ctx.grid, current_start)
-    forbidden = ctx.reserved | {current_start}
+    # ctx.reserved marks a placed pocket's *entire* blob (not just its
+    # pad/door cell), for entity-spawn exclusion and multi-level's overlap
+    # check -- but current_start's own local territory (order) was itself
+    # just carved out by the previous chain step, so it's necessarily
+    # reserved for *that* reason alone. Subtracting it back out is what
+    # lets a second mandatory gate nest inside a pocket another gate (or
+    # this same augment's own earlier mandatory pair) already sealed --
+    # without it, every candidate here is unconditionally "already
+    # reserved" and nesting beyond the first mandatory pair silently never
+    # finds anywhere to go.
+    forbidden = (ctx.reserved - set(order)) | {current_start}
     candidates = [c for c in order if c != current_start and c not in forbidden]
     if not candidates:
         return None
@@ -182,8 +197,12 @@ def _place_decorative_pairs(
     with `real_move_reachable` before committing -- a decorative pad is
     just as capable of forcing an unwanted redirect through a load-bearing
     junction as a mandatory entrance is, and since decoratives are supposed
-    to be purely optional, one that breaks the route to the goal is
-    rejected outright rather than accepted with a worse maze.
+    to be purely optional, one that breaks the route to `ctx.mandatory_frontier`
+    (the established mandatory-gate chain -- possibly extended by this very
+    augment above, possibly inherited from an earlier one) is rejected
+    outright rather than accepted with a worse maze. Checked against the
+    frontier, not `ctx.goal`, since the final goal isn't decided until every
+    active augment has run (see run_pipeline()).
     """
     if count <= 0:
         return []
@@ -205,8 +224,8 @@ def _place_decorative_pairs(
             tentative_tmap[a] = b
             tentative_tmap[b] = a
 
-            if ctx.goal not in real_move_reachable(ctx.grid, ctx.start, teleport=lambda x, y: tentative_tmap.get((x, y))):
-                continue  # this pair would cut off the route to the goal -- try a different pair
+            if ctx.mandatory_frontier not in real_move_reachable(ctx.grid, ctx.start, teleport=lambda x, y: tentative_tmap.get((x, y))):
+                continue  # this pair would cut off the route to the established mandatory chain -- try a different pair
 
             candidates = [c for c in candidates if c not in (a, b)]
             ctx.reserved.add(a)
