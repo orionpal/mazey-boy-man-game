@@ -27,14 +27,14 @@ import pygame
 
 from maze_game.constants import (
     SIDEBAR_W, HUD_HEIGHT, LABYRINTH_TOTAL_MAZES, MAX_ACTIVE_AUGMENTS,
-    C_BG, C_WALL, C_FLOOR, C_PLAYER, C_GOAL, C_TEXT, C_DIM, C_CARD_DESC, C_FLASH, C_HUD_BG,
+    C_BG, C_WALL, C_FLOOR, C_PLAYER, C_PLAYER_OUTLINE, C_GOAL, C_TEXT, C_DIM, C_CARD_DESC, C_FLASH, C_HUD_BG,
     C_PANEL_BG, C_PANEL_LINE, C_BUTTON, C_BUTTON_HOVER,
     C_PELLET, C_GOLD, C_HAZARD, C_TELEPORT_PAIRS, C_DOOR_LOCKED, C_DOOR_UNLOCKED, C_DOOR_KEY_PAIRS,
     C_SPEED_BONUS, C_STAIRS_PAIRS,
     POPUP_DURATION_SECONDS, POPUP_RISE_PIXELS,
 )
 from maze_game.media import sprites
-from maze_game.media.shapes import draw_smiley_face
+from maze_game.media.shapes import draw_player_marker
 from maze_game.progression.shop.perks import ALL_PERKS
 from maze_game.progression.augments import AUGMENTS_BY_ID
 from maze_game.progression.run import LabyrinthRun
@@ -205,8 +205,7 @@ class Renderer:
             return
         center = (ox + px * cell + cell // 2, oy + py * cell + cell // 2)
         radius = max(1, cell // 2 - 3)
-        pygame.draw.circle(self.surface, C_PLAYER, center, radius)
-        draw_smiley_face(self.surface, C_BG, center, radius)
+        draw_player_marker(self.surface, center, radius, C_PLAYER, C_PLAYER_OUTLINE, C_BG)
 
     def _draw_pellets(self, pellets, layout: Layout) -> None:
         ox, oy = layout.maze_origin
