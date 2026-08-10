@@ -37,14 +37,23 @@ real movement graph (real_move_reachable()) rather than plain grid adjacency.
 Must run *after* TeleportersAugment in augments/__init__.py's ALL_AUGMENTS
 registry -- a door candidate is verified against the maze's already-
 finalized teleporter map, so a teleporter can never silently bypass a door
-that looked like a genuine cut vertex under plain grid adjacency. If
-TeleportersAugment has already relocated the goal behind a sealed,
-teleporter-only pocket, that pocket is invisible to this module's plain-grid
-pendant_subtree_map() search (by design -- it's really sealed), so no
-mandatory door candidate can ever contain the goal in its subtree in that
-case; DoorsAugment then gracefully places 0 mandatory doors and spends its
-whole pair budget on decorative ones instead, exactly like running out of
-placement attempts does.
+that looked like a genuine cut vertex under plain grid adjacency.
+
+**Mandatory door placement doesn't search for a pocket containing the
+goal.** An earlier version did, and that was a real bug: playtesting found
+mazes where TeleportersAugment had already relocated the goal behind its
+own sealed, teleporter-only pocket, invisible to this module's plain-grid
+pendant_subtree_map() search -- no mandatory door candidate could ever
+contain that goal, so DoorsAugment silently placed 0 mandatory doors *every
+time* Teleporters had a mandatory pair active, spending its whole pair
+budget on decoratives instead. Doors was "active" per the player's build,
+but the maze never actually required opening one -- the exact "Doors could
+be skipped entirely" report this fixed. The fix (shared with the other
+gating augments, see augments/__init__.py's `AugmentContext.mandatory_frontier`
+and `run_pipeline()`'s docstring): mandatory doors nest onto the shared
+cross-augment `ctx.mandatory_frontier` instead of hunting for the current
+`ctx.goal`, and final goal placement is deferred to run_pipeline(), once,
+after every active augment has had a turn.
 
 Level scaling: level 1 places a couple of pairs with only one mandatory;
 higher levels add more pairs and make more of them mandatory (see DOOR_*
@@ -117,13 +126,22 @@ class DoorsAugment(Augment):
         tmap = _existing_teleport_map(ctx)
 
         pairs: list[DoorKeyPair] = []
-        current_start = ctx.start
+        current_start = ctx.mandatory_frontier
         for i in range(mandatory_count):
             pair = _place_mandatory_door(ctx, current_start, tmap, color_index=i, committed=pairs)
             if pair is None:
                 break  # graceful degradation -- fewer mandatory doors than the formula asked for
             pairs.append(pair)
             current_start = pair.door  # next search rooted deeper, same nesting technique as teleporters
+
+        if pairs:
+            # Advance the shared cross-augment checkpoint rather than gating
+            # whatever ctx.goal happens to be right now -- see
+            # run_pipeline()'s docstring for why: an earlier augment
+            # (teleporters) may already have moved the goal somewhere this
+            # module's plain-grid pocket search can't see at all, which used
+            # to silently degrade this loop to 0 mandatory doors every time.
+            ctx.mandatory_frontier = current_start
 
         decorative_count = pair_count - len(pairs)
         pairs.extend(_place_decorative_doors(ctx, tmap, decorative_count, start_index=len(pairs), committed=pairs))
@@ -198,39 +216,61 @@ def _place_mandatory_door(
     committed: list[DoorKeyPair],
 ) -> DoorKeyPair | None:
     """
-    Pick a pendant subtree of `current_start`'s BFS tree that contains
-    ctx.goal (guaranteeing mandatory-ness structurally: sealing it off
-    really does gate the route to the goal) and whose size lands in
+    Pick a pendant subtree of `current_start`'s BFS tree whose size lands in
     [DOOR_FAR_SIDE_MIN_SIZE, DOOR_FAR_SIDE_MAX_SIZE] (falling back to the
     smallest such subtree if none lands exactly in range, same shape as
     teleporters' fallback). Physically re-walls the whole subtree's
     boundary except the crossing into its root (seal_pocket()) -- that
     root becomes the door, still grid-open but now the sole way in or out.
 
+    Deliberately does *not* require the subtree to contain `ctx.goal`
+    (unlike an earlier version of this function): `ctx.goal` isn't final
+    mid-pipeline (see run_pipeline()'s docstring), and an earlier augment
+    may already have moved it somewhere this plain-grid pendant-subtree
+    search can't see at all (e.g. sealed behind a teleporter-only pocket) --
+    that used to silently degrade every mandatory door to 0, exactly the
+    "Doors could be skipped entirely" bug this module's tests now guard
+    against. Any pendant subtree of `current_start` is, by construction,
+    already gated by its own root once sealed -- same as teleporters'/
+    multi-level's mandatory pockets, which never needed a "contains goal"
+    check either, precisely because they own their own goal placement. This
+    function's caller does the analogous thing: advances
+    `ctx.mandatory_frontier` to the new door once placed, and the actual
+    final goal gets chosen once, after the whole pipeline runs.
+
     Verifies with the *full* sequentially_reachable() -- not just a
-    pairwise "is the goal still reachable with this one door locked"
+    pairwise "is `current_start` still reachable with this one door locked"
     check -- before committing: sealing this pocket's boundary can, in
     rare cases, sever the *only* remaining path to an earlier door's key
     (a braid() loop that used to route through what's now sealed-off
     territory), silently breaking that earlier door even though this
     candidate looks fine in isolation. Found via this module's own
-    end-to-end test suite; a pairwise check alone missed it.
+    end-to-end test suite; a pairwise check alone missed it. Checking
+    `current_start` (rather than `ctx.goal`) also transparently protects
+    an *earlier augment's* mandatory chain when this is the first door
+    placed off an inherited `ctx.mandatory_frontier` -- current_start IS
+    that frontier in that case, so the same check does double duty.
 
     Mutates ctx.grid/ctx.reserved in place on success. Returns None if no
     candidate works out (graceful degradation -- the caller places fewer
     mandatory doors than the level formula asked for).
     """
     order, subtree, parent = pendant_subtree_map(ctx.grid, current_start)
-    forbidden = ctx.reserved | {current_start}
-    gates_the_goal = [c for c in order if c not in forbidden and ctx.goal in subtree[c]]
-    if not gates_the_goal:
-        return None  # the goal isn't reachable from here via plain grid adjacency at all (e.g. sealed behind a teleporter pocket)
+    # See teleporters.py::_place_mandatory_pair's identical line for why:
+    # current_start's own local territory is necessarily already in
+    # ctx.reserved (it's the pocket the previous chain step just sealed),
+    # so it has to be subtracted back out here or nesting a second
+    # mandatory gate inside it could never find a candidate.
+    forbidden = (ctx.reserved - set(order)) | {current_start}
+    candidates = [c for c in order if c not in forbidden]
+    if not candidates:
+        return None  # nothing off current_start via plain grid adjacency at all
 
-    in_range = [c for c in gates_the_goal if DOOR_FAR_SIDE_MIN_SIZE <= len(subtree[c]) <= DOOR_FAR_SIDE_MAX_SIZE]
+    in_range = [c for c in candidates if DOOR_FAR_SIDE_MIN_SIZE <= len(subtree[c]) <= DOOR_FAR_SIDE_MAX_SIZE]
     if in_range:
         pool = in_range
     else:
-        big_enough = [c for c in gates_the_goal if len(subtree[c]) >= DOOR_FAR_SIDE_MIN_SIZE]
+        big_enough = [c for c in candidates if len(subtree[c]) >= DOOR_FAR_SIDE_MIN_SIZE]
         if not big_enough:
             return None
         smallest = min(len(subtree[c]) for c in big_enough)
@@ -255,10 +295,13 @@ def _place_mandatory_door(
 
         candidate = DoorKeyPair(door=door_cell, key=key_cell, mandatory=True, color_index=color_index)
         final_reachable = sequentially_reachable(sealed_grid, ctx.start, committed + [candidate], teleport=teleport)
-        if ctx.goal not in final_reachable:
-            # Sealing this pocket broke solvability somewhere -- either
-            # this candidate isn't a genuine gate (a loop bypasses it), or
-            # it accidentally cut off an earlier door's key. Try another.
+        if current_start not in final_reachable:
+            # Sealing this pocket broke solvability somewhere -- either it
+            # accidentally cut off an earlier door's key (current_start is
+            # locked behind that earlier door, so it'd never become
+            # reachable again), or -- when current_start is itself an
+            # inherited ctx.mandatory_frontier from an earlier augment --
+            # it severed that augment's own mandatory chain. Try another.
             continue
 
         ctx.grid = sealed_grid
@@ -276,22 +319,26 @@ def _place_decorative_doors(
     committed: list[DoorKeyPair],
 ) -> list[DoorKeyPair]:
     """
-    Purely optional gates: candidates whose subtree does *not* contain the
-    goal (so sealing one never blocks the route to the goal itself), each
+    Purely optional gates: candidates whose subtree does *not* contain
+    `ctx.mandatory_frontier` (so sealing one never blocks the established
+    mandatory-gate chain -- possibly just extended by this augment's own
+    mandatory loop above, possibly inherited from an earlier augment), each
     verified the same way _place_mandatory_door() does -- the full
     sequentially_reachable() outcome, with every already-committed
-    mandatory door included, must still reach the goal, and this new
+    mandatory door included, must still reach that frontier, and this new
     door's own pocket must genuinely be gated by it (checked via a
-    far-side sample cell, since subtree-exclusion from the goal alone
+    far-side sample cell, since subtree-exclusion from the frontier alone
     doesn't rule out a braid()/teleporter bypass making it an inert,
-    pointless always-open cell instead of a real gate).
+    pointless always-open cell instead of a real gate). Checked against the
+    frontier rather than `ctx.goal`, since the final goal isn't decided
+    until every active augment has run (see run_pipeline()).
     """
     if count <= 0:
         return []
     order, subtree, parent = pendant_subtree_map(ctx.grid, ctx.start)
     candidates = [
         c for c in order
-        if c not in ctx.reserved and ctx.goal not in subtree[c]
+        if c not in ctx.reserved and ctx.mandatory_frontier not in subtree[c]
         and DOOR_FAR_SIDE_MIN_SIZE <= len(subtree[c]) <= DOOR_FAR_SIDE_MAX_SIZE
     ]
     teleport = lambda x, y: tmap.get((x, y))
@@ -320,8 +367,8 @@ def _place_decorative_doors(
 
             candidate = DoorKeyPair(door=door_cell, key=key_cell, mandatory=False, color_index=start_index + i)
             final_reachable = sequentially_reachable(sealed_grid, ctx.start, committed + pairs + [candidate], teleport=teleport)
-            if ctx.goal not in final_reachable:
-                continue  # broke solvability somewhere -- try another candidate
+            if ctx.mandatory_frontier not in final_reachable:
+                continue  # broke solvability of the established mandatory chain somewhere -- try another candidate
 
             ctx.grid = sealed_grid
             ctx.reserved |= {door_cell, key_cell}
