@@ -33,7 +33,7 @@ DIMENSION_STEP = 2  # always even, so odd + step stays odd
 # ── Display ───────────────────────────────────────────────────────────────
 CELL         = 28          # pixels per maze cell
 SIDEBAR_W    = 230         # width of each side panel
-HUD_HEIGHT   = 60          # bottom bar height
+HUD_HEIGHT   = 84          # bottom bar height -- tall enough for the labyrinth mode's oversized run timer (see progression/renderer.py)
 FPS          = 60
 
 # History log
@@ -81,6 +81,13 @@ MAX_ACTIVE_AUGMENTS = 4
 # not a per-maze budget: it ticks down continuously, pellets add to it,
 # hazards subtract from it, and it's only reset on death (restart()).
 LABYRINTH_START_TIME = 15.0   # seconds the run starts with
+
+# First-run callout: playtesters didn't realize the maze is timed at all, so
+# the HUD timer gets a brief on-screen callout the first time a run starts
+# (maze 1 only -- see progression/renderer.py's _draw_timer_callout), fading
+# out over the last CALLOUT_FADE_SECONDS of its lifetime.
+TIMER_CALLOUT_SECONDS      = 4.0
+TIMER_CALLOUT_FADE_SECONDS = 1.0
 
 # Speed bonus: clearing a maze quickly adds a little time back. "Fast
 # enough" is judged against a par time derived from that specific maze's
@@ -215,6 +222,7 @@ C_TEXT      = (220, 220, 220)
 C_DIM       = (100, 100, 120)
 C_CARD_DESC = (190, 195, 210)  # card/tooltip description text -- brighter than C_DIM, dimmer than C_TEXT, legible against C_BUTTON's blue
 C_FLASH     = (255, 220,  60)
+C_TIME_WARNING  = (255, 170,  60)  # amber -- run timer at moderate urgency (see progression/renderer.py's _timer_color)
 C_HUD_BG    = (10,  10,  20)
 C_PANEL_BG  = (18,  18,  30)
 C_PANEL_LINE = (45,  45,  65)

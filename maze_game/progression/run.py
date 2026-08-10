@@ -204,6 +204,11 @@ class LabyrinthRun:
         # every run, not just the very first one.
         self.meta_progress = MetaProgress(self.gold_path, meta_upgrades_path)
         self.build = self.meta_progress.seed_build()
+        # Timestamp of this run's start, not any individual maze's -- drives
+        # the HUD's brief "this run is timed!" callout (see
+        # progression/renderer.py's _draw_timer_callout), which only shows
+        # early into maze 1, not on every maze transition.
+        self.started_at = time.monotonic()
         self._begin_maze()
 
     # ── Public API ────────────────────────────────────────────────────────
@@ -329,6 +334,7 @@ class LabyrinthRun:
         self.doors = []
         self.keys = []
         self._locked_doors = set()
+        self.started_at = time.monotonic()
         self._begin_maze()
 
     @property

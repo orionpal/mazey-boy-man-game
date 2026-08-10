@@ -30,8 +30,9 @@ from maze_game.constants import (
     C_BG, C_WALL, C_FLOOR, C_PLAYER, C_GOAL, C_TEXT, C_DIM, C_CARD_DESC, C_FLASH, C_HUD_BG,
     C_PANEL_BG, C_PANEL_LINE, C_BUTTON, C_BUTTON_HOVER,
     C_PELLET, C_GOLD, C_HAZARD, C_TELEPORT_PAIRS, C_DOOR_LOCKED, C_DOOR_UNLOCKED, C_DOOR_KEY_PAIRS,
-    C_SPEED_BONUS, C_STAIRS_PAIRS,
+    C_SPEED_BONUS, C_STAIRS_PAIRS, C_TIME_WARNING,
     POPUP_DURATION_SECONDS, POPUP_RISE_PIXELS,
+    TIMER_CALLOUT_SECONDS, TIMER_CALLOUT_FADE_SECONDS,
 )
 from maze_game.media import sprites
 from maze_game.media.shapes import draw_smiley_face
@@ -40,7 +41,9 @@ from maze_game.progression.augments import AUGMENTS_BY_ID
 from maze_game.progression.run import LabyrinthRun
 
 MAZE_AREA_SIZE = 640  # fixed pixel viewport the maze renders within, at any dimension
-LOW_TIME_WARNING_SECONDS = 5.0
+LOW_TIME_WARNING_SECONDS = 5.0     # remaining seconds at which the timer turns critical (red, blinking)
+MEDIUM_TIME_WARNING_SECONDS = 10.0  # remaining seconds at which the timer turns amber
+TIMER_BLINK_PERIOD_SECONDS = 0.5    # full on/off cycle length for the critical-time blink
 
 CARD_MARGIN = 24
 CARD_GAP = 16
@@ -127,6 +130,10 @@ class Renderer:
         self.font_small = pygame.font.SysFont("monospace", 14)
         self.font_huge = pygame.font.SysFont("monospace", 30, bold=True)
         self.font_button = pygame.font.SysFont("monospace", 20, bold=True)
+        # Dedicated, oversized font for the run timer -- playtesters missed
+        # the old font_big-sized readout entirely, so the HUD's headline
+        # element needs to read as unmistakably a clock at a glance.
+        self.font_timer = pygame.font.SysFont("monospace", 36, bold=True)
 
     def set_surface(self, surface: pygame.Surface) -> None:
         self.surface = surface
@@ -157,6 +164,7 @@ class Renderer:
             self._draw_goal(run.goal, layout)
             self._draw_player(run.player, layout)
             self._draw_popups(run, layout)
+            self._draw_timer_callout(run, layout)
 
         self._draw_hud(run, layout)
         self._draw_build_sidebar(run.build, layout, mouse_pos)
@@ -338,23 +346,73 @@ class Renderer:
 
     # ── HUD ──────────────────────────────────────────────────────────────
 
+    def _timer_color(self, remaining: float) -> tuple[int, int, int]:
+        """
+        Green/neutral text down to MEDIUM_TIME_WARNING_SECONDS, then amber,
+        then -- inside LOW_TIME_WARNING_SECONDS -- blinks between red and
+        white (a static colour swap alone is easy to miss out of the
+        corner of the eye; a blink at panic-time isn't).
+        """
+        if remaining <= LOW_TIME_WARNING_SECONDS:
+            phase = time.monotonic() % TIMER_BLINK_PERIOD_SECONDS
+            return C_TEXT if phase < TIMER_BLINK_PERIOD_SECONDS / 2 else C_HAZARD
+        if remaining <= MEDIUM_TIME_WARNING_SECONDS:
+            return C_TIME_WARNING
+        return C_TEXT
+
     def _draw_hud(self, run: LabyrinthRun, layout: Layout) -> None:
         pygame.draw.rect(self.surface, C_HUD_BG, layout.hud)
 
         remaining = run.time.amount
-        colour = C_FLASH if remaining <= LOW_TIME_WARNING_SECONDS else C_TEXT
-        timer_label = self.font_big.render(f"{remaining:4.1f}s", True, colour)
-        self.surface.blit(timer_label, (layout.hud.x + 10, layout.hud.y + 8))
+        colour = self._timer_color(remaining)
+
+        caption = self.font_small.render("TIME LEFT", True, C_DIM)
+        self.surface.blit(caption, (layout.hud.x + 10, layout.hud.y + 2))
+
+        timer_label = self.font_timer.render(f"{remaining:4.1f}s", True, colour)
+        self.surface.blit(timer_label, (layout.hud.x + 10, layout.hud.y + 20))
 
         progress = self.font_small.render(
             f"Maze {run.maze_index}/{LABYRINTH_TOTAL_MAZES}   ({run.cols}x{run.rows})   "
             f"group {run.group_number}/{run.total_groups}   seed {run.seed}",
             True, C_DIM,
         )
-        self.surface.blit(progress, (layout.hud.x + 10, layout.hud.y + 36))
+        self.surface.blit(progress, (layout.hud.x + 10, layout.hud.bottom - 20))
 
         gold_label = self.font_small.render(f"{run.gold}g", True, C_GOLD)
         self.surface.blit(gold_label, (layout.hud.right - gold_label.get_width() - 10, layout.hud.y + 8))
+
+    def _draw_timer_callout(self, run: LabyrinthRun, layout: Layout) -> None:
+        """
+        Brief on-screen callout the first time a run starts, since
+        playtesters didn't realize the maze is timed at all -- shown only
+        during maze 1, fading out over the run's opening
+        TIMER_CALLOUT_SECONDS. Points explicitly at the HUD timer below it
+        rather than just repeating "timed run" in the abstract.
+        """
+        if run.maze_index != 1 or run.failed or run.completed_run:
+            return
+        elapsed = time.monotonic() - run.started_at
+        if elapsed >= TIMER_CALLOUT_SECONDS:
+            return
+
+        fade_start = TIMER_CALLOUT_SECONDS - TIMER_CALLOUT_FADE_SECONDS
+        alpha = 255 if elapsed <= fade_start else max(
+            0, int(255 * (1 - (elapsed - fade_start) / TIMER_CALLOUT_FADE_SECONDS))
+        )
+
+        text = self.font_big.render("Watch the clock -- this run is timed!", True, C_TEXT)
+        ox, _ = layout.maze_origin
+        box = pygame.Rect(0, 0, text.get_width() + 32, text.get_height() + 20)
+        box.centerx = ox + MAZE_AREA_SIZE // 2
+        box.top = 16
+
+        panel = pygame.Surface(box.size, pygame.SRCALPHA)
+        panel.fill((*C_HUD_BG, int(200 * alpha / 255)))
+        pygame.draw.rect(panel, (*C_FLASH, alpha), panel.get_rect(), width=2)
+        text.set_alpha(alpha)
+        panel.blit(text, text.get_rect(center=(box.width // 2, box.height // 2)))
+        self.surface.blit(panel, box.topleft)
 
     # ── Build sidebar (passive perks) ─────────────────────────────────────
 
