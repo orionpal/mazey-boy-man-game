@@ -317,12 +317,9 @@ def test_every_real_augment_declares_a_pellet_economy_trade_off():
         assert augment.pellet_value_multiplier > 0
 
 
-def test_fog_of_war_and_twin_goals_pull_in_opposite_directions():
-    """The two augments the trade-off design was explicitly motivated by: fog of war (much harder -- boosts pellets) and twin goals (a net advantage -- reduces frequency)."""
+def test_twin_goals_reduces_pellet_frequency():
+    """Twin goals is a net advantage (a second way to end the maze), so it should reduce pellet frequency, unlike the harder-difficulty augments."""
     from maze_game.progression.augments import AUGMENTS_BY_ID
 
-    fog = AUGMENTS_BY_ID["fog_of_war"]
     twin_goals = AUGMENTS_BY_ID["twin_goals"]
-    assert fog.pellet_frequency_multiplier > 1.0
-    assert fog.pellet_value_multiplier > 1.0
     assert twin_goals.pellet_frequency_multiplier < 1.0

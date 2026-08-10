@@ -2,7 +2,7 @@
 augments/__init__.py
 ---------------------
 Maze augments: generation-time modifiers (teleporting squares, doors &
-keys, and later rotating maze, fog of war, shifting rooms -- see
+keys, and later rotating maze, shifting rooms -- see
 docs/planning/future-ideas.md) offered every AUGMENT_INTERVAL-th maze
 alongside the perk/item shop. Mirrors shop/'s shape (a Build-like
 pick-count tracker, a card-offer function) but for maze generation instead
@@ -54,10 +54,10 @@ class Augment:
 
     # Pellet-economy trade-off: every augment makes the maze itself either
     # harder or easier in some way, so pellet spawns compensate in the
-    # opposite direction -- an augment that makes survival harder (fog of
-    # war's blind navigation, rotation's forced re-planning, a fetch-quest
-    # detour for a key) spawns more/richer pellets; one that makes the run
-    # easier (twin goals' second chance to end the maze) spawns fewer.
+    # opposite direction -- an augment that makes survival harder (rotation's
+    # forced re-planning, a fetch-quest detour for a key) spawns more/richer
+    # pellets; one that makes the run easier (twin goals' second chance to
+    # end the maze) spawns fewer.
     # Neutral (1.0) by default; concrete augments override what actually
     # applies. Combined multiplicatively across every active augment (see
     # AugmentBuild.pellet_frequency_multiplier/pellet_value_multiplier
@@ -420,7 +420,7 @@ AUGMENTS_BY_ID: dict[str, Augment] = {}
 # the file (that would be circular).
 from maze_game.progression.augments.gating import DoorsAugment, TeleportersAugment  # noqa: E402
 from maze_game.progression.augments.shifting_room import ShiftingRoomAugment  # noqa: E402
-from maze_game.progression.augments.runtime import FogOfWarAugment, RotatingMazeAugment  # noqa: E402
+from maze_game.progression.augments.runtime import RotatingMazeAugment  # noqa: E402
 from maze_game.progression.augments.twin_goals import TwinGoalsAugment  # noqa: E402
 
 # Order matters for the first three: DoorsAugment must run after
@@ -433,7 +433,7 @@ from maze_game.progression.augments.twin_goals import TwinGoalsAugment  # noqa: 
 # generation at all.
 for _augment in (
     TeleportersAugment(), DoorsAugment(), ShiftingRoomAugment(),
-    RotatingMazeAugment(), FogOfWarAugment(), TwinGoalsAugment(),
+    RotatingMazeAugment(), TwinGoalsAugment(),
 ):
     ALL_AUGMENTS.append(_augment)
     AUGMENTS_BY_ID[_augment.id] = _augment
