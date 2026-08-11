@@ -72,6 +72,7 @@ from maze_game.constants import (
     DOOR_FAR_SIDE_MIN_SIZE, DOOR_FAR_SIDE_MAX_SIZE, DOOR_PLACEMENT_MAX_ATTEMPTS,
     C_DOOR_KEY_PAIRS,
 )
+from maze_game.maze import is_stoppable_cell
 from maze_game.progression.augments import Augment, AugmentContext
 from maze_game.progression.augments._movement import pendant_subtree_map, real_move_reachable, seal_pocket
 from maze_game.progression.entities import MazeEntity
@@ -128,11 +129,16 @@ class DoorsAugment(Augment):
         pairs: list[DoorKeyPair] = []
         current_start = ctx.mandatory_frontier
         for i in range(mandatory_count):
-            pair = _place_mandatory_door(ctx, current_start, tmap, color_index=i, committed=pairs)
-            if pair is None:
+            result = _place_mandatory_door(ctx, current_start, tmap, color_index=i, committed=pairs)
+            if result is None:
                 break  # graceful degradation -- fewer mandatory doors than the formula asked for
+            pair, frontier_cell = result
             pairs.append(pair)
-            current_start = pair.door  # next search rooted deeper, same nesting technique as teleporters
+            # Nest off (and advance the checkpoint to) a verified-stoppable
+            # cell inside the door's own pocket -- not `pair.door` itself,
+            # see _place_mandatory_door()'s docstring for why that used to
+            # silently make every reachability check against it vacuous.
+            current_start = frontier_cell
 
         if pairs:
             # Advance the shared cross-augment checkpoint rather than gating
@@ -214,7 +220,7 @@ def _place_mandatory_door(
     tmap: dict[tuple[int, int], tuple[int, int]],
     color_index: int,
     committed: list[DoorKeyPair],
-) -> DoorKeyPair | None:
+) -> tuple[DoorKeyPair, tuple[int, int]] | None:
     """
     Pick a pendant subtree of `current_start`'s BFS tree whose size lands in
     [DOOR_FAR_SIDE_MIN_SIZE, DOOR_FAR_SIDE_MAX_SIZE] (falling back to the
@@ -235,8 +241,8 @@ def _place_mandatory_door(
     multi-level's mandatory pockets, which never needed a "contains goal"
     check either, precisely because they own their own goal placement. This
     function's caller does the analogous thing: advances
-    `ctx.mandatory_frontier` to the new door once placed, and the actual
-    final goal gets chosen once, after the whole pipeline runs.
+    `ctx.mandatory_frontier` to the returned frontier cell once placed, and
+    the actual final goal gets chosen once, after the whole pipeline runs.
 
     Verifies with the *full* sequentially_reachable() -- not just a
     pairwise "is `current_start` still reachable with this one door locked"
@@ -250,6 +256,33 @@ def _place_mandatory_door(
     an *earlier augment's* mandatory chain when this is the first door
     placed off an inherited `ctx.mandatory_frontier` -- current_start IS
     that frontier in that case, so the same check does double duty.
+
+    **Returns the door's own cell separately from the checkpoint used for
+    verification and nesting.** `door_cell` itself is frequently a plain
+    2-open-neighbour corridor cell once unlocked (it only had one open side
+    -- the entrance -- forced by `seal_pocket()`, plus however many children
+    its pendant subtree happens to have; a single-child subtree, the common
+    case, leaves it at exactly 2) -- `player.slide()` only ever stops at a
+    wall ahead or a junction (3+ open neighbours), so real movement can
+    *never land exactly on it*, unlocked or not (see `maze.py`'s
+    `is_stoppable_cell`/`farthest_reachable_cell` for the same rule
+    elsewhere). Checking `door_cell` itself for membership in a
+    `real_move_reachable()`/`sequentially_reachable()` result was therefore
+    checking something that could be false 100% of the time regardless of
+    whether the door was ever actually passable -- the exact bug that
+    silently capped every level at 1 real mandatory door (the *first* one's
+    check is vacuously true, since `current_start` there is just `ctx.start`,
+    always trivially reachable) and starved every decorative door's own
+    frontier check (which had no such vacuous first-door exemption) at a
+    ~100% rate. Fixed by picking a genuinely stoppable cell from inside the
+    now-sealed pocket (`subtree[door_cell]`, which always contains at least
+    one -- a fully re-walled pendant subtree's own leaves are dead ends by
+    construction, and a dead end is always stoppable) and using *that* as
+    both the nesting root for a subsequent mandatory door and the
+    checkpoint `ctx.mandatory_frontier` ends up holding. The door tile
+    itself (`candidate.door`) is unaffected -- it's still exactly where the
+    player unlocks and steps past; only the internal "did we get far enough"
+    bookkeeping moved off of it.
 
     Mutates ctx.grid/ctx.reserved in place on success. Returns None if no
     candidate works out (graceful degradation -- the caller places fewer
@@ -293,20 +326,32 @@ def _place_mandatory_door(
             continue
         key_cell = ctx.rng.choice(key_candidates)
 
+        # A stoppable cell inside the sealed pocket -- see the docstring
+        # above for why door_cell itself can't reliably serve as the
+        # "did we get past this gate" checkpoint. Guaranteed non-empty: a
+        # fully re-walled pendant subtree's leaves are dead ends (1 open
+        # neighbour), always stoppable.
+        frontier_candidates = [c for c in subtree[door_cell] if is_stoppable_cell(sealed_grid, *c)]
+        if not frontier_candidates:
+            continue
+        frontier_cell = ctx.rng.choice(frontier_candidates)
+
         candidate = DoorKeyPair(door=door_cell, key=key_cell, mandatory=True, color_index=color_index)
         final_reachable = sequentially_reachable(sealed_grid, ctx.start, committed + [candidate], teleport=teleport)
-        if current_start not in final_reachable:
+        if current_start not in final_reachable or frontier_cell not in final_reachable:
             # Sealing this pocket broke solvability somewhere -- either it
             # accidentally cut off an earlier door's key (current_start is
             # locked behind that earlier door, so it'd never become
             # reachable again), or -- when current_start is itself an
             # inherited ctx.mandatory_frontier from an earlier augment --
-            # it severed that augment's own mandatory chain. Try another.
+            # it severed that augment's own mandatory chain -- or the new
+            # door's own pocket (frontier_cell) never actually opens up.
+            # Try another.
             continue
 
         ctx.grid = sealed_grid
         ctx.reserved |= {door_cell, key_cell}
-        return candidate
+        return candidate, frontier_cell
 
     return None
 

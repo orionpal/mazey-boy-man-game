@@ -272,9 +272,22 @@ def _place_floor(
         sealed_grid = seal_pocket(ctx.grid, blob)
         floor_grid = _recarve_blob(sealed_grid, blob, ctx.rng)
 
+        # Same local-territory subtraction as `forbidden`/`candidates` above,
+        # and for the identical reason: nesting a floor inside a pocket a
+        # previous chain step already reserved (its own blob + down/up) must
+        # not treat that same territory as off-limits to itself, or every
+        # down/up candidate here is pre-excluded and nesting past the first
+        # mandatory floor silently degrades to 0 every time. But the local
+        # subtraction alone would also un-reserve an *already-placed*
+        # stairs cell sitting inside this same local territory (e.g. the
+        # parent floor's own `down`/`up`) -- explicitly re-excluding every
+        # committed link's cells (plus current_start, this search's own
+        # entry point) keeps stairs cells from ever colliding.
+        used_stairs = {c for link in committed for c in (link.down, link.up)} | {current_start}
+        forbidden_for_stairs = (ctx.reserved - local) | used_stairs
         after = bfs_reachable(floor_grid, current_start)
-        down_candidates = [c for c in after if c not in ctx.reserved and is_stoppable_cell(floor_grid, *c)]
-        up_candidates = [c for c in blob if c not in ctx.reserved and is_stoppable_cell(floor_grid, *c)]
+        down_candidates = [c for c in after if c not in forbidden_for_stairs and is_stoppable_cell(floor_grid, *c)]
+        up_candidates = [c for c in blob if c not in forbidden_for_stairs and is_stoppable_cell(floor_grid, *c)]
         if not down_candidates or not up_candidates:
             continue
 
