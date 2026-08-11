@@ -396,7 +396,8 @@ class LabyrinthRun:
         exclude = exclude | {p.pos for p in self.gold_pellets}
         if self.maze_index >= HAZARD_UNLOCK_MAZE:
             self.hazards = spawn_hazards(
-                self.grid, exclude, density_multiplier=hazard_density_ramp(self.maze_index), rng=self.rng,
+                self.grid, exclude, density_multiplier=hazard_density_ramp(self.maze_index),
+                maze_index=self.maze_index, rng=self.rng,
             )
         else:
             self.hazards = []

@@ -12,9 +12,12 @@ from maze_game.constants import (
     PELLET_TIME_VALUE, PELLET_MIN_COUNT, HAZARD_TIME_PENALTY,
     HAZARD_UNLOCK_MAZE, HAZARD_RAMP_MAZES, HAZARD_RAMP_START_MULTIPLIER,
     HAZARD_DENSITY, HAZARD_MAX_COUNT, C_PELLET, C_GOLD, C_HAZARD, C_SHIELD,
+    HAZARD_HEAVY_UNLOCK_MAZE, HAZARD_HEAVY_TIME_PENALTY,
+    HAZARD_EXTREME_UNLOCK_MAZE, HAZARD_EXTREME_TIME_FRACTION,
 )
 from maze_game.progression.entities.hazards import (
-    Pellet, GoldPellet, Hazard, HAZARD_TYPES, spawn_pellets, spawn_hazards, hazard_density_ramp,
+    Pellet, GoldPellet, Hazard, HeavyHazard, ExtremeHazard, HAZARD_TYPES,
+    spawn_pellets, spawn_hazards, hazard_density_ramp, hazard_types_for_maze,
     spawn_gold_pellets, load_gold_total, save_gold_total,
 )
 from maze_game.progression.shop.perks import Build
@@ -213,6 +216,98 @@ def test_hazard_on_contact_only_blocks_up_to_the_remaining_charges():
 
 def test_hazard_types_registry_contains_the_base_type():
     assert Hazard in HAZARD_TYPES
+
+
+# ── HeavyHazard / ExtremeHazard ──────────────────────────────────────────
+
+
+def test_heavy_hazard_on_contact_costs_more_than_the_base_penalty():
+    run = _FakeRun()
+    HeavyHazard((1, 1)).on_contact(run)
+    assert run.time.amount == pytest.approx(10.0 - HAZARD_HEAVY_TIME_PENALTY)
+    assert HAZARD_HEAVY_TIME_PENALTY > HAZARD_TIME_PENALTY
+
+
+def test_heavy_hazard_on_contact_scales_by_hazard_resistance_and_can_be_shielded():
+    run = _FakeRun()
+    run.build.hazard_resistance_multiplier = 0.5
+    HeavyHazard((1, 1)).on_contact(run)
+    assert run.time.amount == pytest.approx(10.0 - HAZARD_HEAVY_TIME_PENALTY * 0.5)
+
+    run = _FakeRun()
+    run.shield_charges_remaining = 1
+    HeavyHazard((1, 1)).on_contact(run)
+    assert run.time.amount == pytest.approx(10.0)
+    assert run.events == ["shield_block"]
+
+
+def test_extreme_hazard_on_contact_halves_the_current_banked_time():
+    run = _FakeRun()
+    ExtremeHazard((1, 1)).on_contact(run)
+    assert run.time.amount == pytest.approx(10.0 * (1 - HAZARD_EXTREME_TIME_FRACTION))
+    assert run.events == ["hazard_hit"]
+
+
+def test_extreme_hazard_scales_with_however_much_time_is_currently_banked():
+    """The core distinguishing behaviour vs. a flat-penalty hazard: the cost tracks the current balance, not a fixed amount."""
+    low = _FakeRun()
+    low.time.amount = 4.0
+    ExtremeHazard((1, 1)).on_contact(low)
+    assert low.time.amount == pytest.approx(4.0 * (1 - HAZARD_EXTREME_TIME_FRACTION))
+
+    high = _FakeRun()
+    high.time.amount = 40.0
+    ExtremeHazard((1, 1)).on_contact(high)
+    assert high.time.amount == pytest.approx(40.0 * (1 - HAZARD_EXTREME_TIME_FRACTION))
+
+
+def test_extreme_hazard_on_contact_scales_by_hazard_resistance_and_can_be_shielded():
+    run = _FakeRun()
+    run.build.hazard_resistance_multiplier = 0.5
+    ExtremeHazard((1, 1)).on_contact(run)
+    assert run.time.amount == pytest.approx(10.0 - 10.0 * HAZARD_EXTREME_TIME_FRACTION * 0.5)
+
+    run = _FakeRun()
+    run.shield_charges_remaining = 1
+    ExtremeHazard((1, 1)).on_contact(run)
+    assert run.time.amount == pytest.approx(10.0)
+    assert run.events == ["shield_block"]
+
+
+def test_hazard_types_for_maze_only_includes_the_base_hazard_before_any_unlock():
+    types, weights = hazard_types_for_maze(HAZARD_UNLOCK_MAZE)
+    assert types == [Hazard]
+    assert len(weights) == 1
+
+
+def test_hazard_types_for_maze_adds_heavy_hazard_at_its_unlock_maze():
+    types, _weights = hazard_types_for_maze(HAZARD_HEAVY_UNLOCK_MAZE)
+    assert Hazard in types and HeavyHazard in types
+    assert ExtremeHazard not in types
+
+
+def test_hazard_types_for_maze_adds_extreme_hazard_at_its_unlock_maze():
+    types, _weights = hazard_types_for_maze(HAZARD_EXTREME_UNLOCK_MAZE)
+    assert set(types) == {Hazard, HeavyHazard, ExtremeHazard}
+
+
+def test_hazard_types_for_maze_never_drops_an_already_unlocked_type():
+    types, _weights = hazard_types_for_maze(HAZARD_EXTREME_UNLOCK_MAZE + 100)
+    assert set(types) == {Hazard, HeavyHazard, ExtremeHazard}
+
+
+def test_spawn_hazards_only_yields_the_base_type_before_any_later_unlock():
+    hazards = spawn_hazards(OPEN_ROOM, exclude=set(), maze_index=HAZARD_UNLOCK_MAZE, rng=random.Random(20))
+    assert all(type(h) is Hazard for h in hazards)
+
+
+def test_spawn_hazards_can_yield_the_new_types_once_unlocked():
+    """A big room + many seeds should surface at least one of each severer type once both are unlocked."""
+    seen = set()
+    for seed in range(200):
+        hazards = spawn_hazards(OPEN_ROOM, exclude=set(), maze_index=HAZARD_EXTREME_UNLOCK_MAZE, rng=random.Random(seed))
+        seen.update(type(h) for h in hazards)
+    assert seen == {Hazard, HeavyHazard, ExtremeHazard}
 
 
 # ── spawn_pellets / spawn_hazards ─────────────────────────────────────────

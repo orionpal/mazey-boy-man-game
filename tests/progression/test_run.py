@@ -14,9 +14,12 @@ from maze_game.constants import (
     MILESTONE_INTERVAL, MILESTONE_DIMENSION_BOOST, MILESTONE_MAX_DIMENSION,
     LABYRINTH_GROUP_SIZE, LABYRINTH_TOTAL_MAZES, LABYRINTH_START_TIME,
     HAZARD_TIME_PENALTY, SPEED_BONUS_TIME, POPUP_DURATION_SECONDS,
+    HAZARD_HEAVY_UNLOCK_MAZE, HAZARD_EXTREME_UNLOCK_MAZE,
 )
 from maze_game.progression.run import dimensions_for_maze, is_milestone_maze, TimeResource, LabyrinthRun
-from maze_game.progression.entities.hazards import Pellet, GoldPellet, Hazard, load_gold_total
+from maze_game.progression.entities.hazards import (
+    Pellet, GoldPellet, Hazard, HeavyHazard, ExtremeHazard, load_gold_total,
+)
 from maze_game.progression.shop.perks import ALL_PERKS, Perk
 from maze_game.progression.augments.teleporters import TeleportersAugment
 from maze_game.progression.augments.doors import DoorKeyPair, Key
@@ -218,6 +221,23 @@ def test_gold_pellets_never_overlap_pellets():
 
 def test_hazards_are_empty_before_the_unlock_maze(run):
     assert run.hazards == []
+
+
+def test_only_the_base_hazard_type_spawns_before_heavy_hazards_unlock(run):
+    run.maze_index = HAZARD_HEAVY_UNLOCK_MAZE - 1
+    run._begin_maze()
+    assert all(type(h) is Hazard for h in run.hazards)
+
+
+def test_heavy_and_extreme_hazards_can_appear_once_unlocked():
+    """Integration-level check that LabyrinthRun's spawn_hazards() call is actually wired to maze_index -- run many seeds at the extreme-unlock maze and expect to see every hazard type."""
+    seen = set()
+    for seed in range(30):
+        run = LabyrinthRun(seed=seed)
+        run.maze_index = HAZARD_EXTREME_UNLOCK_MAZE
+        run._begin_maze()
+        seen.update(type(h) for h in run.hazards)
+    assert seen == {Hazard, HeavyHazard, ExtremeHazard}
 
 
 def test_completing_a_non_group_boundary_maze_advances_seamlessly(run):
