@@ -135,11 +135,14 @@ def offer_augment_cards(
     """
     Cap-aware card offer for the every-AUGMENT_INTERVAL-th modifier break.
 
-    Below MAX_ACTIVE_AUGMENTS distinct active augments: prefer offering
-    augments the player doesn't have yet (so picking one grows the active
-    set), topped up with already-active ones if there aren't enough
-    not-yet-active augments to fill the offer (true immediately at ship
-    time -- ALL_AUGMENTS has just 1 entry until more augments are built).
+    Below MAX_ACTIVE_AUGMENTS distinct active augments: offer *only*
+    augments the player doesn't have yet, even if that pool is smaller
+    than `count` (a short/forced offer, per the module docstring's note
+    on single forced cards) -- an already-active augment is never mixed
+    in just to pad the offer out, since that would let a player stack one
+    augment's difficulty before ever having picked the others. Already-
+    active augments only re-enter the pool once every distinct augment
+    has been picked at least once (the not-yet-active pool is empty).
     At or above the cap: every offer is drawn only from already-active
     augments, so a pick necessarily levels one up (mirrors how repeat perk
     picks already stack multiplicatively).
@@ -148,8 +151,8 @@ def offer_augment_cards(
     active = set(build.active_ids)
     if len(active) < MAX_ACTIVE_AUGMENTS:
         pool = [a for a in ALL_AUGMENTS if a.id not in active]
-        if len(pool) < count:
-            pool = pool + [a for a in ALL_AUGMENTS if a.id in active]
+        if not pool:
+            pool = [a for a in ALL_AUGMENTS if a.id in active]
     else:
         pool = [a for a in ALL_AUGMENTS if a.id in active]
     return rng.sample(pool, min(count, len(pool)))
