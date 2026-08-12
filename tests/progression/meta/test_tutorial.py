@@ -6,9 +6,9 @@ tutorial.json, so none of this ever touches the real on-disk file.
 
 import pytest
 
-from maze_game.maze import shortest_path
 from maze_game.player import slide
 from maze_game.progression.meta.tutorial import (
+    START_POS,
     TUTORIAL_STEPS,
     TutorialRun,
     load_tutorial_completed,
@@ -131,10 +131,12 @@ def test_move_that_reaches_the_goal_advances_to_the_next_step(path):
     _open_corridor_run(run)
     run.goal = (4, 2)  # far wall end of the corridor
     run.move((1, 0))
-    assert run.player == run.goal
+    # _advance() begins the next step immediately on completion, so by now
+    # player/goal already reflect the *new* step, not the one just cleared.
     assert "maze_complete" in run.events
     assert run.step_index == 1
     assert run.finished is False
+    assert run.player == START_POS
 
 
 def test_finishing_the_last_step_marks_the_run_finished_and_persists(path):
