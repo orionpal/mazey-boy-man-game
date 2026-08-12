@@ -8,7 +8,11 @@ for the whole run. Press an arrow key and your dot slides in that direction
 until it hits a wall or reaches a junction — then you choose again.
 **Relax (Free Play)** is a single maze at a time, adjustable size, no
 timer, with a run-history log — for practicing, or just wandering without
-pressure (also runnable directly via `mvp_main.py`, skipping the menu).
+pressure (also runnable directly via `mvp_main.py`, skipping the menu). A
+first-time player also sees a short, skippable **Tutorial** — a few tiny
+practice mazes teaching movement, the goal, and the countdown timer —
+before their first Labyrinth Run; it's replayable any time from the menu
+and is only ever shown automatically once.
 
 ---
 

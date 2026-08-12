@@ -35,7 +35,7 @@ from pathlib import Path
 
 from maze_game.constants import TUTORIAL_TIMED_STEP_SECONDS, APP_ROOT
 from maze_game.maze import generate_maze, farthest_reachable_cell
-from maze_game.player import slide
+from maze_game.player import slide_path
 
 START_POS: tuple[int, int] = (1, 1)
 
@@ -124,13 +124,23 @@ class TutorialRun:
         return self.step_index == len(TUTORIAL_STEPS) - 1
 
     def move(self, direction: tuple[int, int]) -> None:
+        """
+        Uses slide_path() rather than slide() so pellet contact is checked
+        against every cell the slide passes *through*, not just where it
+        stops -- unlike the goal (always placed on a stoppable cell, see
+        farthest_reachable_cell()), the pellet is chosen from any open
+        cell, including plain corridor cells a slide can only pass over,
+        never land on. Same reasoning as progression/run.py's own move(),
+        which checks contacts the same way for exactly this reason.
+        """
         if self.finished or self.step_failed:
             return
-        new_pos = slide(self.grid, self.player, direction)
-        if new_pos != self.player:
-            self.events.append("move")
-        self.player = new_pos
-        if self.pellet is not None and self.player == self.pellet:
+        path = slide_path(self.grid, self.player, direction)
+        if not path:
+            return
+        self.events.append("move")
+        self.player = path[-1]
+        if self.pellet is not None and self.pellet in path:
             self.pellet = None
             self.events.append("pellet")
         if self.player == self.goal:
