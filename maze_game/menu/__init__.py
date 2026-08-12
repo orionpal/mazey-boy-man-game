@@ -12,6 +12,7 @@ lives in menu/renderer.py, mirroring the freeplay/progression package shape.
 MENU_OPTIONS: list[tuple[str, str]] = [
     ("labyrinth", "Labyrinth Run"),
     ("relax", "Relax (Free Play)"),
+    ("tutorial", "Tutorial"),
 ]
 
 

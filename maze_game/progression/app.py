@@ -25,6 +25,8 @@ from maze_game.progression.run import LabyrinthRun, PauseMenu, peek_alpha
 from maze_game.progression.renderer import Renderer, Layout
 from maze_game.progression.meta import Base, MetaProgress, ALL_META_UPGRADES
 from maze_game.progression.meta.renderer import BaseRenderer
+from maze_game.progression.meta.tutorial import TutorialRun, load_tutorial_completed
+from maze_game.progression.meta.tutorial_renderer import TutorialRenderer
 
 if TYPE_CHECKING:
     from pygame._sdl2.video import Window
@@ -191,6 +193,44 @@ async def run_labyrinth(window: "Window | None", clock: pygame.time.Clock) -> st
         await asyncio.sleep(0)
 
 
+async def run_tutorial(window: "Window | None", clock: pygame.time.Clock) -> str:
+    """
+    Show the optional pre-run tutorial (see meta/tutorial.py) until every
+    step is cleared or the player skips (ESC). Returns "quit" if the window
+    was closed, otherwise "done" -- tutorial_completed is already persisted
+    by TutorialRun itself (on finish or skip, see its _finish()) by the
+    time this returns, so callers never need to touch that flag themselves.
+    """
+    run = TutorialRun()
+    renderer = TutorialRenderer(sync_window_size(window, TutorialRenderer.window_size(run.cols, run.rows)))
+
+    while not run.finished:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                return "quit"
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    run.skip()
+                elif run.step_failed:
+                    if event.key in (pygame.K_SPACE, pygame.K_RETURN):
+                        run.retry_step()
+                elif event.key in DIRECTION_MAP:
+                    run.move(DIRECTION_MAP[event.key])
+
+        run.update()
+        for event_name in run.events:
+            sound.play(event_name)
+        run.events.clear()
+
+        renderer.set_surface(sync_window_size(window, TutorialRenderer.window_size(run.cols, run.rows)))
+        renderer.draw(run)
+        pygame.display.flip()
+        clock.tick(FPS)
+        await asyncio.sleep(0)
+
+    return "done"
+
+
 def _try_purchase(progress: MetaProgress, upgrade) -> None:
     """Silent no-op if unaffordable -- no error sound/popup, it just doesn't happen."""
     if progress.purchase(upgrade):
@@ -258,7 +298,17 @@ async def run_progression_mode(window: "Window | None", clock: pygame.time.Clock
     fail/complete screen loops back into it (see run_labyrinth()) rather
     than restarting in place. main.py only ever sees "quit"/"menu" from
     this -- the same contract every other mode's entry point exposes.
+
+    A first-time player (tutorial_completed still False -- see
+    meta/tutorial.py) sees the tutorial exactly once, before the very first
+    Base screen; ESC skips it early at any point, and it's also replayable
+    on demand from the main menu (main.py's "Tutorial" option), independent
+    of this auto-offer.
     """
+    if not load_tutorial_completed():
+        tutorial_result = await run_tutorial(window, clock)
+        if tutorial_result == "quit":
+            return "quit"
     while True:
         base_result = await run_base(window, clock)
         if base_result in ("quit", "menu"):

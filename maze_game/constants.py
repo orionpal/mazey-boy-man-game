@@ -346,6 +346,14 @@ TWIN_GOAL_CLUSTER_RADIUS = 3
 TWIN_GOAL_PELLET_FREQUENCY_MULTIPLIER = 0.7
 TWIN_GOAL_PELLET_VALUE_MULTIPLIER     = 1.0
 
+# Tutorial (progression/meta/tutorial.py): a short, skippable sequence of
+# tiny practice mazes shown before a player's first real Labyrinth run --
+# movement + a single plain pellet + the goal, no augments/hazards. Only
+# the final step is timed, with a generous countdown (a first-timer isn't
+# expected to already know the maze's shape), just to introduce the real
+# run's countdown-timer mechanic before it actually matters.
+TUTORIAL_TIMED_STEP_SECONDS = 25.0
+
 # ── Colours  (R, G, B) ────────────────────────────────────────────────────
 # Identity colours (player/goal/pellet/gold/hazard/door/speed-bonus) are
 # deliberately spread across distinct hues so entity *families* stay
