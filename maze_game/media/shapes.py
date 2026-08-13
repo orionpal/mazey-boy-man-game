@@ -14,6 +14,28 @@ import pygame
 _MIN_RADIUS_FOR_FACE = 4  # below this, eyes/mouth are too small to read -- skip them
 
 
+def draw_player_marker(
+    surface: pygame.Surface,
+    center: tuple[int, int],
+    radius: int,
+    fill_colour,
+    outline_colour,
+    face_colour,
+) -> None:
+    """
+    Draw the player as a filled circle with a bright outline ring and a
+    smiley face -- the outline is what keeps the marker readable once large
+    mazes shrink `radius` down to just a few pixels, since a thin halo still
+    reads against wall/floor/entity colours even when the fill alone would
+    blend in. Both renderers' fallback (no assets/icons/player.png) path
+    call this so the look stays identical.
+    """
+    outline_radius = radius + max(2, radius // 3)
+    pygame.draw.circle(surface, outline_colour, center, outline_radius)
+    pygame.draw.circle(surface, fill_colour, center, radius)
+    draw_smiley_face(surface, face_colour, center, radius)
+
+
 def draw_smiley_face(surface: pygame.Surface, colour, center: tuple[int, int], radius: int) -> None:
     """Draw two eyes and a smiling mouth inside a circle of `radius` centred at `center`."""
     if radius < _MIN_RADIUS_FOR_FACE:

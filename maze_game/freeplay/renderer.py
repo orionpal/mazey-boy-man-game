@@ -13,12 +13,12 @@ import pygame
 
 from maze_game.constants import (
     CELL, SIDEBAR_W, HUD_HEIGHT, MAX_HISTORY_SHOWN,
-    C_BG, C_WALL, C_FLOOR, C_PLAYER, C_GOAL,
+    C_BG, C_WALL, C_FLOOR, C_PLAYER, C_PLAYER_OUTLINE, C_GOAL,
     C_TEXT, C_DIM, C_FLASH, C_HUD_BG,
     C_PANEL_BG, C_PANEL_LINE, C_BUTTON, C_BUTTON_HOVER,
 )
 from maze_game.media import sprites
-from maze_game.media.shapes import draw_smiley_face
+from maze_game.media.shapes import draw_player_marker
 
 BUTTON_SIZE = 28
 LEFT_CONTENT_HEIGHT = 260   # height needed for the (fixed) left sidebar controls
@@ -144,8 +144,7 @@ class Renderer:
             return
         center = (ox + px * CELL + CELL // 2, oy + py * CELL + CELL // 2)
         radius = CELL // 2 - 3
-        pygame.draw.circle(self.surface, C_PLAYER, center, radius)
-        draw_smiley_face(self.surface, C_BG, center, radius)
+        draw_player_marker(self.surface, center, radius, C_PLAYER, C_PLAYER_OUTLINE, C_BG)
 
     def _draw_hud(self, elapsed, best_time, finished, layout: Layout) -> None:
         pygame.draw.rect(self.surface, C_HUD_BG, layout.hud)

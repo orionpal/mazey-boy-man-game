@@ -21,27 +21,36 @@ which don't scale with maze size at all) visually stable across the whole
 run.
 """
 
+import math
 import time
 
 import pygame
 
 from maze_game.constants import (
     SIDEBAR_W, HUD_HEIGHT, LABYRINTH_TOTAL_MAZES, MAX_ACTIVE_AUGMENTS,
-    C_BG, C_WALL, C_FLOOR, C_PLAYER, C_GOAL, C_TEXT, C_DIM, C_CARD_DESC, C_FLASH, C_HUD_BG,
+    C_BG, C_WALL, C_FLOOR, C_PLAYER, C_PLAYER_OUTLINE, C_GOAL, C_TEXT, C_DIM, C_CARD_DESC, C_FLASH, C_HUD_BG,
     C_PANEL_BG, C_PANEL_LINE, C_BUTTON, C_BUTTON_HOVER,
     C_PELLET, C_GOLD, C_HAZARD, C_TELEPORT_PAIRS, C_DOOR_LOCKED, C_DOOR_UNLOCKED, C_DOOR_KEY_PAIRS,
     C_SPEED_BONUS, C_STAIRS_PAIRS, C_SHOP,
     POPUP_DURATION_SECONDS, POPUP_RISE_PIXELS,
 )
 from maze_game.media import sprites
-from maze_game.media.shapes import draw_smiley_face
+from maze_game.media.shapes import draw_player_marker
 from maze_game.progression.shop import renderer as shop_renderer
 from maze_game.progression.shop.perks import ALL_PERKS
 from maze_game.progression.augments import AUGMENTS_BY_ID
 from maze_game.progression.run import LabyrinthRun
 
 MAZE_AREA_SIZE = 640  # fixed pixel viewport the maze renders within, at any dimension
-LOW_TIME_WARNING_SECONDS = 5.0
+
+# Time HUD thresholds -- calibrated against LABYRINTH_START_TIME (15s), not
+# an arbitrary fraction, so "low"/"critical" both leave a real window to react.
+LOW_TIME_WARNING_SECONDS = 10.0
+LOW_TIME_CRITICAL_SECONDS = 5.0
+TIMER_PULSE_HZ = 2.5  # glow oscillations/sec behind the countdown once critical
+
+RUN_START_CALLOUT_SECONDS = 3.0  # how long the "it's timed!" banner stays up
+RUN_START_CALLOUT_TEXT = "This maze is timed -- watch the clock!"
 
 CARD_MARGIN = 24
 CARD_GAP = 16
@@ -166,6 +175,7 @@ class Renderer:
             self._draw_goal(run.goal, layout)
             self._draw_player(run.player, layout)
             self._draw_popups(run, layout)
+            self._draw_run_start_callout(run, layout)
 
         self._draw_hud(run, layout)
         self._draw_build_sidebar(run.build, layout, mouse_pos)
@@ -220,8 +230,7 @@ class Renderer:
             return
         center = (ox + px * cell + cell // 2, oy + py * cell + cell // 2)
         radius = max(1, cell // 2 - 3)
-        pygame.draw.circle(self.surface, C_PLAYER, center, radius)
-        draw_smiley_face(self.surface, C_BG, center, radius)
+        draw_player_marker(self.surface, center, radius, C_PLAYER, C_PLAYER_OUTLINE, C_BG)
 
     def _draw_pellets(self, pellets, layout: Layout) -> None:
         ox, oy = layout.maze_origin
@@ -370,20 +379,59 @@ class Renderer:
         pygame.draw.rect(self.surface, C_HUD_BG, layout.hud)
 
         remaining = run.time.amount
-        colour = C_SHOP if run.in_shop else (C_FLASH if remaining <= LOW_TIME_WARNING_SECONDS else C_TEXT)
+        # The shop tile (see entities/shop_tile.py) pauses the real
+        # countdown while run.in_shop -- shown as its own steady colour with
+        # a "(paused)" suffix rather than running through the urgency
+        # escalation below, since remaining isn't actually counting down.
+        critical = not run.in_shop and remaining <= LOW_TIME_CRITICAL_SECONDS
+        if run.in_shop:
+            colour = C_SHOP
+        elif critical:
+            colour = C_HAZARD
+        elif remaining <= LOW_TIME_WARNING_SECONDS:
+            colour = C_FLASH
+        else:
+            colour = C_TEXT
         timer_text = f"{remaining:4.1f}s (paused)" if run.in_shop else f"{remaining:4.1f}s"
-        timer_label = self.font_big.render(timer_text, True, colour)
-        self.surface.blit(timer_label, (layout.hud.x + 10, layout.hud.y + 8))
+        timer_pos = (layout.hud.x + 10, layout.hud.y + 2)
+        timer_label = self.font_huge.render(timer_text, True, colour)
+        if critical:
+            self._draw_timer_pulse(timer_label.get_rect(topleft=timer_pos))
+        self.surface.blit(timer_label, timer_pos)
 
+        bottom_y = layout.hud.bottom - 16
         progress = self.font_small.render(
             f"Maze {run.maze_index}/{LABYRINTH_TOTAL_MAZES}   ({run.cols}x{run.rows})   "
             f"group {run.group_number}/{run.total_groups}   seed {run.seed}",
             True, C_DIM,
         )
-        self.surface.blit(progress, (layout.hud.x + 10, layout.hud.y + 36))
+        self.surface.blit(progress, (layout.hud.x + 10, bottom_y))
 
         gold_label = self.font_small.render(f"{run.gold}g", True, C_GOLD)
         self.surface.blit(gold_label, (layout.hud.right - gold_label.get_width() - 10, layout.hud.y + 8))
+
+    def _draw_timer_pulse(self, label_rect: pygame.Rect) -> None:
+        """Soft glow behind the countdown that throbs once time is critical -- keeps the digits legible (unlike blinking them) while still reading as urgent."""
+        phase = (time.monotonic() * TIMER_PULSE_HZ) % 1.0
+        alpha = int(70 + 70 * abs(math.sin(phase * math.pi)))
+        glow = pygame.Surface((label_rect.width + 16, label_rect.height + 12), pygame.SRCALPHA)
+        glow.fill((*C_HAZARD, alpha))
+        self.surface.blit(glow, (label_rect.x - 8, label_rect.y - 6))
+
+    def _draw_run_start_callout(self, run: LabyrinthRun, layout: Layout) -> None:
+        """Brief banner across the top of the maze area right as a run begins, so first-time players notice the run is timed at all."""
+        elapsed = time.monotonic() - run.run_started_at
+        if elapsed >= RUN_START_CALLOUT_SECONDS:
+            return
+        fade = min(1.0, elapsed / 0.4, (RUN_START_CALLOUT_SECONDS - elapsed) / 0.6)
+        alpha = max(0, min(255, int(255 * fade)))
+
+        label = self.font_big.render(RUN_START_CALLOUT_TEXT, True, C_TEXT)
+        banner = pygame.Surface((MAZE_AREA_SIZE, label.get_height() + 16), pygame.SRCALPHA)
+        banner.fill((*C_HUD_BG, 210))
+        banner.blit(label, label.get_rect(center=(MAZE_AREA_SIZE // 2, banner.get_height() // 2)))
+        banner.set_alpha(alpha)
+        self.surface.blit(banner, (layout.maze_origin[0], 16))
 
     # ── Build sidebar (passive perks) ─────────────────────────────────────
 
