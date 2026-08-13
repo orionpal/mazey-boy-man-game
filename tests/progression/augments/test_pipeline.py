@@ -141,15 +141,60 @@ def test_offer_degrades_gracefully_when_pool_smaller_than_offered_count(monkeypa
     assert offered == stubs
 
 
-def test_offer_tops_up_with_active_when_new_pool_is_short(monkeypatch):
+def test_offer_never_pads_with_active_when_new_pool_is_short(monkeypatch):
     stubs = [_StubAugment(f"aug{i}") for i in range(2)]
     monkeypatch.setattr(augments_module, "ALL_AUGMENTS", stubs)
     build = AugmentBuild()
     build.acquire(stubs[0])  # 1 active, 1 not-yet-active -- below cap but short of a 3-card offer
 
     offered = offer_augment_cards(build, rng=random.Random(4))
-    assert len(offered) == 2  # can't offer more cards than augments exist at all
+    # Only the not-yet-active augment is offered -- never padded out with
+    # stubs[0] just to reach `count`, since that would let the player
+    # stack it before ever picking stubs[1].
+    assert [c.id for c in offered] == [stubs[1].id]
+
+
+def test_offer_falls_back_to_active_once_every_distinct_augment_is_picked(monkeypatch):
+    stubs = [_StubAugment(f"aug{i}") for i in range(2)]
+    monkeypatch.setattr(augments_module, "ALL_AUGMENTS", stubs)
+    build = AugmentBuild()
+    build.acquire(stubs[0])
+    build.acquire(stubs[1])  # every distinct augment now picked at least once
+
+    offered = offer_augment_cards(build, rng=random.Random(4))
     assert {c.id for c in offered} == {stubs[0].id, stubs[1].id}
+
+
+def test_offer_never_repeats_an_augment_until_all_distinct_ones_are_picked(monkeypatch):
+    """
+    Regression test: the shop must not offer the same augment for a second
+    (stacking) pick while other distinct augments are still unpicked --
+    otherwise a player could stack one augment's difficulty from level 1
+    onward instead of spreading picks across the roster first.
+    """
+    stubs = [_StubAugment(f"aug{i}") for i in range(MAX_ACTIVE_AUGMENTS)]
+    monkeypatch.setattr(augments_module, "ALL_AUGMENTS", stubs)
+    build = AugmentBuild()
+    all_ids = {s.id for s in stubs}
+    rng = random.Random(99)
+
+    # Keep picking offered cards until every distinct augment has been
+    # acquired at least once, asserting at each step that no offer
+    # contains an augment the player already has while unpicked ones
+    # remain.
+    for _ in range(50):
+        if all_ids <= set(build.active_ids):
+            break
+        offered = offer_augment_cards(build, rng=rng)
+        still_unpicked = all_ids - set(build.active_ids)
+        if still_unpicked:
+            assert all(card.id in still_unpicked for card in offered), (
+                f"offered {[c.id for c in offered]} while {still_unpicked} "
+                "still hasn't been picked even once"
+            )
+        build.acquire(offered[0])
+
+    assert all_ids <= set(build.active_ids)
 
 
 def test_offer_with_explicit_rng_is_deterministic(monkeypatch):
