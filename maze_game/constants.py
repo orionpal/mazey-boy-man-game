@@ -311,6 +311,13 @@ ROTATE_INTERVAL_BASE_SECONDS = 2.0
 ROTATE_INTERVAL_STEP_SECONDS = -0.3   # faster per level above 1
 ROTATE_INTERVAL_MIN_SECONDS  = 1.0
 ROTATE_WARNING_LEAD_SECONDS  = 0.75   # the warning arrow shows for this long before each rotation
+# How long the *visual* spin plays once a rotation actually fires (distinct
+# from ROTATE_WARNING_LEAD_SECONDS above, which is the pre-rotation warning
+# window) -- grid/entity positions still update instantly and atomically in
+# _rotate_maze() (nothing here delays gameplay), this only eases the
+# rendered maze image into its new orientation instead of snapping, which
+# playtesters found disorienting.
+ROTATE_ANIMATION_DURATION_SECONDS = 0.35
 # Pellet-economy trade-off: periodic forced re-planning (everything you'd
 # memorized gets rotated out from under you) is an ongoing difficulty tax,
 # not a one-time gate -- compensated a bit more than the gating augments
