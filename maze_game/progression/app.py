@@ -80,6 +80,15 @@ def run_labyrinth(window: Window, clock: pygame.time.Clock) -> str:
                         run.choose_break_card(run.break_cursor)
                     elif event.key in SHOP_CHOICE_KEYS:
                         run.choose_break_card(SHOP_CHOICE_KEYS[event.key])
+                elif run.in_shop:
+                    if event.key in (pygame.K_LEFT, pygame.K_UP):
+                        run.move_shop_cursor(-1)
+                    elif event.key in (pygame.K_RIGHT, pygame.K_DOWN):
+                        run.move_shop_cursor(1)
+                    elif event.key == pygame.K_SPACE:
+                        run.buy_shop_item(run.shop_cursor)
+                    elif event.key in SHOP_CHOICE_KEYS:
+                        run.buy_shop_item(SHOP_CHOICE_KEYS[event.key])
                 elif event.key in DIRECTION_MAP:
                     keys_held = pygame.key.get_pressed()
                     run.move(DIRECTION_MAP[event.key], _junction_stop_count(keys_held))
@@ -88,6 +97,12 @@ def run_labyrinth(window: Window, clock: pygame.time.Clock) -> str:
                 for index, card in enumerate(layout.cards):
                     if card.collidepoint(event.pos):
                         run.choose_break_card(index)
+                        break
+            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 and run.in_shop:
+                layout = Layout(run.cols, run.rows)
+                for index, rect in enumerate(layout.shop_items):
+                    if rect.collidepoint(event.pos):
+                        run.buy_shop_item(index)
                         break
 
         run.update()

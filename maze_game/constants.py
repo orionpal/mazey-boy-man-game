@@ -158,6 +158,25 @@ POPUP_RISE_PIXELS      = 24   # total upward drift over the popup's lifetime
 GOLD_PELLET_VALUE = 1
 GOLD_SPAWN_CHANCE = 0.3
 
+# Walk-to shop tile (progression/entities/shop_tile.py): a second way to
+# spend gold, mid-run rather than only between runs at the Base. Placed the
+# same way a gold pellet is (spawn_shop_tile() mirrors spawn_gold_pellets()
+# exactly -- a `chance` chance of exactly one per maze, on a random open
+# cell excluding start/goal/other entities). Stepping onto it pauses the
+# *real* countdown (LabyrinthRun.time) for SHOP_PAUSE_SECONDS and starts a
+# second, independent TimeResource just for that pause -- the real timer
+# never ejects the player early; it simply isn't ticking until the shop's
+# own countdown reaches zero, then resumes exactly where it left off (same
+# resync() pattern as a group-boundary break). SHOP_PERK_COST_BASE/STEP is
+# deliberately cheaper than the Base's META_UPGRADE_COST_BASE/STEP -- an
+# in-run perk pick resets on death, so it's worth less than a permanent one.
+SHOP_TILE_SPAWN_CHANCE = 0.5
+SHOP_PAUSE_SECONDS     = 20.0
+SHOP_TIME_PRICE        = 2      # gold cost per "buy time" purchase
+SHOP_TIME_AMOUNT       = 5.0    # seconds granted per "buy time" purchase
+SHOP_PERK_COST_BASE    = 3
+SHOP_PERK_COST_STEP    = 2
+
 # Meta-progression (progression/meta/): permanent upgrades bought with gold
 # in the Base, between runs -- distinct from the per-run Perk shop, which
 # resets to nothing on death. Each upgrade is repurchasable at an
@@ -245,6 +264,7 @@ C_BUTTON    = (35,  60, 100)
 C_BUTTON_HOVER = (55, 90, 140)
 C_PELLET    = (240, 220,  80)
 C_GOLD      = (255, 150,  30)  # pushed further from C_PELLET's pale yellow than before
+C_SHOP      = (255, 105, 180)  # hot pink -- the walk-to shop tile/panel, distinct from every other entity colour
 C_HAZARD     = (220, 60,   60)
 C_HAZARD_HEAVY   = (255, 110,  10)  # deeper orange-red -- reads as "worse than the base hazard" while staying in the same danger hue
 C_HAZARD_EXTREME = (140,  20, 120)  # magenta-purple -- deliberately the odd one out among hazard colours, so it never reads as "just a bigger red square"
