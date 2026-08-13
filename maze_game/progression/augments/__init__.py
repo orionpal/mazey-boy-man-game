@@ -40,7 +40,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from maze_game.constants import MAX_ACTIVE_AUGMENTS
-from maze_game.maze import farthest_reachable_cell
+from maze_game.progression.augments._movement import real_move_farthest_cell
 
 AUGMENT_CARDS_OFFERED = 3  # mirrors shop/__init__.py::SHOP_CARDS_OFFERED
 
@@ -149,12 +149,31 @@ def run_pipeline(
     `start`) instead of independently searching for a pocket that happens to
     contain whatever `ctx.goal` currently is, and advances that frontier to
     its own chain's endpoint instead of relocating the goal mid-pipeline.
-    Once every active augment has had a turn, the true goal is exactly the
-    farthest reachable cell from the final frontier -- guaranteeing the
-    player must pass every active gating augment's mandatory gate, each
+    Once every active augment has had a turn, the true goal is the
+    *real-movement* farthest cell from the final frontier -- guaranteeing
+    the player must pass every active gating augment's mandatory gate, each
     nested inside the last, to reach it. If no active augment placed a
     mandatory gate, the frontier never moves off `start` and the
     caller-supplied `goal` is left untouched.
+
+    **This last step has to be movement-aware too, not plain grid-BFS.**
+    An earlier version used `maze.farthest_reachable_cell()` (plain grid
+    adjacency) here, and that was its own instance of the same bug class
+    this function's docstring already describes: a locked door's cell
+    stays grid-open by design (see doors.py), so a plain-grid walk from the
+    frontier could step right back out through it into the rest of the
+    already-generated maze and land the goal somewhere reachable without
+    ever needing a key. Fixed with `real_move_farthest_cell()`
+    (`_movement.py`), the same `slide_path()`-state-graph BFS technique
+    `real_move_reachable()` already uses for placement-time verification,
+    called with `door_locked` covering every placed door (so it can never
+    grid-walk back out through one) and no teleport map at all (every
+    gating pocket's boundary is otherwise fully re-walled -- see
+    teleporters.py/multi_level.py's `seal_pocket()` calls -- so the only
+    way back out of one would be its own teleport/stairs link, which this
+    deliberately doesn't offer). That confines the search to exactly the
+    territory only reachable *after* passing every gate already passed to
+    reach the frontier, so the chosen goal keeps that property too.
     """
     ctx = AugmentContext(grid=grid, cols=cols, rows=rows, start=start, goal=goal, rng=rng)
     ctx.reserved = {start, goal}
@@ -166,7 +185,9 @@ def run_pipeline(
         ctx.level = level
         augment.apply(ctx)
     if ctx.mandatory_frontier != start:
-        ctx.goal = farthest_reachable_cell(ctx.grid, ctx.mandatory_frontier)
+        door_cells = {pair.door for pair in ctx.extra.get("doors", [])}
+        door_locked = (lambda x, y: (x, y) in door_cells) if door_cells else None
+        ctx.goal = real_move_farthest_cell(ctx.grid, ctx.mandatory_frontier, door_locked=door_locked)
     return ctx
 
 

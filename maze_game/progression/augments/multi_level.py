@@ -230,8 +230,22 @@ def _place_floor(
 
     Mutates ctx.grid/ctx.reserved in place on success. Returns None if no
     candidate works out (graceful degradation).
+
+    Passes every already-placed door's cell as `pendant_subtree_map()`'s
+    `blocked` set for the identical reason doors.py's own nested mandatory
+    search does (see its docstring): a door's cell deliberately stays
+    grid-open, so `current_start` sitting behind one -- e.g. this floor
+    nesting behind a mandatory door via an inherited `ctx.mandatory_frontier`
+    -- would otherwise let this search's `order` leak back out through it,
+    silently pulling in already-reserved territory (that door's own cell,
+    its key, ...) as if it were fresh local floor territory. That territory
+    then also wouldn't get caught by the `subtree[c] & (ctx.reserved - local)`
+    overlap check just below, since a leaked cell counts as "local" once
+    it's in `order` -- so it could end up inside `blob` and get silently
+    recarved, corrupting an already-placed door or key.
     """
-    order, subtree, _parent = pendant_subtree_map(ctx.grid, current_start)
+    blocked_doors = frozenset(pair.door for pair in doors)
+    order, subtree, _parent = pendant_subtree_map(ctx.grid, current_start, blocked=blocked_doors)
     # See teleporters.py::_place_mandatory_pair's identical line for why:
     # current_start's own local territory is necessarily already in
     # ctx.reserved (it's the pocket the previous chain step just sealed),

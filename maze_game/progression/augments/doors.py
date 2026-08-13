@@ -287,8 +287,22 @@ def _place_mandatory_door(
     Mutates ctx.grid/ctx.reserved in place on success. Returns None if no
     candidate works out (graceful degradation -- the caller places fewer
     mandatory doors than the level formula asked for).
+
+    Passes every already-committed door's cell as `pendant_subtree_map()`'s
+    `blocked` set: a door's own cell deliberately stays grid-open (see this
+    module's docstring), so an unblocked search rooted at a `current_start`
+    already nested behind an earlier door in this same chain would silently
+    walk right back out through it, discovering "local" territory that's
+    actually that earlier door's own already-claimed cells -- which the
+    `ctx.reserved - set(order)` subtraction just below would then treat as
+    fair game again, letting a new door collide with (or literally reuse
+    the exact cell of) one already placed. Found via this module's own
+    end-to-end tests once goal placement became movement-aware enough to
+    actually land inside the nested chain and expose it (see
+    `augments/__init__.py::run_pipeline()`'s docstring).
     """
-    order, subtree, parent = pendant_subtree_map(ctx.grid, current_start)
+    blocked_doors = frozenset(pair.door for pair in committed)
+    order, subtree, parent = pendant_subtree_map(ctx.grid, current_start, blocked=blocked_doors)
     # See teleporters.py::_place_mandatory_pair's identical line for why:
     # current_start's own local territory is necessarily already in
     # ctx.reserved (it's the pocket the previous chain step just sealed),
@@ -331,7 +345,27 @@ def _place_mandatory_door(
         # "did we get past this gate" checkpoint. Guaranteed non-empty: a
         # fully re-walled pendant subtree's leaves are dead ends (1 open
         # neighbour), always stoppable.
-        frontier_candidates = [c for c in subtree[door_cell] if is_stoppable_cell(sealed_grid, *c)]
+        #
+        # `subtree[door_cell]` includes `door_cell` itself (pendant_subtree_map()
+        # seeds every node's subtree with `{node}` before folding in its
+        # children) -- and door_cell occasionally *does* satisfy
+        # is_stoppable_cell() post-sealing (a 3-way junction where the
+        # entrance and two interior branches meet, say), so without an
+        # explicit `c != door_cell` guard here it could still get chosen as
+        # frontier_cell despite the whole point of this filter being to
+        # rule it out. Real incident, 2026-08-12: with a door cell as the
+        # checkpoint, a *second* mandatory door nested off it (current_start
+        # sits right on the door's own inside/outside boundary, which stays
+        # grid-open on both sides) could end up sealing a pocket that
+        # includes territory *outside* the first door entirely, landing its
+        # own frontier back in the original unsealed maze -- silently
+        # defeating the whole nesting guarantee two gates deep (caught by
+        # test_every_combination_of_active_gating_augments_forces_every_gate,
+        # doors+multi_level, seed 16 -- multi_level was a red herring, this
+        # reproduces with doors alone).
+        frontier_candidates = [
+            c for c in subtree[door_cell] if c != door_cell and is_stoppable_cell(sealed_grid, *c)
+        ]
         if not frontier_candidates:
             continue
         frontier_cell = ctx.rng.choice(frontier_candidates)
