@@ -127,7 +127,7 @@ PELLET_KIND_PLAIN    = "plain"
 PELLET_KIND_DOUBLE   = "double"     # 2x time value, nothing else
 PELLET_KIND_VOLATILE = "volatile"   # bigger time value, but spawns one extra hazard elsewhere
 PELLET_KIND_CHAIN    = "chain"      # no time itself -- multiplies the *next* pellet's value
-PELLET_KIND_FREEZE   = "freeze"     # no time -- pauses hazards/rotation and clears fog of war, briefly
+PELLET_KIND_FREEZE   = "freeze"     # no time -- pauses hazards/rotation, briefly
 PELLET_KIND_GAMBLE   = "gamble"     # 50/50: big time bonus, or your banked time is halved
 
 PELLET_KIND_WEIGHTS: dict[str, int] = {
@@ -324,13 +324,6 @@ ROTATE_ANIMATION_DURATION_SECONDS = 0.35
 # above.
 ROTATE_PELLET_FREQUENCY_MULTIPLIER = 1.25
 ROTATE_PELLET_VALUE_MULTIPLIER     = 1.2
-
-# Fog of War (progression/augments/runtime/fog.py): only line-of-sight is
-# visible, though discovered cells stay revealed once seen. By far the
-# biggest difficulty increase of any augment here -- blind navigation --
-# so it gets the strongest pellet compensation.
-FOG_PELLET_FREQUENCY_MULTIPLIER = 1.5
-FOG_PELLET_VALUE_MULTIPLIER     = 1.5
 
 # Twin Goals (progression/augments/twin_goals.py): a second, independently
 # reachable goal cell -- reaching either one clears the maze. Candidates
