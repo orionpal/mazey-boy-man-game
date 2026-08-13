@@ -24,7 +24,7 @@ from maze_game.constants import (
     HAZARD_UNLOCK_MAZE, HAZARD_RAMP_MAZES, HAZARD_RAMP_START_MULTIPLIER,
     C_PELLET, C_SHIELD, APP_ROOT,
 )
-from maze_game.progression.entities import MazeEntity, apply_time_penalty
+from maze_game.progression.entities import MazeEntity, apply_time_penalty, open_cells
 
 if TYPE_CHECKING:
     from maze_game.progression.run import LabyrinthRun
@@ -78,10 +78,6 @@ class Hazard(MazeEntity):
 HAZARD_TYPES: list[type[Hazard]] = [Hazard]
 
 
-def _open_cells(grid: list[list[int]]) -> list[tuple[int, int]]:
-    return [(x, y) for y, row in enumerate(grid) for x, val in enumerate(row) if val == 0]
-
-
 def _entity_count(candidate_count: int, density: float, minimum: int, maximum: int | None = None) -> int:
     """count = density * sqrt(candidate cells), floored at `minimum`, capped at `maximum` if given."""
     count = max(minimum, round(density * math.sqrt(candidate_count))) if candidate_count > 0 else 0
@@ -108,7 +104,7 @@ def spawn_pellets(
     rng: random.Random | None = None,
 ) -> list[Pellet]:
     rng = rng if rng is not None else random
-    candidates = [c for c in _open_cells(grid) if c not in exclude]
+    candidates = [c for c in open_cells(grid) if c not in exclude]
     count = min(_entity_count(len(candidates), PELLET_DENSITY * frequency_multiplier, PELLET_MIN_COUNT), len(candidates))
     return [Pellet(pos) for pos in rng.sample(candidates, count)]
 
@@ -123,7 +119,7 @@ def spawn_gold_pellets(
     rng = rng if rng is not None else random
     if rng.random() >= chance:
         return []
-    candidates = [c for c in _open_cells(grid) if c not in exclude]
+    candidates = [c for c in open_cells(grid) if c not in exclude]
     if not candidates:
         return []
     return [GoldPellet(rng.choice(candidates))]
@@ -154,7 +150,7 @@ def spawn_hazards(
     rng: random.Random | None = None,
 ) -> list[Hazard]:
     rng = rng if rng is not None else random
-    candidates = [c for c in _open_cells(grid) if c not in exclude]
+    candidates = [c for c in open_cells(grid) if c not in exclude]
     count = min(
         _entity_count(len(candidates), HAZARD_DENSITY * density_multiplier, minimum=0, maximum=HAZARD_MAX_COUNT),
         len(candidates),

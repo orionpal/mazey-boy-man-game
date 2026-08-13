@@ -29,6 +29,11 @@ class MazeEntity:
         raise NotImplementedError
 
 
+def open_cells(grid: list[list[int]]) -> list[tuple[int, int]]:
+    """Every passage cell in `grid` -- shared placement primitive for hazards.py/shop_tile.py's spawn_*() functions."""
+    return [(x, y) for y, row in enumerate(grid) for x, val in enumerate(row) if val == 0]
+
+
 def apply_time_penalty(run: "LabyrinthRun", amount: float, pos: tuple[int, int]) -> None:
     """Shared time-cost helper used by Hazard.on_contact."""
     run.time.spend(amount)
@@ -68,6 +73,14 @@ def resolve_contacts(run: "LabyrinthRun", path: list[tuple[int, int]]) -> None:
             else:
                 remaining_keys.append(key)
         run.keys = remaining_keys
+
+        remaining_shop_tiles = []
+        for shop_tile in run.shop_tiles:
+            if shop_tile.pos == cell:
+                shop_tile.on_contact(run)
+            else:
+                remaining_shop_tiles.append(shop_tile)
+        run.shop_tiles = remaining_shop_tiles
 
         for hazard in run.hazards:
             if hazard.pos == cell:

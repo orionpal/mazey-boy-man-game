@@ -34,7 +34,7 @@ from maze_game.constants import (
     LABYRINTH_TOTAL_MAZES, LABYRINTH_GROUP_SIZE, LABYRINTH_START_TIME,
     MIN_DIMENSION, MAX_DIMENSION, DIMENSION_STEP,
     MILESTONE_INTERVAL, MILESTONE_DIMENSION_BOOST, MILESTONE_MAX_DIMENSION,
-    AUGMENT_INTERVAL, HAZARD_UNLOCK_MAZE,
+    AUGMENT_INTERVAL, HAZARD_UNLOCK_MAZE, SHOP_PAUSE_SECONDS,
     SPEED_BONUS_TIME, SPEED_BONUS_SECONDS_PER_CELL,
     POPUP_DURATION_SECONDS, C_SPEED_BONUS, C_GOLD,
 )
@@ -45,7 +45,8 @@ from maze_game.progression.entities.hazards import (
     spawn_pellets, spawn_hazards, hazard_density_ramp,
     spawn_gold_pellets, load_gold_total, save_gold_total, DEFAULT_GOLD_PATH,
 )
-from maze_game.progression.shop import offer_shop_cards
+from maze_game.progression.entities.shop_tile import spawn_shop_tile
+from maze_game.progression.shop import offer_shop_cards, MAZE_SHOP_ITEMS, purchase_maze_shop_item
 from maze_game.progression.augments import AugmentBuild, run_pipeline, offer_augment_cards
 from maze_game.progression.augments.doors import Key
 from maze_game.progression.meta import MetaProgress, DEFAULT_META_UPGRADES_PATH
@@ -185,6 +186,13 @@ class LabyrinthRun:
         self.shop_choices: list | None = None
         self.augment_choices: list | None = None
         self.break_cursor = 0
+        # In-maze walk-to shop (progression/entities/shop_tile.py) -- distinct
+        # from the group-boundary "shop_choices" break above: paid, mid-maze,
+        # and time-boxed by its own TimeResource (shop_time) rather than
+        # resolved by a single pick. See enter_shop()/_exit_shop().
+        self.in_shop = False
+        self.shop_cursor = 0
+        self.shop_time: TimeResource | None = None
         self.popups: list[Popup] = []
         self.events: list[str] = []
         # Gold is a persistent meta-currency, unlike time -- loaded once here
@@ -217,6 +225,11 @@ class LabyrinthRun:
         """Advance the timer and check win/timeout. Call once per frame."""
         now = time.monotonic()
         self.popups = [p for p in self.popups if now - p.created_at < POPUP_DURATION_SECONDS]
+        if self.in_shop:
+            self.shop_time.tick()
+            if self.shop_time.depleted:
+                self._exit_shop()
+            return
         if self.on_break or self.failed or self.completed_run or self.finished:
             return
         self.time.tick()
@@ -298,6 +311,41 @@ class LabyrinthRun:
         self.events.append("card_select")
         self._resume_after_break()
 
+    def enter_shop(self) -> None:
+        """
+        Called by ShopTile.on_contact() -- pauses the real time resource
+        (update() skips TimeResource.tick() while in_shop, mirroring
+        on_break) and starts a second, independent TimeResource just for the
+        shop's own SHOP_PAUSE_SECONDS countdown. Does not touch self.time at
+        all here; _exit_shop() resync()s it once the shop closes, same
+        staleness-avoidance pattern as _resume_after_break().
+        """
+        self.in_shop = True
+        self.shop_cursor = 0
+        self.shop_time = TimeResource(SHOP_PAUSE_SECONDS)
+        self.events.append("shop_enter")
+
+    def _exit_shop(self) -> None:
+        """The shop's own countdown hit zero -- resume the real timer exactly where it left off, never early."""
+        self.in_shop = False
+        self.shop_time = None
+        self.time.resync()
+        self.events.append("shop_exit")
+
+    def move_shop_cursor(self, delta: int) -> None:
+        """Move the keyboard-selected shop item left/right (wraps). No-op when the shop isn't open."""
+        if not self.in_shop:
+            return
+        self.shop_cursor = (self.shop_cursor + delta) % len(MAZE_SHOP_ITEMS)
+
+    def buy_shop_item(self, index: int) -> None:
+        """Attempt to purchase MAZE_SHOP_ITEMS[index] with gold. Silently no-ops if unaffordable or the shop isn't open."""
+        if not self.in_shop or not (0 <= index < len(MAZE_SHOP_ITEMS)):
+            return
+        self.shop_cursor = index
+        if purchase_maze_shop_item(self, MAZE_SHOP_ITEMS[index]):
+            self.events.append("card_select")
+
     def restart(self, same_seed: bool = False) -> None:
         """
         Start the whole run over from maze 1 (e.g. after running out of
@@ -319,6 +367,9 @@ class LabyrinthRun:
         self.shop_choices = None
         self.augment_choices = None
         self.break_cursor = 0
+        self.in_shop = False
+        self.shop_cursor = 0
+        self.shop_time = None
         self.popups = []
         self.events = []
         self.time = TimeResource(LABYRINTH_START_TIME)
@@ -356,7 +407,7 @@ class LabyrinthRun:
         return None
 
     def _is_gated(self) -> bool:
-        return bool(self.on_break or self.failed or self.completed_run or self.finished)
+        return bool(self.in_shop or self.on_break or self.failed or self.completed_run or self.finished)
 
     def _maze_cleared(self) -> bool:
         return self.player == self.goal
@@ -396,6 +447,8 @@ class LabyrinthRun:
         exclude = exclude | {p.pos for p in self.pellets}
         self.gold_pellets = spawn_gold_pellets(self.grid, exclude, rng=self.rng)
         exclude = exclude | {p.pos for p in self.gold_pellets}
+        self.shop_tiles = spawn_shop_tile(self.grid, exclude, rng=self.rng)
+        exclude = exclude | {t.pos for t in self.shop_tiles}
         if self.maze_index >= HAZARD_UNLOCK_MAZE:
             self.hazards = spawn_hazards(
                 self.grid, exclude, density_multiplier=hazard_density_ramp(self.maze_index), rng=self.rng,
