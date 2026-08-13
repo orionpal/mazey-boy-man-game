@@ -16,8 +16,11 @@ from maze_game.constants import (
     MULTI_LEVEL_FLOOR_COUNT_BASE, MULTI_LEVEL_FLOOR_COUNT_STEP, MULTI_LEVEL_FLOOR_COUNT_MAX,
     MULTI_LEVEL_MANDATORY_COUNT_BASE, MULTI_LEVEL_MANDATORY_COUNT_STEP,
 )
+from itertools import combinations
+
 from maze_game.maze import generate_maze, farthest_reachable_cell, bfs_reachable
 from maze_game.progression.augments import AugmentBuild, run_pipeline, ALL_AUGMENTS
+from maze_game.progression.augments._movement import real_move_reachable
 from maze_game.progression.augments.doors import sequentially_reachable
 
 
@@ -228,3 +231,76 @@ def test_multi_level_composes_with_teleporters_and_doors_without_a_bypass():
         if ctx.goal not in reachable:
             failures.append((seed_val, "goal unreachable even via the full sequential-unlock simulation"))
     assert not failures, f"failures with all three augments active: {failures}"
+
+
+def test_every_combination_of_active_gating_augments_forces_every_gate():
+    """
+    Extends the "forced-use" standard each augment's own test suite already
+    holds itself to individually (bfs_reachable() must fail while
+    sequentially_reachable() must succeed) to every *combination* of
+    currently-composable augments, not just each one alone. Playtesting
+    found a maze where a Teleporters placement let the goal be reached
+    without ever needing a Doors key -- a bug in how two gating augments
+    *interacted*, invisible to either augment's own solo test suite. This
+    checks all `2**3 - 1` non-empty subsets of {teleporters, doors,
+    multi_level} (every combination up to MAX_ACTIVE_AUGMENTS, since only
+    3 gating augments exist yet -- extend this loop the day a 4th one
+    ships) at a level high enough to guarantee at least one mandatory gate
+    each, and requires that the goal is:
+      1. reachable at all (sequentially_reachable(), the real "can the
+         player actually finish this maze" ground truth -- real movement,
+         teleport links, and progressive door unlocking as keys are
+         found), and
+      2. NOT reachable via `real_move_reachable()` with every door
+         permanently locked and no teleport/stairs link available at all --
+         i.e. there is no route to the goal that avoids using *every*
+         active gating mechanism at least once. This is the actual
+         "Doors/Teleporters/Multi-Level could be skipped entirely" check:
+         (1) alone would pass even if one active augment turned out to be
+         fully bypassable, exactly like the original bug report.
+    """
+    teleporters_augment = next(a for a in ALL_AUGMENTS if a.id == "teleporters")
+    doors_augment = next(a for a in ALL_AUGMENTS if a.id == "doors")
+    multi_level_augment = _multi_level_augment()
+    by_id = {
+        "teleporters": teleporters_augment,
+        "doors": doors_augment,
+        "multi_level": multi_level_augment,
+    }
+
+    failures = []
+    seed_val = 0
+    for size in range(1, len(by_id) + 1):
+        for combo in combinations(sorted(by_id), size):
+            for _ in range(5):
+                seed_val += 1
+                rng = random.Random(1000 + seed_val)
+                grid = generate_maze(25, 25, rng=rng)
+                start = (1, 1)
+                goal = farthest_reachable_cell(grid, start)
+                build = AugmentBuild()
+                for aid in combo:
+                    # Level 3: high enough that every gating augment in the
+                    # combo places at least one real mandatory gate (see
+                    # each module's own MANDATORY_COUNT_* constants).
+                    for _ in range(3):
+                        build.acquire(by_id[aid])
+                ctx = run_pipeline(grid, len(grid[0]), len(grid), start, goal, build, rng)
+
+                tmap = _full_teleport_map(ctx)
+                doors = ctx.extra.get("doors", [])
+                real_reachable = sequentially_reachable(
+                    ctx.grid, start, doors, teleport=lambda x, y: tmap.get((x, y)),
+                )
+                if ctx.goal not in real_reachable:
+                    failures.append((combo, seed_val, "goal unreachable even after real play"))
+                    continue
+
+                door_cells = {pair.door for pair in doors}
+                no_gate_reachable = real_move_reachable(
+                    ctx.grid, start, door_locked=lambda x, y: (x, y) in door_cells,
+                )
+                if ctx.goal in no_gate_reachable:
+                    failures.append((combo, seed_val, "goal reachable without using any active gate"))
+
+    assert not failures, f"combination(s) let a gate be skipped or broke solvability: {failures}"
