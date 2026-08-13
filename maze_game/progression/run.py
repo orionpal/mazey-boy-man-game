@@ -174,6 +174,7 @@ class LabyrinthRun:
         self.failed = False
         self.completed_run = False
         self.time = TimeResource(LABYRINTH_START_TIME)
+        self.run_started_at = time.monotonic()  # renderer's first-run "it's timed!" callout keys off this
         self.augment_build = AugmentBuild()
         self.teleporters: list = []
         self.floors: list = []
@@ -321,6 +322,7 @@ class LabyrinthRun:
         self.popups = []
         self.events = []
         self.time = TimeResource(LABYRINTH_START_TIME)
+        self.run_started_at = time.monotonic()
         self.build = self.meta_progress.seed_build()  # reseeded, not reset to a plain Build() -- owned upgrades persist across restarts
         self.augment_build = AugmentBuild()
         self.teleporters = []
