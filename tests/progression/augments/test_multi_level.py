@@ -189,6 +189,11 @@ def test_multi_level_composes_with_teleporters_and_doors_without_a_bypass():
     (registry order: teleporters, doors, multi_level -- exactly as in
     play). Neither an existing teleporter nor an existing door should let
     the player bypass a mandatory floor's sealed boundary, and vice versa.
+    Checked both ways, same rigor docs/progression.md calls out: plain
+    bfs_reachable() must NOT reach the goal (proving the mandatory gates
+    are a real partition, not just decoration), while the full
+    sequentially_reachable() simulation (real moves, every teleporter/
+    stairs hop, every key collectible in some valid order) must.
     """
     from maze_game.progression.augments.doors import DoorsAugment  # noqa: F401 (imported for clarity)
     from maze_game.progression.augments.teleporters import TeleportersAugment  # noqa: F401
@@ -208,10 +213,18 @@ def test_multi_level_composes_with_teleporters_and_doors_without_a_bypass():
             build.acquire(augment)
         ctx = run_pipeline(grid, len(grid[0]), len(grid), start, goal, build, rng)
 
+        mandatory_teleporters = [p for p in ctx.extra.get("teleporters", []) if p.mandatory]
+        mandatory_floors = [f for f in ctx.extra.get("floors", []) if f.mandatory]
+        assert mandatory_teleporters or mandatory_floors, (
+            f"seed_val {seed_val}: expected at least one mandatory teleporter pair or floor"
+        )
+        if ctx.goal in bfs_reachable(ctx.grid, start):
+            failures.append((seed_val, "goal reachable without ever using a mandatory gate"))
+
         tmap = _full_teleport_map(ctx)
         reachable = sequentially_reachable(
             ctx.grid, start, ctx.extra.get("doors", []), teleport=lambda x, y: tmap.get((x, y)),
         )
         if ctx.goal not in reachable:
-            failures.append(seed_val)
-    assert not failures, f"unsolvable seeds with all three augments active: {failures}"
+            failures.append((seed_val, "goal unreachable even via the full sequential-unlock simulation"))
+    assert not failures, f"failures with all three augments active: {failures}"

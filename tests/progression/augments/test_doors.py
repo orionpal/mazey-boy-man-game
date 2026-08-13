@@ -16,7 +16,7 @@ from maze_game.constants import (
     DOOR_PAIR_COUNT_BASE, DOOR_PAIR_COUNT_STEP, DOOR_PAIR_COUNT_MAX,
     DOOR_MANDATORY_COUNT_BASE, DOOR_MANDATORY_COUNT_STEP,
 )
-from maze_game.maze import generate_maze, farthest_reachable_cell
+from maze_game.maze import generate_maze, farthest_reachable_cell, bfs_reachable
 from maze_game.progression.augments import AugmentBuild, run_pipeline, ALL_AUGMENTS
 from maze_game.progression.augments._movement import real_move_reachable
 from maze_game.progression.augments.doors import DoorsAugment, sequentially_reachable
@@ -186,12 +186,22 @@ def test_doors_and_teleporters_compose_without_a_bypass():
     Both augments active, run through the real ALL_AUGMENTS pipeline (so
     registry order -- teleporters before doors -- is exercised exactly as
     in play): a teleporter must never silently bypass a door that looked
-    like a genuine cut vertex under plain grid adjacency.
+    like a genuine cut vertex under plain grid adjacency, and vice versa.
+    Checked both ways, same rigor docs/progression.md calls out: plain
+    bfs_reachable() must NOT reach the goal (proving the mandatory
+    teleporter pocket is a real partition, not just a decorative shortcut),
+    while the full sequentially_reachable() simulation must.
     """
     for seed_val in range(15):
         rng = random.Random(400 + seed_val)
         grid = generate_maze(21, 21, rng=rng)
         ctx = _run_doors_at_level(grid, level=3, seed_rng=rng, extra_build_picks=[_teleporters_augment()] * 3)
+
+        mandatory_teleporters = [p for p in ctx.extra.get("teleporters", []) if p.mandatory]
+        assert mandatory_teleporters, f"seed_val {seed_val}: expected at least one mandatory teleporter pair"
+        assert ctx.goal not in bfs_reachable(ctx.grid, (1, 1)), (
+            f"seed_val {seed_val}: goal reachable without ever using a teleporter -- the augment isn't a real gate"
+        )
 
         tmap = _teleport_map(ctx.extra.get("teleporters", []))
         teleport = lambda x, y: tmap.get((x, y))
