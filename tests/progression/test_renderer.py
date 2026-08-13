@@ -8,16 +8,25 @@ most direct way to verify the behavior. Everything else here is pure
 geometry (pygame.Rect) and font metrics, no display needed.
 """
 
+import time
+
 import pygame
 import pytest
 
-from maze_game.progression.renderer import Layout, MAZE_AREA_SIZE, Renderer, _wrap_text, animated_player_position
-from maze_game.progression.run import LabyrinthRun, TeleportAnimation
+from maze_game.progression.renderer import (
+    Layout, MAZE_AREA_SIZE, Renderer, _wrap_text,
+    animated_player_position, animated_maze_rotation_angle,
+)
+from maze_game.progression.run import LabyrinthRun, TeleportAnimation, RotationAnimation
 from maze_game.progression.augments.runtime.fog import FogOfWarAugment
+from maze_game.progression.augments.runtime.rotation import RotatingMazeAugment
 from maze_game.progression.augments.shifting_room import PressurePad
 from maze_game.progression.shop.perks import ALL_PERKS
 from maze_game.progression.augments import ALL_AUGMENTS
-from maze_game.constants import SIDEBAR_W, HUD_HEIGHT, ZIP_ANIMATION_DURATION_SECONDS, C_BG, C_PRESSURE_PADS
+from maze_game.constants import (
+    SIDEBAR_W, HUD_HEIGHT, ZIP_ANIMATION_DURATION_SECONDS, ROTATE_ANIMATION_DURATION_SECONDS,
+    C_BG, C_PRESSURE_PADS,
+)
 
 
 def test_window_size_is_static_regardless_of_maze_dimensions():
@@ -205,6 +214,41 @@ def test_animated_player_position_falls_back_to_player_pos_once_expired():
     assert animated_player_position(run, now=after) == (8, 1)
 
 
+# ── animated_maze_rotation_angle (rotation transition) ──────────────────
+
+
+class _RotationStubRun:
+    """Just enough of LabyrinthRun's shape for animated_maze_rotation_angle()."""
+
+    def __init__(self, rotation_animation=None):
+        self.rotation_animation = rotation_animation
+
+
+def test_animated_maze_rotation_angle_is_zero_with_no_animation():
+    run = _RotationStubRun()
+    assert animated_maze_rotation_angle(run, now=100.0) == 0.0
+
+
+def test_animated_maze_rotation_angle_starts_at_90_degrees():
+    anim = RotationAnimation(started_at=100.0)
+    run = _RotationStubRun(rotation_animation=anim)
+    assert animated_maze_rotation_angle(run, now=100.0) == pytest.approx(90.0)
+
+
+def test_animated_maze_rotation_angle_eases_down_to_zero_partway_through():
+    anim = RotationAnimation(started_at=100.0)
+    run = _RotationStubRun(rotation_animation=anim)
+    halfway = 100.0 + ROTATE_ANIMATION_DURATION_SECONDS / 2
+    assert animated_maze_rotation_angle(run, now=halfway) == pytest.approx(45.0)
+
+
+def test_animated_maze_rotation_angle_is_zero_once_expired():
+    anim = RotationAnimation(started_at=100.0)
+    run = _RotationStubRun(rotation_animation=anim)
+    after = 100.0 + ROTATE_ANIMATION_DURATION_SECONDS + 1.0
+    assert animated_maze_rotation_angle(run, now=after) == 0.0
+
+
 # ── Fog of war visibility filtering ─────────────────────────────────────
 # The one part of this module where pixel-level inspection (a real Surface
 # + Renderer) is the most direct way to verify the actual behavior, rather
@@ -294,3 +338,44 @@ def test_pressure_pad_marker_is_drawn(tmp_path):
     cell = layout.cell
     pad_px = surface.get_at((ox + 3 * cell + cell // 2, oy + cell + cell // 2))
     assert tuple(pad_px)[:3] == C_PRESSURE_PADS[0]
+
+
+# ── Rotating maze animation ──────────────────────────────────────────────
+
+
+def test_draw_mid_rotation_animation_does_not_crash_and_draws_within_the_maze_area(tmp_path):
+    """
+    A smoke test for the offscreen-surface-plus-rotate path in
+    Renderer._draw_rotating_maze() -- doesn't check exact pixels (the
+    rotated image's content shifts every frame of the animation), just that
+    drawing mid-spin succeeds and still paints something other than pure
+    background inside the maze viewport.
+    """
+    pygame.display.init()
+    pygame.font.init()
+    run = LabyrinthRun(seed=1, gold_path=tmp_path / "gold.json", meta_upgrades_path=tmp_path / "meta.json")
+    run.augment_build.acquire(RotatingMazeAugment())
+    run.grid = [[1, 1, 1], [1, 0, 1], [1, 1, 1]]
+    run.cols, run.rows = 3, 3
+    run.player = (1, 1)
+    run.goal = (1, 1)
+    run.pellets = []
+    run.gold_pellets = []
+    run.hazards = []
+    run.teleporters = []
+    run.doors = []
+    run.keys = []
+    run.rotation_animation = RotationAnimation(started_at=time.monotonic() - ROTATE_ANIMATION_DURATION_SECONDS / 2)
+
+    layout = Layout(run.cols, run.rows)
+    surface = pygame.Surface((layout.window_w, layout.window_h))
+    Renderer(surface).draw(run)  # must not raise
+
+    ox, oy = layout.maze_origin
+    cell = layout.cell
+    painted = any(
+        tuple(surface.get_at((ox + x, oy + y)))[:3] != C_BG
+        for x in range(layout.maze_w)
+        for y in range(layout.maze_h)
+    )
+    assert painted

@@ -39,7 +39,7 @@ from maze_game.constants import (
     POPUP_DURATION_SECONDS, C_SPEED_BONUS, C_GOLD, C_PRESSURE_PADS,
     ZIP_ANIMATION_DURATION_SECONDS,
     ROTATE_INTERVAL_BASE_SECONDS, ROTATE_INTERVAL_STEP_SECONDS, ROTATE_INTERVAL_MIN_SECONDS,
-    ROTATE_WARNING_LEAD_SECONDS,
+    ROTATE_WARNING_LEAD_SECONDS, ROTATE_ANIMATION_DURATION_SECONDS,
     TWIN_GOAL_CLUSTER_SIZE, TWIN_GOAL_CLUSTER_RADIUS,
 )
 from maze_game.maze import generate_maze, farthest_reachable_cell, shortest_path
@@ -86,6 +86,23 @@ class TeleportAnimation:
 
     from_cell: tuple[int, int]
     to_cell: tuple[int, int]
+    started_at: float
+
+
+@dataclass
+class RotationAnimation:
+    """
+    Marks that a rotation just fired, purely presentational -- see
+    ROTATE_ANIMATION_DURATION_SECONDS and
+    renderer.animated_maze_rotation_angle(), which eases the *rendered*
+    maze image from its pre-rotation orientation into its new one over the
+    animation window. LabyrinthRun.grid/player/etc. are already fully
+    rotated the instant _rotate_maze() runs (unaffected by this); no
+    pre-rotation snapshot needs to be kept anywhere because
+    animated_maze_rotation_angle() reconstructs the mid-spin frame by
+    rotating the already-final rendered image, not by blending two grids.
+    """
+
     started_at: float
 
 # Breaks should always coincide with (or be subsumed by) the group cadence,
@@ -270,6 +287,7 @@ class LabyrinthRun:
         self.break_cursor = 0
         self.popups: list[Popup] = []
         self.teleport_animation: TeleportAnimation | None = None
+        self.rotation_animation: RotationAnimation | None = None
         self.rotation_timer = RotationTimer(ROTATE_INTERVAL_BASE_SECONDS)
         self.events: list[str] = []
         # Freeze pellet state -- deliberately NOT reset by _begin_maze()
@@ -337,6 +355,8 @@ class LabyrinthRun:
         self.popups = [p for p in self.popups if now - p.created_at < POPUP_DURATION_SECONDS]
         if self.teleport_animation is not None and now - self.teleport_animation.started_at >= ZIP_ANIMATION_DURATION_SECONDS:
             self.teleport_animation = None
+        if self.rotation_animation is not None and now - self.rotation_animation.started_at >= ROTATE_ANIMATION_DURATION_SECONDS:
+            self.rotation_animation = None
         if self.on_break or self.failed or self.completed_run or self.finished:
             return
         elapsed = self.time.tick()
@@ -501,6 +521,7 @@ class LabyrinthRun:
         self.break_cursor = 0
         self.popups = []
         self.teleport_animation = None
+        self.rotation_animation = None
         self.rotation_timer = RotationTimer(ROTATE_INTERVAL_BASE_SECONDS)
         self.events = []
         self.freeze_until = None
@@ -739,6 +760,13 @@ class LabyrinthRun:
         # essentially never overlaps in practice; clearing is simpler than
         # reasoning about rotating an in-flight interpolation.
         self.teleport_animation = None
+        # Presentational only -- see RotationAnimation's docstring. Started
+        # here, at the exact instant the grid/entities above finish
+        # rotating, so the warning arrow's ROTATE_WARNING_LEAD_SECONDS
+        # lead-in is what the player already watched counting down to this
+        # moment; this animation just eases the rendered snap that follows
+        # it instead of adding a second, separate schedule.
+        self.rotation_animation = RotationAnimation(started_at=time.monotonic())
 
     def _advance(self) -> None:
         if self.maze_index >= LABYRINTH_TOTAL_MAZES:
