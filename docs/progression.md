@@ -125,6 +125,46 @@ density down to `HAZARD_RAMP_START_MULTIPLIER` (0.25, ~1 hazard) on
 steady-state curve (already tuned) is untouched -- only the introduction is
 softened.
 
+#### More severe hazards, unlocked further into the run
+
+Two more `Hazard` subclasses exist beyond the base one, each with its own
+later unlock maze so the player has already learned to dodge the base
+hazard before a costlier one shows up — the same "introduced partway
+through, not from maze 1" shape `HAZARD_UNLOCK_MAZE` itself already uses:
+
+- **`HeavyHazard`** (from `HAZARD_HEAVY_UNLOCK_MAZE`, 31): same flat-penalty
+  mechanic as the base `Hazard`, just a bigger number
+  (`HAZARD_HEAVY_TIME_PENALTY`, 8.0s vs. the base 3.0s).
+- **`ExtremeHazard`** (from `HAZARD_EXTREME_UNLOCK_MAZE`, 61): instead of a
+  flat penalty, contact costs `HAZARD_EXTREME_TIME_FRACTION` (0.5, i.e. half)
+  of whatever time the player currently has banked. An *unavoidable-contact*
+  hazard rather than a pellet gamble -- there's no opt-in/opt-out choice the
+  way a gamble pellet would have, contact alone triggers it -- but the same
+  "scales with the current balance, not a fixed cost" shape: a player
+  sitting on a big time cushion loses more in absolute terms than one
+  running lean, so hoarding time isn't strictly safer late-game. Both types
+  still go through `Hazard.on_contact()`'s existing shield-block check
+  first (a Bulwark charge fully negates either one, same as the base
+  hazard) and still get scaled by `hazard_resistance_multiplier` (Thick
+  Skin) -- only the *un-blocked, unscaled* cost calculation itself differs
+  per subclass, via an `_apply_effect()` hook `Hazard.on_contact()` calls
+  after the shield check.
+
+**Which type spawns is weighted, not uniform, once unlocked**:
+`hazards.py::hazard_types_for_maze(maze_index)` filters the (type, unlock
+maze, relative weight) list `_HAZARD_UNLOCKS` down to whatever's unlocked by
+`maze_index`, and `spawn_hazards()` weighted-samples per hazard from that
+list (`HAZARD_BASE_WEIGHT` 1.0 vs. `HAZARD_HEAVY_WEIGHT` 0.4 vs.
+`HAZARD_EXTREME_WEIGHT` 0.15) -- both severer types stay a minority of
+spawns even at the end of the run, rather than crowding out the base hazard
+the moment they unlock. This is a separate axis from `hazard_density_ramp()`
+above: that ramp controls *how many* hazards spawn near `HAZARD_UNLOCK_MAZE`,
+this controls *which type* each spawned hazard is once further unlocks are
+reached -- the two compose (`spawn_hazards()` takes both a
+`density_multiplier` and a `maze_index`), but the type-ramp deliberately
+doesn't taper in the same "soft start" way the count-ramp does, since a
+weighted minority already keeps it rare from the moment it's unlocked.
+
 ### Feedback popups: "+Xs"/"-Xs" wherever the clock actually changes
 
 A pellet, a hazard, and a maze-clear speed bonus all move the shared time

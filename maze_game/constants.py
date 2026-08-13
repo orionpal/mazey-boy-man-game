@@ -115,6 +115,28 @@ HAZARD_MAX_COUNT    = 6
 HAZARD_RAMP_MAZES            = 10
 HAZARD_RAMP_START_MULTIPLIER = 0.25
 
+# More severe hazard variants (hazards.py::HeavyHazard/ExtremeHazard), each
+# unlocked at its own later maze index -- same "introduced partway through,
+# not from maze 1" shape as the base Hazard's own HAZARD_UNLOCK_MAZE, so a
+# player has time to learn the base hazard before a costlier one shows up.
+# hazards.py::hazard_types_for_maze() gates on the unlock maze and
+# weighted-samples among whatever's unlocked so far using the WEIGHT
+# constants below (relative to HAZARD_BASE_WEIGHT, not percentages) --
+# both severer types stay a minority of spawns even once unlocked.
+HAZARD_BASE_WEIGHT = 1.0
+
+HAZARD_HEAVY_UNLOCK_MAZE  = 31   # first appears partway through group 7 (mazes 31-35)
+HAZARD_HEAVY_TIME_PENALTY = 8.0  # seconds lost on contact -- well above the base hazard's 3.0s
+HAZARD_HEAVY_WEIGHT       = 0.4
+
+# The harshest hazard in the game: rather than a flat penalty, takes a
+# fraction of whatever time the player currently has banked -- scales with
+# (and punishes) hoarded time rather than being a fixed cost a late-game
+# player with a large buffer can shrug off. Rarer and later than HeavyHazard.
+HAZARD_EXTREME_UNLOCK_MAZE   = 61
+HAZARD_EXTREME_TIME_FRACTION = 0.5   # halves the player's current banked time
+HAZARD_EXTREME_WEIGHT        = 0.15
+
 # Perk magnitudes (additive -- each pick adds one more charge/bonus unit,
 # see progression/shop/perks.py).
 HAZARD_SHIELD_CHARGES_PER_LEVEL = 1  # Bulwark: ignored hazard contacts per maze, per pick
@@ -244,6 +266,8 @@ C_PELLET    = (240, 220,  80)
 C_GOLD      = (255, 150,  30)  # pushed further from C_PELLET's pale yellow than before
 C_SHOP      = (255, 105, 180)  # hot pink -- the walk-to shop tile/panel, distinct from every other entity colour
 C_HAZARD     = (220, 60,   60)
+C_HAZARD_HEAVY   = (255, 110,  10)  # deeper orange-red -- reads as "worse than the base hazard" while staying in the same danger hue
+C_HAZARD_EXTREME = (140,  20, 120)  # magenta-purple -- deliberately the odd one out among hazard colours, so it never reads as "just a bigger red square"
 C_SPEED_BONUS = (100, 220, 255)  # distinct from C_PELLET, so a maze-clear time bonus reads as its own thing
 C_DOOR_LOCKED   = (170, 70,  40)   # brick -- was (140,40,40), colliding with C_HAZARD/C_GOAL
 C_DOOR_UNLOCKED = (60, 190, 170)   # teal -- was (90,180,90), colliding with C_PLAYER

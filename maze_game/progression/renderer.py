@@ -30,16 +30,20 @@ from maze_game.constants import (
     SIDEBAR_W, HUD_HEIGHT, LABYRINTH_TOTAL_MAZES, MAX_ACTIVE_AUGMENTS,
     C_BG, C_WALL, C_FLOOR, C_PLAYER, C_PLAYER_OUTLINE, C_GOAL, C_TEXT, C_DIM, C_CARD_DESC, C_FLASH, C_HUD_BG,
     C_PANEL_BG, C_PANEL_LINE, C_BUTTON, C_BUTTON_HOVER,
-    C_PELLET, C_GOLD, C_HAZARD, C_TELEPORT_PAIRS, C_DOOR_LOCKED, C_DOOR_UNLOCKED, C_DOOR_KEY_PAIRS,
+    C_PELLET, C_GOLD, C_HAZARD, C_HAZARD_HEAVY, C_HAZARD_EXTREME,
+    C_TELEPORT_PAIRS, C_DOOR_LOCKED, C_DOOR_UNLOCKED, C_DOOR_KEY_PAIRS,
     C_SPEED_BONUS, C_STAIRS_PAIRS, C_SHOP,
     POPUP_DURATION_SECONDS, POPUP_RISE_PIXELS,
 )
 from maze_game.media import sprites
 from maze_game.media.shapes import draw_player_marker
+from maze_game.progression.entities.hazards import HeavyHazard, ExtremeHazard
 from maze_game.progression.shop import renderer as shop_renderer
 from maze_game.progression.shop.perks import ALL_PERKS
 from maze_game.progression.augments import AUGMENTS_BY_ID
 from maze_game.progression.run import LabyrinthRun
+
+_HAZARD_COLORS = {ExtremeHazard: C_HAZARD_EXTREME, HeavyHazard: C_HAZARD_HEAVY}
 
 MAZE_AREA_SIZE = 640  # fixed pixel viewport the maze renders within, at any dimension
 
@@ -279,8 +283,9 @@ class Renderer:
             if icon is not None:
                 self.surface.blit(icon, (ox + x * cell, oy + y * cell))
                 continue
+            color = _HAZARD_COLORS.get(type(hazard), C_HAZARD)
             pygame.draw.rect(
-                self.surface, C_HAZARD,
+                self.surface, color,
                 pygame.Rect(ox + x * cell + pad, oy + y * cell + pad, cell - 2 * pad, cell - 2 * pad),
             )
 
@@ -506,6 +511,8 @@ class Renderer:
             (C_GOLD, "circle", "Gold Pellet"),
             (C_SHOP, "square", "Shop Tile"),
             (C_HAZARD, "square", "Hazard"),
+            (C_HAZARD_HEAVY, "square", "Heavy Hazard"),
+            (C_HAZARD_EXTREME, "square", "Extreme Hazard"),
             (C_DOOR_LOCKED, "square", "Locked Door"),
             (C_DOOR_UNLOCKED, "square", "Unlocked Door"),
             (C_SPEED_BONUS, "square", "Speed Bonus"),
