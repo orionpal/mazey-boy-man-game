@@ -83,9 +83,14 @@ async def _run_pause_loop(window: "Window | None", clock: pygame.time.Clock, run
     the overlay starts transparent and fades to opaque over that many
     seconds (see run.py::peek_alpha(), which already collapses to
     instantly-opaque when peek_fade_seconds is 0, so no separate "is Peek
-    active" branch is needed here). `pause_started_at` is a fresh local
-    every call, so the fade window restarts on every ESC press rather than
-    carrying over from a previous pause.
+    active" branch is needed here). The fade budget is shared across the
+    whole maze, not reset on every ESC press: `elapsed` passed to
+    peek_alpha() is run.peek_time_used_this_maze (accumulated over every
+    earlier pause this maze) plus time into *this* pause, and the `finally`
+    block below folds this pause's own duration back into that running
+    total on every exit path -- pause a little, resume, pause again, and
+    the remaining see-through time keeps shrinking until the next maze
+    resets it (LabyrinthRun._begin_maze()).
 
     Deliberately its own nested loop (mirrors main.py::run_menu()'s shape
     exactly) rather than folding pause handling into run_labyrinth()'s own
@@ -96,34 +101,38 @@ async def _run_pause_loop(window: "Window | None", clock: pygame.time.Clock, run
     """
     menu = PauseMenu()
     pause_started_at = time.monotonic()
-    while True:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                return "quit"
-            elif event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_ESCAPE:
-                    return "resumed"
-                elif event.key in (pygame.K_UP, pygame.K_LEFT, pygame.K_w, pygame.K_a):
-                    menu.move_cursor(-1)
-                    sound.play("menu_move")
-                elif event.key in (pygame.K_DOWN, pygame.K_RIGHT, pygame.K_s, pygame.K_d):
-                    menu.move_cursor(1)
-                    sound.play("menu_move")
-                elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
-                    sound.play("menu_select")
-                    return menu.selected
-            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                for index, rect in enumerate(renderer.pause_option_rects()):
-                    if rect.collidepoint(event.pos):
-                        menu.cursor = index
+    try:
+        while True:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    return "quit"
+                elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_ESCAPE:
+                        return "resumed"
+                    elif event.key in (pygame.K_UP, pygame.K_LEFT, pygame.K_w, pygame.K_a):
+                        menu.move_cursor(-1)
+                        sound.play("menu_move")
+                    elif event.key in (pygame.K_DOWN, pygame.K_RIGHT, pygame.K_s, pygame.K_d):
+                        menu.move_cursor(1)
+                        sound.play("menu_move")
+                    elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
                         sound.play("menu_select")
                         return menu.selected
+                elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                    for index, rect in enumerate(renderer.pause_option_rects()):
+                        if rect.collidepoint(event.pos):
+                            menu.cursor = index
+                            sound.play("menu_select")
+                            return menu.selected
 
-        alpha = peek_alpha(time.monotonic() - pause_started_at, run.build.peek_fade_seconds)
-        renderer.draw_pause_overlay(run, menu, pygame.mouse.get_pos(), alpha=alpha)
-        pygame.display.flip()
-        clock.tick(FPS)
-        await asyncio.sleep(0)
+            elapsed = run.peek_time_used_this_maze + (time.monotonic() - pause_started_at)
+            alpha = peek_alpha(elapsed, run.build.peek_fade_seconds)
+            renderer.draw_pause_overlay(run, menu, pygame.mouse.get_pos(), alpha=alpha)
+            pygame.display.flip()
+            clock.tick(FPS)
+            await asyncio.sleep(0)
+    finally:
+        run.peek_time_used_this_maze += time.monotonic() - pause_started_at
 
 
 async def run_labyrinth(window: "Window | None", clock: pygame.time.Clock) -> str:

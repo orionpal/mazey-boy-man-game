@@ -15,7 +15,7 @@ from maze_game.constants import (
     LABYRINTH_GROUP_SIZE, LABYRINTH_TOTAL_MAZES, LABYRINTH_START_TIME,
     HAZARD_TIME_PENALTY, SPEED_BONUS_TIME, POPUP_DURATION_SECONDS,
     ROTATE_INTERVAL_BASE_SECONDS, SECOND_WIND_REFILL_SECONDS,
-    TWIN_GOAL_CLUSTER_SIZE, COMPOUND_INTEREST_MAX_RATE,
+    COMPOUND_INTEREST_MAX_RATE,
 )
 from maze_game.progression.run import (
     dimensions_for_maze, is_milestone_maze, TimeResource, LabyrinthRun,
@@ -28,7 +28,6 @@ from maze_game.progression.augments.gating.doors import DoorKeyPair, Key, DoorsA
 from maze_game.progression.augments.runtime.rotation import RotatingMazeAugment, rotate_cell_cw
 from maze_game.progression.augments.runtime.fog import FogOfWarAugment, visible_cells_from
 from maze_game.progression.augments.shifting_room import ShiftingRoomAugment, PressurePad
-from maze_game.progression.augments.twin_goals import TwinGoalsAugment
 
 # A trivial straight 3-cell corridor, (1,1)-(2,1)-(3,1), used to drive
 # move() deterministically instead of a randomly-generated maze.
@@ -1362,74 +1361,12 @@ def test_rotate_maze_rotates_pressure_pads_and_preserves_triggered_state():
     assert run._pad_by_cell[rotate_cell_cw(pad.pad, n)] == rotated_wall
 
 
-# ── Twin Goals augment ────────────────────────────────────────────────────
-
-
-def _twin_goals_run(seed: int = 1) -> LabyrinthRun:
-    """maze_index bumped to ~21x21 -- the 9x9 starting size is too small for the default distance-fraction thresholds to reliably find a candidate."""
-    run = LabyrinthRun(seed=seed)
-    run.augment_build.acquire(TwinGoalsAugment())
-    run.maze_index = 31
-    run._begin_maze()
-    return run
-
-
-def test_secondary_goal_is_set_when_twin_goals_is_active():
-    run = _twin_goals_run()
-    assert run.secondary_goal is not None
-    assert run.secondary_goal != run.goal
-    assert run.secondary_goal != run.player
-
-
-def test_secondary_goal_stays_none_when_the_augment_is_inactive():
+def test_pellets_never_double_spawn_on_the_same_cell():
     run = LabyrinthRun(seed=1)
     run.maze_index = 31
     run._begin_maze()
-    assert run.secondary_goal is None
-
-
-def test_maze_cleared_via_the_secondary_goal():
-    run = _twin_goals_run()
-    run.player = run.secondary_goal
-    assert run._maze_cleared() is True
-
-
-def test_maze_cleared_via_the_primary_goal_still_works_with_twin_goals_active():
-    run = _twin_goals_run()
-    run.player = run.goal
-    assert run._maze_cleared() is True
-
-
-def test_pellets_never_double_spawn_on_the_same_cell():
-    run = _twin_goals_run()
     positions = [p.pos for p in run.pellets]
     assert len(positions) == len(set(positions))
-
-
-def test_bonus_cluster_adds_pellets_beyond_the_normal_scattered_spawn():
-    with_twin_goals = _twin_goals_run(seed=2)
-    without = LabyrinthRun(seed=2)
-    without.maze_index = 31
-    without._begin_maze()
-    # Not an exact equality (scattered spawn count depends on open-cell
-    # count, unaffected by Twin Goals) -- just confirms the cluster added
-    # at least some pellets on top of it, when a secondary goal exists.
-    if with_twin_goals.secondary_goal is not None:
-        assert len(with_twin_goals.pellets) >= len(without.pellets)
-
-
-def test_rotate_maze_transforms_the_secondary_goal_consistently():
-    run = LabyrinthRun(seed=4)
-    run.augment_build.acquire(TwinGoalsAugment())
-    run.augment_build.acquire(RotatingMazeAugment())
-    run.maze_index = 31
-    run._begin_maze()
-    assert run.secondary_goal is not None  # otherwise this test proves nothing
-
-    n = run.cols
-    before_secondary = run.secondary_goal
-    run._rotate_maze()
-    assert run.secondary_goal == rotate_cell_cw(before_secondary, n)
 
 
 # ── Popups ────────────────────────────────────────────────────────────────
@@ -1555,6 +1492,14 @@ def test_begin_maze_resets_hazard_contacts_and_pending_chain_multiplier():
     run._begin_maze()
     assert run.hazard_contacts_this_maze == 0
     assert run.pending_chain_multiplier == 1.0
+
+
+def test_begin_maze_resets_peek_time_used():
+    """Peek's fade budget is shared across every pause within a maze -- see app.py::_run_pause_loop() -- but starts fresh again in the next one."""
+    run = LabyrinthRun(seed=1)
+    run.peek_time_used_this_maze = 6.0
+    run._begin_maze()
+    assert run.peek_time_used_this_maze == 0.0
 
 
 def test_begin_maze_does_not_reset_freeze_until():

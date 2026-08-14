@@ -36,11 +36,8 @@ import random
 from dataclasses import dataclass, field
 from typing import Any
 
-from maze_game.constants import (
-    MAX_ACTIVE_AUGMENTS,
-    TWIN_GOAL_MIN_START_DISTANCE_FRACTION, TWIN_GOAL_MIN_GOAL_DISTANCE_FRACTION,
-)
-from maze_game.maze import farthest_reachable_cell, secondary_goal_candidate
+from maze_game.constants import MAX_ACTIVE_AUGMENTS
+from maze_game.maze import farthest_reachable_cell
 
 AUGMENT_CARDS_OFFERED = 3  # mirrors shop/__init__.py::SHOP_CARDS_OFFERED
 
@@ -57,9 +54,9 @@ class Augment:
     # opposite direction -- an augment that makes survival harder (fog of
     # war's blind navigation, rotation's forced re-planning, a fetch-quest
     # detour for a key) spawns more/richer pellets; one that makes the run
-    # easier (twin goals' second chance to end the maze) spawns fewer.
-    # Neutral (1.0) by default; concrete augments override what actually
-    # applies. Combined multiplicatively across every active augment (see
+    # easier spawns fewer. Neutral (1.0) by default; concrete augments
+    # override what actually applies. Combined multiplicatively across
+    # every active augment (see
     # AugmentBuild.pellet_frequency_multiplier/pellet_value_multiplier
     # below), same stacking shape perk multipliers already use.
     pellet_frequency_multiplier: float = 1.0
@@ -182,8 +179,6 @@ def run_pipeline(
         ctx.level = level
         augment.apply(ctx)
     _finalize_goal(ctx)
-    if ctx.extra.get("twin_goals_active"):
-        _resolve_secondary_goal(ctx)
     return ctx
 
 
@@ -248,37 +243,6 @@ def _finalize_goal(ctx: AugmentContext) -> None:
     gated = ctx.extra.get("mandatory_gated_cells")
     planning_grid = _grid_with_pressure_pads_opened(ctx)
     ctx.goal = farthest_reachable_cell(planning_grid, ctx.start, extra_edges=tmap, candidates=gated or None)
-
-
-def _resolve_secondary_goal(ctx: AugmentContext) -> None:
-    """
-    Twin Goals' actual placement work -- deferred until after
-    _finalize_goal() (called from run_pipeline() right after it,
-    conditional on TwinGoalsAugment having set ctx.extra["twin_goals_active"])
-    because it needs the *finalized* primary goal as one of its two BFS
-    distance anchors, which doesn't exist until that step runs.
-    TwinGoalsAugment.apply() itself is a no-op that only sets that flag --
-    see twin_goals.py.
-
-    Deliberately NOT constrained by ctx.extra["mandatory_gated_cells"] the
-    way the primary goal is -- Twin Goals is shipped mutually exclusive
-    with Doors/Teleporters instead (see offer_augment_cards()) precisely
-    because an unconstrained secondary goal could otherwise land outside a
-    mandatory gate's sealed region, making that gate skippable entirely
-    (reach the easy goal, done). Stores the result -- a cell, or None if no
-    candidate qualifies (e.g. a maze too small to fit two well-separated
-    goals) -- in ctx.extra["secondary_goal"].
-    """
-    tmap = _combined_teleport_map(ctx)
-    planning_grid = _grid_with_pressure_pads_opened(ctx)
-    exclude = {ctx.start, ctx.goal} | ctx.reserved
-    ctx.extra["secondary_goal"] = secondary_goal_candidate(
-        planning_grid, ctx.start, ctx.goal,
-        extra_edges=tmap, exclude=exclude,
-        min_start_fraction=TWIN_GOAL_MIN_START_DISTANCE_FRACTION,
-        min_goal_fraction=TWIN_GOAL_MIN_GOAL_DISTANCE_FRACTION,
-        rng=ctx.rng,
-    )
 
 
 def _grid_with_pressure_pads_opened(ctx: AugmentContext) -> list[list[int]]:
@@ -359,19 +323,7 @@ def _combined_teleport_map(ctx: AugmentContext) -> dict[tuple[int, int], tuple[i
     return tmap
 
 
-# Twin Goals' secondary-goal search isn't constrained by a mandatory
-# gating augment's sealed region the way the primary goal is (see
-# _resolve_secondary_goal()'s docstring) -- composing it with Doors/
-# Teleporters risks making a mandatory gate skippable entirely. Shipped
-# mutually exclusive in v1 rather than attempting full composability;
-# true composability (constraining the secondary goal to the same gated
-# region) is a possible follow-up once it's been validated to actually
-# find a candidate often enough to be worth it.
-_MUTUALLY_EXCLUSIVE_AUGMENT_IDS: dict[str, set[str]] = {
-    "twin_goals": {"teleporters", "doors"},
-    "teleporters": {"twin_goals"},
-    "doors": {"twin_goals"},
-}
+_MUTUALLY_EXCLUSIVE_AUGMENT_IDS: dict[str, set[str]] = {}
 
 
 def offer_augment_cards(
@@ -421,7 +373,6 @@ AUGMENTS_BY_ID: dict[str, Augment] = {}
 from maze_game.progression.augments.gating import DoorsAugment, TeleportersAugment  # noqa: E402
 from maze_game.progression.augments.shifting_room import ShiftingRoomAugment  # noqa: E402
 from maze_game.progression.augments.runtime import FogOfWarAugment, RotatingMazeAugment  # noqa: E402
-from maze_game.progression.augments.twin_goals import TwinGoalsAugment  # noqa: E402
 
 # Order matters for the first three: DoorsAugment must run after
 # TeleportersAugment -- a door candidate is verified against the maze's
@@ -433,7 +384,7 @@ from maze_game.progression.augments.twin_goals import TwinGoalsAugment  # noqa: 
 # generation at all.
 for _augment in (
     TeleportersAugment(), DoorsAugment(), ShiftingRoomAugment(),
-    RotatingMazeAugment(), FogOfWarAugment(), TwinGoalsAugment(),
+    RotatingMazeAugment(), FogOfWarAugment(),
 ):
     ALL_AUGMENTS.append(_augment)
     AUGMENTS_BY_ID[_augment.id] = _augment

@@ -20,7 +20,7 @@ from maze_game.constants import (
 )
 from maze_game.progression.entities.hazards import (
     Pellet, GoldPellet, Hazard, HAZARD_TYPES, spawn_pellets, spawn_hazards, hazard_density_ramp,
-    pellet_value_ramp, spawn_pellet_cluster_near, spawn_gold_pellets, load_gold_total, save_gold_total,
+    pellet_value_ramp, spawn_gold_pellets, load_gold_total, save_gold_total,
 )
 from maze_game.progression.shop.perks import Build
 
@@ -483,25 +483,4 @@ def test_pellet_gamble_bust_halves_the_banked_time(monkeypatch):
     pos, text, color = run.popups[0]
     assert color == C_PELLET_GAMBLE
 
-
-def test_spawn_pellet_cluster_near_stays_within_radius():
-    center = (3, 3)
-    cluster = spawn_pellet_cluster_near(OPEN_ROOM, center, exclude=set(), count=3, radius=1, rng=random.Random(9))
-    assert len(cluster) <= 3
-    for p in cluster:
-        assert max(abs(p.pos[0] - center[0]), abs(p.pos[1] - center[1])) <= 1
-        assert p.kind == PELLET_KIND_PLAIN
-
-
-def test_spawn_pellet_cluster_near_respects_exclude():
-    center = (3, 3)
-    exclude = {(2, 2), (2, 3), (2, 4), (3, 2), (3, 3), (3, 4), (4, 2), (4, 3), (4, 4)}
-    cluster = spawn_pellet_cluster_near(OPEN_ROOM, center, exclude=exclude, count=3, radius=1, rng=random.Random(9))
-    assert cluster == []  # every cell within radius 1 is excluded -- graceful degradation to nothing, not a crash
-
-
-def test_spawn_pellet_cluster_near_degrades_gracefully_with_no_candidates():
-    tiny = [[1, 1, 1], [1, 0, 1], [1, 1, 1]]
-    cluster = spawn_pellet_cluster_near(tiny, (1, 1), exclude={(1, 1)}, count=5, radius=0, rng=random.Random(1))
-    assert cluster == []
 

@@ -209,34 +209,6 @@ def spawn_pellets(
     return pellets
 
 
-def spawn_pellet_cluster_near(
-    grid: list[list[int]],
-    center: tuple[int, int],
-    exclude: set[tuple[int, int]],
-    count: int,
-    radius: int,
-    rng: random.Random | None = None,
-) -> list[Pellet]:
-    """
-    A small guaranteed cluster of plain pellets within `radius` grid steps
-    (Chebyshev distance -- cheap and good enough for "nearby," no BFS
-    needed) of `center`, for augments that want a reward clustered near a
-    specific cell (e.g. Twin Goals' bonus goal) on top of the normal
-    maze-wide scattered spawn_pellets() pass. Graceful degradation, same
-    convention as every other placement helper here: returns fewer than
-    `count` (even zero) if there aren't enough qualifying open cells nearby,
-    never raises.
-    """
-    rng = rng if rng is not None else random
-    cx, cy = center
-    candidates = [
-        c for c in _open_cells(grid)
-        if c not in exclude and max(abs(c[0] - cx), abs(c[1] - cy)) <= radius
-    ]
-    chosen = rng.sample(candidates, min(count, len(candidates)))
-    return [Pellet(pos, value=PELLET_TIME_VALUE, kind=PELLET_KIND_PLAIN) for pos in chosen]
-
-
 def spawn_gold_pellets(
     grid: list[list[int]],
     exclude: set[tuple[int, int]],

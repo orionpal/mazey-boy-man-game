@@ -218,8 +218,6 @@ class Renderer:
             self._draw_doors_and_keys(run, layout, visible)
             self._draw_pressure_pads(run.pressure_pads, layout, visible)
             self._draw_goal(run.goal, layout, visible)
-            if run.secondary_goal is not None:
-                self._draw_goal(run.secondary_goal, layout, visible)  # Twin Goals -- same visual as the primary goal, either one clears the maze
             self._draw_player(run, layout)
             self._draw_popups(run, layout)
 

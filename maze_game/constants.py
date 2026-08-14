@@ -325,27 +325,6 @@ ROTATE_PELLET_VALUE_MULTIPLIER     = 1.2
 FOG_PELLET_FREQUENCY_MULTIPLIER = 1.5
 FOG_PELLET_VALUE_MULTIPLIER     = 1.5
 
-# Twin Goals (progression/augments/twin_goals.py): a second, independently
-# reachable goal cell -- reaching either one clears the maze. Candidates
-# must be at least these *fractions* of the farthest reachable distance
-# from the player's start and from the primary goal respectively (not an
-# absolute cell count -- mazes range from 9x9 to 61x61 over a run), so the
-# secondary goal is never right next to spawn or clustered on top of the
-# primary goal. See maze.py::secondary_goal_candidate().
-TWIN_GOAL_MIN_START_DISTANCE_FRACTION = 0.5
-TWIN_GOAL_MIN_GOAL_DISTANCE_FRACTION  = 0.3
-# The bonus pellet cluster guaranteed near whichever of the two goals gets
-# picked (see progression/entities/hazards.py::spawn_pellet_cluster_near()).
-TWIN_GOAL_CLUSTER_SIZE   = 3
-TWIN_GOAL_CLUSTER_RADIUS = 3
-# Pellet-economy trade-off: two independent chances to end the maze is a
-# genuine advantage (net easier, not harder, despite adding content) --
-# scattered pellet frequency is reduced to compensate. Value is left
-# untouched: the bonus cluster near one of the two goals is already this
-# augment's own separate reward, not something to also boost here.
-TWIN_GOAL_PELLET_FREQUENCY_MULTIPLIER = 0.7
-TWIN_GOAL_PELLET_VALUE_MULTIPLIER     = 1.0
-
 # ── Colours  (R, G, B) ────────────────────────────────────────────────────
 # Identity colours (player/goal/pellet/gold/hazard/door/speed-bonus) are
 # deliberately spread across distinct hues so entity *families* stay

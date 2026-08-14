@@ -40,14 +40,13 @@ from maze_game.constants import (
     ZIP_ANIMATION_DURATION_SECONDS,
     ROTATE_INTERVAL_BASE_SECONDS, ROTATE_INTERVAL_STEP_SECONDS, ROTATE_INTERVAL_MIN_SECONDS,
     ROTATE_WARNING_LEAD_SECONDS,
-    TWIN_GOAL_CLUSTER_SIZE, TWIN_GOAL_CLUSTER_RADIUS,
 )
 from maze_game.maze import generate_maze, farthest_reachable_cell, shortest_path
 from maze_game.player import slide_path
 from maze_game.progression.entities import resolve_contacts
 from maze_game.progression.entities.hazards import (
     spawn_pellets, spawn_hazards, hazard_density_ramp, pellet_value_ramp,
-    spawn_pellet_cluster_near, spawn_gold_pellets, load_gold_total, save_gold_total, DEFAULT_GOLD_PATH,
+    spawn_gold_pellets, load_gold_total, save_gold_total, DEFAULT_GOLD_PATH,
 )
 from maze_game.progression.shop import offer_shop_cards
 from maze_game.progression.augments import AugmentBuild, run_pipeline, offer_augment_cards
@@ -574,9 +573,7 @@ class LabyrinthRun:
             self.events.append("pressure_pad")
 
     def _maze_cleared(self) -> bool:
-        if self.player == self.goal:
-            return True
-        return self.secondary_goal is not None and self.player == self.secondary_goal
+        return self.player == self.goal
 
     def _begin_maze(self) -> None:
         cols, rows = dimensions_for_maze(self.maze_index)
@@ -603,10 +600,7 @@ class LabyrinthRun:
         self._pad_by_cell = {pad.pad: pad.wall_segment for pad in self.pressure_pads}
 
         self.goal = ctx.goal
-        self.secondary_goal = ctx.extra.get("secondary_goal")  # Twin Goals augment -- None unless active (and a candidate was found)
         exclude = {START_POS, self.goal} | ctx.reserved
-        if self.secondary_goal is not None:
-            exclude = exclude | {self.secondary_goal}
         self.pellets = spawn_pellets(
             self.grid, exclude,
             self.build.pellet_frequency_multiplier * self.augment_build.pellet_frequency_multiplier,
@@ -614,17 +608,6 @@ class LabyrinthRun:
             rng=self.rng,
         )
         exclude = exclude | {p.pos for p in self.pellets}
-        if self.secondary_goal is not None:
-            # A small guaranteed bonus on top of the normal scattered spawn
-            # above, clustered near whichever of the two goals this roll
-            # picks -- the two goals aren't purely equivalent even though
-            # both end the maze.
-            cluster_goal = self.rng.choice([self.goal, self.secondary_goal])
-            cluster = spawn_pellet_cluster_near(
-                self.grid, cluster_goal, exclude, TWIN_GOAL_CLUSTER_SIZE, TWIN_GOAL_CLUSTER_RADIUS, rng=self.rng,
-            )
-            self.pellets.extend(cluster)
-            exclude = exclude | {p.pos for p in cluster}
         self.gold_pellets = spawn_gold_pellets(self.grid, exclude, rng=self.rng)
         exclude = exclude | {p.pos for p in self.gold_pellets}
         if self.maze_index >= HAZARD_UNLOCK_MAZE:
@@ -643,14 +626,6 @@ class LabyrinthRun:
         # for either.
         planning_grid = _grid_with_pressure_pads_opened(self.grid, self.pressure_pads)
         path_len = len(shortest_path(planning_grid, START_POS, self.goal, extra_edges=self._teleport_map))
-        if self.secondary_goal is not None:
-            # Whichever goal is actually closer determines a fair par time
-            # -- a player beelining for the nearer one shouldn't be judged
-            # against the farther one's distance.
-            secondary_path_len = len(
-                shortest_path(planning_grid, START_POS, self.secondary_goal, extra_edges=self._teleport_map)
-            )
-            path_len = min(path_len, secondary_path_len)
         self._par_seconds = SPEED_BONUS_SECONDS_PER_CELL * path_len
 
         # A new maze is a wholly different layout -- discovered_cells (fog
@@ -664,6 +639,7 @@ class LabyrinthRun:
         self.shield_charges_remaining = self.build.hazard_shield_charges_per_maze
         self.hazard_contacts_this_maze = 0  # Momentum's "hazard-free clear" streak counter -- see update()'s maze-cleared branch
         self.pending_chain_multiplier = 1.0  # a Chain pellet's un-consumed buff doesn't carry across a maze boundary
+        self.peek_time_used_this_maze = 0.0  # Peek perk's fade budget -- shared across every pause within a maze, see peek_alpha()
 
     def _rotate_maze(self) -> None:
         """
@@ -689,8 +665,6 @@ class LabyrinthRun:
         self.grid = rotate_grid_cw(self.grid)
         self.player = rot(self.player)
         self.goal = rot(self.goal)
-        if self.secondary_goal is not None:
-            self.secondary_goal = rot(self.secondary_goal)
 
         for entity in (*self.pellets, *self.gold_pellets, *self.hazards):
             entity.pos = rot(entity.pos)
@@ -811,9 +785,13 @@ def peek_alpha(elapsed: float, fade_seconds: float) -> int:
     needed anywhere that calls this.
 
     A pure function of elapsed time, not tied to any persistent
-    LabyrinthRun state -- app.py::_run_pause_loop() computes `elapsed`
-    from when *that specific pause* began, so the fade always restarts
-    fresh on the next ESC press rather than carrying over.
+    LabyrinthRun state -- app.py::_run_pause_loop() passes `elapsed` as
+    run.peek_time_used_this_maze (accumulated across every earlier pause
+    this maze) plus the time into *this* pause, so the see-through budget
+    is shared for the whole maze rather than restarting fresh on every ESC
+    press. run.peek_time_used_this_maze itself only resets in
+    LabyrinthRun._begin_maze(), so a fresh maze always gets the full
+    budget back.
     """
     if fade_seconds <= 0:
         return 255
