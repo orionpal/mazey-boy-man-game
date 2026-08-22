@@ -307,9 +307,9 @@ SHIFT_PELLET_VALUE_MULTIPLIER     = 1.1
 # unplayable); the warning lead time deliberately stays flat across levels
 # rather than also shrinking, to avoid compounding two
 # disorientation-increasing changes into one.
-ROTATE_INTERVAL_BASE_SECONDS = 2.0
+ROTATE_INTERVAL_BASE_SECONDS = 5.0
 ROTATE_INTERVAL_STEP_SECONDS = -0.3   # faster per level above 1
-ROTATE_INTERVAL_MIN_SECONDS  = 1.0
+ROTATE_INTERVAL_MIN_SECONDS  = 3.0
 ROTATE_WARNING_LEAD_SECONDS  = 0.75   # the warning arrow shows for this long before each rotation
 # Pellet-economy trade-off: periodic forced re-planning (everything you'd
 # memorized gets rotated out from under you) is an ongoing difficulty tax,
