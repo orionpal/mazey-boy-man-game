@@ -199,16 +199,17 @@ force an unconditional redirect — see `docs/progression.md`'s "Maze
 augments" section for why), and rejects-and-retries on failure. Not
 literal Wave Function Collapse, but the same shape the escalation path
 here anticipated — closing that open thread with what actually got built.
-## Update: rotating maze, fog of war, and shifting rooms have since shipped
+## Update: rotating maze and shifting rooms have since shipped
 
-All three named above as the remaining maze-augment backlog are now built
-(`docs/progression.md`'s "Maze augments" section has the full writeup for
-each). Rotating maze turned out to need *none* of the WFC-style
-generate-verify-retry machinery this doc anticipated -- a rigid rotation
-is a genuine isometry, exactly as solvable after as before, so it's
-purely a runtime effect with no generation-time verification at all. Fog
-of war is likewise purely presentational, no generation-time changes.
-Shifting rooms *did* need the anticipated shape, but with a twist this doc
+Two of the three named above as the remaining maze-augment backlog are now
+built (`docs/progression.md`'s "Maze augments" section has the full
+writeup for each; fog of war also shipped but was later scrapped after
+playtesting -- see `docs/planning/future-ideas.md`). Rotating maze turned
+out to need *none* of the WFC-style generate-verify-retry machinery this
+doc anticipated -- a rigid rotation is a genuine isometry, exactly as
+solvable after as before, so it's purely a runtime effect with no
+generation-time verification at all. Shifting rooms *did* need the
+anticipated shape, but with a twist this doc
 didn't foresee: unlike teleporters (a decorative "extra edge" over an
 otherwise-normal grid), a shifting-room pocket is sealed by a genuinely
 closed wall until its pad fires, which meant planning code (goal

@@ -395,8 +395,8 @@ identical outcomes unless the input is also identical.
 
 Maze modifiers — three "gating" ones (teleporting squares, doors & keys,
 shifting rooms), each capable of forcing the player to interact with them
-to reach the goal, and two purely runtime/presentational ones (rotating
-maze, fog of war) — chosen every `AUGMENT_INTERVAL` (10) mazes, stacked on
+to reach the goal, and one purely runtime/presentational one (rotating
+maze) — chosen every `AUGMENT_INTERVAL` (10) mazes, stacked on
 top of the existing group-boundary shop break (see "Groups" above). Up to
 `MAX_ACTIVE_AUGMENTS` (4) can be active in one run at once; picking an
 augment already active levels it up instead of doing nothing (same shape
@@ -407,8 +407,8 @@ as perk stacking: `AugmentBuild.picks[id]` *is* the level, mirroring
 gating augment (shifting rooms) pushed the flat directory over this
 project's own file-count convention: `gating/` (teleporters.py, doors.py,
 and the shared `_movement.py` pocket-sealing helpers — augments that do
-real work at generation time) and `runtime/` (rotation.py, fog.py —
-augments whose `apply()` is a no-op; `LabyrinthRun` reads
+real work at generation time) and `runtime/` (rotation.py — an augment
+whose `apply()` is a no-op; `LabyrinthRun` reads
 `augment_build.level_of(id)` directly at runtime instead, the same pattern
 `renderer.py`'s augment sidebar already used). `shifting_room.py` stays at
 the top level of `progression/augments/` since it's a hybrid of both —
@@ -652,35 +652,9 @@ forced stops at junctions" above for the general staleness-bug class);
 reusing the identical shape avoids reintroducing it in a second,
 differently-coded timer rather than re-deriving the fix from scratch.
 
-### Fog of war (`progression/augments/runtime/fog.py`)
-
-The fourth augment, also purely runtime: only cells within the player's
-line of sight are drawn. For this maze's 1-wide, axis-aligned corridors,
-line of sight is exactly **4 straight rays from the player's cell, each
-walked at raw-grid resolution until (and including) a wall** —
-`visible_cells_from()`. Simpler than a radius-limited BFS and more
-literally correct: standing in a straight corridor reveals the whole
-corridor both directions and nothing else; standing at a junction reveals
-partway down every open branch, but the ray down each branch stops the
-instant the corridor turns, same as real line of sight can't see around a
-corner.
-
-`LabyrinthRun.discovered_cells` accumulates every cell ever seen, reset
-each new maze; the current default is **permanent memory** (once
-discovered, a cell stays revealed for the rest of the maze).
-`visible_and_discovered_cells()` isolates that default to one clearly
-marked spot — a future narrower default (e.g. an item gating "memory",
-rather than it being the baseline) is a one-line change there, changing
-nothing about the accumulation itself or how `renderer.py` filters
-against whatever it returns. `renderer.py`'s `draw()` computes the
-visible set once and threads it through every entity-drawing method;
-undiscovered cells are simply skipped, staying whatever
-`self.surface.fill(C_BG)` already painted — no separate "fog" colour or
-extra render state needed.
-
 ### Shifting room (`progression/augments/shifting_room.py`)
 
-The fifth augment, and the first that mutates the grid **at runtime**
+The fourth augment, and the first that mutates the grid **at runtime**
 instead of only at generation time: pressure pads that permanently open a
 hidden wall elsewhere in the maze. Confirmed with the user before
 building it: the pad fires the instant the player *slides over* it (not

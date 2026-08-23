@@ -13,7 +13,7 @@ from maze_game.constants import C_BG, C_TEXT, C_DIM, C_BUTTON, C_BUTTON_HOVER, C
 from maze_game.menu import MainMenu, MENU_OPTIONS
 
 WINDOW_W = 480
-WINDOW_H = 360
+WINDOW_H = 420  # fits 3 MENU_OPTIONS (was 360, sized for 2) plus the bottom hint text
 
 OPTION_W = 360
 OPTION_H = 60

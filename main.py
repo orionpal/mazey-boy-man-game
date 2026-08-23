@@ -40,7 +40,7 @@ from maze_game.constants import FPS, IS_WEB
 from maze_game.media import sound
 from maze_game.menu import MainMenu
 from maze_game.menu.renderer import MenuRenderer
-from maze_game.progression.app import run_progression_mode
+from maze_game.progression.app import run_progression_mode, run_tutorial
 from maze_game.freeplay.app import run_freeplay
 
 if TYPE_CHECKING:
@@ -133,7 +133,15 @@ async def main() -> None:
 
     mode = await run_menu(window, clock)
     while mode is not None:
-        result = await (run_progression_mode(window, clock) if mode == "labyrinth" else run_freeplay(window, clock))
+        if mode == "tutorial":
+            # Manual replay, independent of run_progression_mode()'s own
+            # auto-offer for a first-time player -- either way lands back
+            # at this menu, never chained straight into a real run.
+            result = "quit" if await run_tutorial(window, clock) == "quit" else "menu"
+        elif mode == "labyrinth":
+            result = await run_progression_mode(window, clock)
+        else:
+            result = await run_freeplay(window, clock)
         if result == "quit":
             break
         mode = await run_menu(window, clock)

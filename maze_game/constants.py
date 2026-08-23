@@ -127,7 +127,7 @@ PELLET_KIND_PLAIN    = "plain"
 PELLET_KIND_DOUBLE   = "double"     # 2x time value, nothing else
 PELLET_KIND_VOLATILE = "volatile"   # bigger time value, but spawns one extra hazard elsewhere
 PELLET_KIND_CHAIN    = "chain"      # no time itself -- multiplies the *next* pellet's value
-PELLET_KIND_FREEZE   = "freeze"     # no time -- pauses hazards/rotation and clears fog of war, briefly
+PELLET_KIND_FREEZE   = "freeze"     # no time -- pauses hazards/rotation, briefly
 PELLET_KIND_GAMBLE   = "gamble"     # 50/50: big time bonus, or your banked time is halved
 
 PELLET_KIND_WEIGHTS: dict[str, int] = {
@@ -311,6 +311,13 @@ ROTATE_INTERVAL_BASE_SECONDS = 5.0
 ROTATE_INTERVAL_STEP_SECONDS = -0.3   # faster per level above 1
 ROTATE_INTERVAL_MIN_SECONDS  = 3.0
 ROTATE_WARNING_LEAD_SECONDS  = 0.75   # the warning arrow shows for this long before each rotation
+# How long the *visual* spin plays once a rotation actually fires (distinct
+# from ROTATE_WARNING_LEAD_SECONDS above, which is the pre-rotation warning
+# window) -- grid/entity positions still update instantly and atomically in
+# _rotate_maze() (nothing here delays gameplay), this only eases the
+# rendered maze image into its new orientation instead of snapping, which
+# playtesters found disorienting.
+ROTATE_ANIMATION_DURATION_SECONDS = 0.35
 # Pellet-economy trade-off: periodic forced re-planning (everything you'd
 # memorized gets rotated out from under you) is an ongoing difficulty tax,
 # not a one-time gate -- compensated a bit more than the gating augments
@@ -318,12 +325,13 @@ ROTATE_WARNING_LEAD_SECONDS  = 0.75   # the warning arrow shows for this long be
 ROTATE_PELLET_FREQUENCY_MULTIPLIER = 1.25
 ROTATE_PELLET_VALUE_MULTIPLIER     = 1.2
 
-# Fog of War (progression/augments/runtime/fog.py): only line-of-sight is
-# visible, though discovered cells stay revealed once seen. By far the
-# biggest difficulty increase of any augment here -- blind navigation --
-# so it gets the strongest pellet compensation.
-FOG_PELLET_FREQUENCY_MULTIPLIER = 1.5
-FOG_PELLET_VALUE_MULTIPLIER     = 1.5
+# Tutorial (progression/meta/tutorial.py): a short, skippable sequence of
+# tiny practice mazes shown before a player's first real Labyrinth run --
+# movement + a single plain pellet + the goal, no augments/hazards. Only
+# the final step is timed, with a generous countdown (a first-timer isn't
+# expected to already know the maze's shape), just to introduce the real
+# run's countdown-timer mechanic before it actually matters.
+TUTORIAL_TIMED_STEP_SECONDS = 25.0
 
 # ── Colours  (R, G, B) ────────────────────────────────────────────────────
 # Identity colours (player/goal/pellet/gold/hazard/door/speed-bonus) are

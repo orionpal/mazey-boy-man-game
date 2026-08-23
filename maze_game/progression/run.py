@@ -39,7 +39,7 @@ from maze_game.constants import (
     POPUP_DURATION_SECONDS, C_SPEED_BONUS, C_GOLD, C_PRESSURE_PADS,
     ZIP_ANIMATION_DURATION_SECONDS,
     ROTATE_INTERVAL_BASE_SECONDS, ROTATE_INTERVAL_STEP_SECONDS, ROTATE_INTERVAL_MIN_SECONDS,
-    ROTATE_WARNING_LEAD_SECONDS,
+    ROTATE_WARNING_LEAD_SECONDS, ROTATE_ANIMATION_DURATION_SECONDS,
 )
 from maze_game.maze import generate_maze, farthest_reachable_cell, shortest_path
 from maze_game.player import slide_path
@@ -54,11 +54,9 @@ from maze_game.progression.augments.gating.doors import Key, DoorKeyPair
 from maze_game.progression.augments.gating.teleporters import TeleporterPair
 from maze_game.progression.augments.shifting_room import PressurePad
 from maze_game.progression.augments.runtime.rotation import rotate_cell_cw, rotate_grid_cw
-from maze_game.progression.augments.runtime.fog import visible_cells_from
 from maze_game.progression.meta import MetaProgress, DEFAULT_META_UPGRADES_PATH
 
 ROTATING_MAZE_ID = "rotating_maze"
-FOG_OF_WAR_ID = "fog_of_war"
 
 START_POS: tuple[int, int] = (1, 1)
 
@@ -85,6 +83,23 @@ class TeleportAnimation:
 
     from_cell: tuple[int, int]
     to_cell: tuple[int, int]
+    started_at: float
+
+
+@dataclass
+class RotationAnimation:
+    """
+    Marks that a rotation just fired, purely presentational -- see
+    ROTATE_ANIMATION_DURATION_SECONDS and
+    renderer.animated_maze_rotation_angle(), which eases the *rendered*
+    maze image from its pre-rotation orientation into its new one over the
+    animation window. LabyrinthRun.grid/player/etc. are already fully
+    rotated the instant _rotate_maze() runs (unaffected by this); no
+    pre-rotation snapshot needs to be kept anywhere because
+    animated_maze_rotation_angle() reconstructs the mid-spin frame by
+    rotating the already-final rendered image, not by blending two grids.
+    """
+
     started_at: float
 
 # Breaks should always coincide with (or be subsumed by) the group cadence,
@@ -269,6 +284,7 @@ class LabyrinthRun:
         self.break_cursor = 0
         self.popups: list[Popup] = []
         self.teleport_animation: TeleportAnimation | None = None
+        self.rotation_animation: RotationAnimation | None = None
         self.rotation_timer = RotationTimer(ROTATE_INTERVAL_BASE_SECONDS)
         self.events: list[str] = []
         # Freeze pellet state -- deliberately NOT reset by _begin_maze()
@@ -306,29 +322,8 @@ class LabyrinthRun:
 
     @property
     def freeze_active(self) -> bool:
-        """True for PELLET_FREEZE_DURATION_SECONDS after picking up a Freeze pellet -- hazards become harmless, the rotating maze stops advancing, and fog of war is fully suppressed, all for this same window."""
+        """True for PELLET_FREEZE_DURATION_SECONDS after picking up a Freeze pellet -- hazards become harmless and the rotating maze stops advancing, for this same window."""
         return self.freeze_until is not None and time.monotonic() < self.freeze_until
-
-    def visible_and_discovered_cells(self) -> set[tuple[int, int]] | None:
-        """
-        Which cells renderer.py should draw -- `None` means "no restriction,
-        draw everything" (fog of war isn't active for this build, or a
-        Freeze pellet is temporarily suppressing it).
-
-        PERMANENT MEMORY is the current default: self.discovered_cells only
-        ever grows (accumulated in move()/_begin_maze()), so once a cell has
-        been seen it stays revealed for the rest of the maze. To switch to a
-        narrower default later (e.g. the player has to remember on their
-        own, unless they've picked up some future "memory" item), change
-        the return line below to a freshly-computed
-        visible_cells_from(self.grid, self.player) instead of the
-        accumulator -- everything else (the accumulation itself, and
-        renderer.py's filtering against whatever this returns) stays
-        unchanged.
-        """
-        if self.freeze_active or self.augment_build.level_of(FOG_OF_WAR_ID) <= 0:
-            return None
-        return self.discovered_cells
 
     def update(self) -> None:
         """Advance the timer and check win/timeout. Call once per frame."""
@@ -336,6 +331,8 @@ class LabyrinthRun:
         self.popups = [p for p in self.popups if now - p.created_at < POPUP_DURATION_SECONDS]
         if self.teleport_animation is not None and now - self.teleport_animation.started_at >= ZIP_ANIMATION_DURATION_SECONDS:
             self.teleport_animation = None
+        if self.rotation_animation is not None and now - self.rotation_animation.started_at >= ROTATE_ANIMATION_DURATION_SECONDS:
+            self.rotation_animation = None
         if self.on_break or self.failed or self.completed_run or self.finished:
             return
         elapsed = self.time.tick()
@@ -441,8 +438,6 @@ class LabyrinthRun:
         if teleported:
             self.teleport_animation = TeleportAnimation(path[-2], path[-1], time.monotonic())
         self.player = path[-1]
-        if self.augment_build.level_of(FOG_OF_WAR_ID) > 0:
-            self.discovered_cells |= visible_cells_from(self.grid, self.player)
         resolve_contacts(self, path)
 
     def move_break_cursor(self, delta: int) -> None:
@@ -500,6 +495,7 @@ class LabyrinthRun:
         self.break_cursor = 0
         self.popups = []
         self.teleport_animation = None
+        self.rotation_animation = None
         self.rotation_timer = RotationTimer(ROTATE_INTERVAL_BASE_SECONDS)
         self.events = []
         self.freeze_until = None
@@ -628,12 +624,6 @@ class LabyrinthRun:
         path_len = len(shortest_path(planning_grid, START_POS, self.goal, extra_edges=self._teleport_map))
         self._par_seconds = SPEED_BONUS_SECONDS_PER_CELL * path_len
 
-        # A new maze is a wholly different layout -- discovered_cells (fog
-        # of war's "memory") resets every maze, not just once per run.
-        self.discovered_cells: set[tuple[int, int]] = set()
-        if self.augment_build.level_of(FOG_OF_WAR_ID) > 0:
-            self.discovered_cells |= visible_cells_from(self.grid, self.player)
-
         self._maze_started_at = time.monotonic()
         self.finished = False
         self.shield_charges_remaining = self.build.hazard_shield_charges_per_maze
@@ -673,10 +663,6 @@ class LabyrinthRun:
             key.door_cell = rot(key.door_cell)
         for popup in self.popups:
             popup.pos = rot(popup.pos)
-        # Fog of war's "memory" is keyed to grid coordinates -- rotate it in
-        # lockstep with everything else, or a rotation would silently
-        # invalidate everywhere the player has already discovered.
-        self.discovered_cells = {rot(c) for c in self.discovered_cells}
 
         self.teleporters = [
             TeleporterPair(a=rot(pair.a), b=rot(pair.b), mandatory=pair.mandatory, color_index=pair.color_index)
@@ -713,6 +699,13 @@ class LabyrinthRun:
         # essentially never overlaps in practice; clearing is simpler than
         # reasoning about rotating an in-flight interpolation.
         self.teleport_animation = None
+        # Presentational only -- see RotationAnimation's docstring. Started
+        # here, at the exact instant the grid/entities above finish
+        # rotating, so the warning arrow's ROTATE_WARNING_LEAD_SECONDS
+        # lead-in is what the player already watched counting down to this
+        # moment; this animation just eases the rendered snap that follows
+        # it instead of adding a second, separate schedule.
+        self.rotation_animation = RotationAnimation(started_at=time.monotonic())
 
     def _advance(self) -> None:
         if self.maze_index >= LABYRINTH_TOTAL_MAZES:
