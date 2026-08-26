@@ -16,7 +16,7 @@ from maze_game.constants import (
     HAZARD_TIME_PENALTY, SPEED_BONUS_TIME, POPUP_DURATION_SECONDS,
     HAZARD_HEAVY_UNLOCK_MAZE, HAZARD_EXTREME_UNLOCK_MAZE,
 )
-from maze_game.progression.run import dimensions_for_maze, is_milestone_maze, TimeResource, LabyrinthRun
+from maze_game.progression.run import dimensions_for_maze, is_milestone_maze, TimeResource, LabyrinthRun, START_POS
 from maze_game.progression.entities.hazards import (
     Pellet, GoldPellet, Hazard, HeavyHazard, ExtremeHazard, load_gold_total,
 )
@@ -905,3 +905,45 @@ def test_move_with_number_combo_collects_pellets_it_now_passes_through():
     assert run.player == (4, 1)
     assert run.pellets == []
     assert run.time.amount == pytest.approx(before + 1.0 * run.build.pellet_value_multiplier)
+
+
+# ── Trail (progression/renderer.py::_draw_trail reads this back) ────────────
+#
+# Appended at the very end of the file rather than near move()'s other tests
+# above: LabyrinthRun's own run seed is deliberately drawn from the bare
+# global `random` module, not a seeded instance (see _random_seed()'s
+# docstring), so inserting a LabyrinthRun()-constructing test earlier in this
+# file shifts every later test's random draws -- and, empirically, flips
+# which (random-chance) entities a later fixed-path move() test lands on.
+# Appending avoids perturbing anything that runs before it.
+
+
+def test_trail_starts_at_the_player_start_position(run):
+    assert run.trail == [START_POS]
+
+
+def test_move_appends_every_cell_entered_to_the_trail():
+    run = _corridor_run()
+    run.move((1, 0))  # (1,1) -> (2,1) -> (3,1), a wall beyond stops the slide
+    assert run.trail == [(1, 1), (2, 1), (3, 1)]
+
+
+def test_move_that_does_not_move_the_player_does_not_extend_the_trail():
+    run = _corridor_run()
+    run.move((0, 1))  # into a wall from (1, 1) in CORRIDOR_GRID
+    assert run.trail == [(1, 1)]
+
+
+def test_backtracking_appends_duplicate_cells_rather_than_deduplicating():
+    run = _corridor_run()
+    run.move((1, 0))   # (1,1) -> (3,1)
+    run.move((-1, 0))  # (3,1) -> (1,1)
+    assert run.trail == [(1, 1), (2, 1), (3, 1), (2, 1), (1, 1)]
+
+
+def test_trail_resets_on_the_next_maze():
+    run = _corridor_run()
+    run.move((1, 0))
+    run.player = run.goal
+    run.update()  # clears the maze, advancing to a freshly generated one
+    assert run.trail == [START_POS]

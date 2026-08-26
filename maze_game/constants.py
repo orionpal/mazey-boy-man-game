@@ -269,6 +269,7 @@ C_HAZARD     = (220, 60,   60)
 C_HAZARD_HEAVY   = (255, 110,  10)  # deeper orange-red -- reads as "worse than the base hazard" while staying in the same danger hue
 C_HAZARD_EXTREME = (140,  20, 120)  # magenta-purple -- deliberately the odd one out among hazard colours, so it never reads as "just a bigger red square"
 C_SPEED_BONUS = (100, 220, 255)  # distinct from C_PELLET, so a maze-clear time bonus reads as its own thing
+C_TRAIL       = (255, 255, 255)  # thin streak marking every cell the player has passed through this maze (see run.py's `trail`) -- white so it reads consistently over both floor and the eventual 3D wall/floor colouring
 C_DOOR_LOCKED   = (170, 70,  40)   # brick -- was (140,40,40), colliding with C_HAZARD/C_GOAL
 C_DOOR_UNLOCKED = (60, 190, 170)   # teal -- was (90,180,90), colliding with C_PLAYER
 C_SHIELD        = (190, 210, 230)  # pale blue/silver -- Bulwark's "Shielded!" popup, distinct from C_HAZARD's red

@@ -32,7 +32,7 @@ from maze_game.constants import (
     C_PANEL_BG, C_PANEL_LINE, C_BUTTON, C_BUTTON_HOVER,
     C_PELLET, C_GOLD, C_HAZARD, C_HAZARD_HEAVY, C_HAZARD_EXTREME,
     C_TELEPORT_PAIRS, C_DOOR_LOCKED, C_DOOR_UNLOCKED, C_DOOR_KEY_PAIRS,
-    C_SPEED_BONUS, C_STAIRS_PAIRS, C_SHOP,
+    C_SPEED_BONUS, C_STAIRS_PAIRS, C_SHOP, C_TRAIL,
     POPUP_DURATION_SECONDS, POPUP_RISE_PIXELS,
 )
 from maze_game.media import sprites
@@ -72,6 +72,8 @@ TOOLTIP_MAX_WIDTH = 260
 
 LEGEND_SWATCH_SIZE = 18
 LEGEND_ROW_HEIGHT = 34
+
+TRAIL_WIDTH_FRACTION = 6  # streak width = cell size // this -- thin, never occludes entities drawn on top of it
 
 
 def _wrap_text(font: pygame.font.Font, text: str, max_width: int) -> list[str]:
@@ -169,6 +171,7 @@ class Renderer:
             self._draw_break_cards(run, layout, mouse_pos)
         else:
             self._draw_maze(run.grid, layout)
+            self._draw_trail(run.trail, layout)
             self._draw_pellets(run.pellets, layout)
             self._draw_gold_pellets(run.gold_pellets, layout)
             self._draw_shop_tiles(run.shop_tiles, layout)
@@ -212,6 +215,25 @@ class Renderer:
             for col in range(len(grid[0])):
                 colour = C_WALL if grid[row][col] == 1 else C_FLOOR
                 pygame.draw.rect(self.surface, colour, pygame.Rect(ox + col * cell, oy + row * cell, cell, cell))
+
+    def _draw_trail(self, trail: list[tuple[int, int]], layout: Layout) -> None:
+        """
+        Thin streak connecting the centre of every cell the player has
+        passed through this maze, in visit order -- drawn on top of the
+        floor/walls but under every entity/the player, so a backtrack over
+        the same ground just re-draws the same line rather than getting any
+        more visually cluttered. `run.trail` (progression/run.py) is the
+        same data this maze's future 3D replay will read back to mark where
+        the exit route is (see docs/planning/3d-rework.md) -- kept here
+        rather than duplicated once that lands.
+        """
+        if len(trail) < 2:
+            return
+        ox, oy = layout.maze_origin
+        cell = layout.cell
+        width = max(1, cell // TRAIL_WIDTH_FRACTION)
+        points = [(ox + cx * cell + cell // 2, oy + cy * cell + cell // 2) for cx, cy in trail]
+        pygame.draw.lines(self.surface, C_TRAIL, False, points, width)
 
     def _draw_goal(self, goal, layout: Layout) -> None:
         ox, oy = layout.maze_origin
@@ -506,6 +528,7 @@ class Renderer:
 
         entries = [
             (C_PLAYER, "circle", "Player"),
+            (C_TRAIL, "square", "Trail (path taken)"),
             (C_GOAL, "circle", "Goal"),
             (C_PELLET, "circle", "Time Pellet"),
             (C_GOLD, "circle", "Gold Pellet"),

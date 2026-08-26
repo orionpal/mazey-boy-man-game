@@ -277,6 +277,7 @@ class LabyrinthRun:
         teleported = len(path) >= 2 and self._teleport_map.get(path[-2]) == path[-1]
         self.events.append("teleport" if teleported else "move")
         self.player = path[-1]
+        self.trail.extend(path)
         resolve_contacts(self, path)
 
     def move_break_cursor(self, delta: int) -> None:
@@ -417,6 +418,12 @@ class LabyrinthRun:
         self.cols, self.rows = cols, rows
         self.grid = generate_maze(cols, rows, rng=self.rng)
         self.player = START_POS
+        # Every cell the player has passed through this maze, in visit order
+        # (duplicates included on backtracking) -- rendered as a thin colour
+        # streak (see progression/renderer.py::_draw_trail) so the route taken
+        # stays visible. Reset fresh each maze; see docs/planning/3d-rework.md
+        # for why this data (not just the rendering) is being introduced now.
+        self.trail: list[tuple[int, int]] = [START_POS]
 
         # Augments (e.g. teleporting squares) are a post-process over the
         # freshly-generated grid -- generate_maze() itself stays untouched.
