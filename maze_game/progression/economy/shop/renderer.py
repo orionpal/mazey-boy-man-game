@@ -17,7 +17,7 @@ from maze_game.constants import (
     C_TEXT, C_DIM, C_CARD_DESC, C_FLASH, C_GOLD, C_SHOP,
     C_PANEL_BG, C_PANEL_LINE, C_BUTTON, C_BUTTON_HOVER,
 )
-from maze_game.progression.shop import MAZE_SHOP_ITEMS, maze_shop_cost
+from maze_game.progression.economy.shop import MAZE_SHOP_ITEMS, maze_shop_cost
 
 PANEL_W = 380
 ITEM_H = 72  # tall enough for a name+cost line plus a two-line-wrapped description

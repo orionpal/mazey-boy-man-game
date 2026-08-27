@@ -8,7 +8,7 @@ metrics, no display needed.
 import pygame
 
 from maze_game.progression.renderer import Layout, MAZE_AREA_SIZE, _wrap_text
-from maze_game.progression.shop.perks import ALL_PERKS
+from maze_game.progression.economy.shop.perks import ALL_PERKS
 from maze_game.progression.augments import ALL_AUGMENTS
 from maze_game.constants import SIDEBAR_W, HUD_HEIGHT
 

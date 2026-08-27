@@ -1,6 +1,6 @@
 """
-run.py
-------
+run/state.py
+------------
 The labyrinth progression mode: a sequence of LABYRINTH_TOTAL_MAZES mazes,
 gradually increasing in size. Time is one persistent resource (TimeResource)
 carried across the whole run rather than a per-maze budget -- pellets add
@@ -10,16 +10,15 @@ retry in place, matching the project's existing "full reset, not a retry"
 framing).
 
 Pacing: every LABYRINTH_GROUP_SIZE-th maze pauses for a "power-up" break (a
-passive perk, drawn from shop/); every AUGMENT_INTERVAL-th
+passive perk, drawn from economy/shop/); every AUGMENT_INTERVAL-th
 maze pauses for a "modifier" break (a maze augment choice, drawn from
 augments/); every MILESTONE_INTERVAL-th maze -- and always the
 LABYRINTH_TOTAL_MAZES-th (final) maze -- gets a one-off dimension spike
 (see dimensions_for_maze()), a noticeably bigger maze than the normal ramp
-would give it, reverting to the regular ramp on the very next maze. When a
-maze index triggers more than one of these, the break screens stack
-sequentially (e.g. maze 30: power-up screen, then modifier screen, then
-that maze begins, as a milestone maze) rather than one replacing another --
-see _breaks_due_after()/_resume_after_break().
+would give it, reverting to the regular ramp on the very next maze. The
+break-stacking machinery for maze indices that trigger several breaks at
+once lives in run/breaks.py (BreakSequenceMixin); the value types and
+pacing math live in run/model.py.
 
 Deliberately independent of pygame -- pure state machine, testable without a
 display, same pattern as Game/history.py.
@@ -27,15 +26,11 @@ display, same pattern as Game/history.py.
 
 import random
 import time
-from dataclasses import dataclass
 from pathlib import Path
 
 from maze_game.constants import (
     LABYRINTH_TOTAL_MAZES, LABYRINTH_GROUP_SIZE, LABYRINTH_START_TIME,
-    MIN_DIMENSION, MAX_DIMENSION, DIMENSION_STEP,
-    MILESTONE_INTERVAL, MILESTONE_DIMENSION_BOOST, MILESTONE_MAX_DIMENSION,
-    AUGMENT_INTERVAL, HAZARD_UNLOCK_MAZE, SHOP_PAUSE_SECONDS,
-    SPEED_BONUS_TIME, SPEED_BONUS_SECONDS_PER_CELL,
+    HAZARD_UNLOCK_MAZE, SPEED_BONUS_TIME, SPEED_BONUS_SECONDS_PER_CELL,
     POPUP_DURATION_SECONDS, C_SPEED_BONUS, C_GOLD,
 )
 from maze_game.maze import generate_maze, farthest_reachable_cell, shortest_path
@@ -46,131 +41,16 @@ from maze_game.progression.entities.hazards import (
     spawn_gold_pellets, load_gold_total, save_gold_total, DEFAULT_GOLD_PATH,
 )
 from maze_game.progression.entities.shop_tile import spawn_shop_tile
-from maze_game.progression.shop import offer_shop_cards, MAZE_SHOP_ITEMS, purchase_maze_shop_item
-from maze_game.progression.augments import AugmentBuild, run_pipeline, offer_augment_cards
+from maze_game.progression.augments import AugmentBuild, run_pipeline
 from maze_game.progression.augments.doors import Key
-from maze_game.progression.meta import MetaProgress, DEFAULT_META_UPGRADES_PATH
-
-START_POS: tuple[int, int] = (1, 1)
-
-
-@dataclass
-class FirstMazeRecord:
-    """
-    Immutable snapshot of the very first maze of a run, captured the moment
-    it is cleared (before _begin_maze() overwrites self.grid/self.trail for
-    maze 2). This is what the 3D arena interlude renders against after the
-    first group of 5 mazes -- same layout, same recorded route as a colour
-    trail. See docs/planning/3d-rework.md.
-    """
-
-    grid: list[list[int]]
-    goal: tuple[int, int]
-    trail: list[tuple[int, int]]
-    start: tuple[int, int]
+from maze_game.progression.economy.meta import MetaProgress, DEFAULT_META_UPGRADES_PATH
+from maze_game.progression.run.breaks import BreakSequenceMixin
+from maze_game.progression.run.model import (
+    TimeResource, Popup, START_POS, _random_seed, dimensions_for_maze,
+)
 
 
-@dataclass
-class Popup:
-    """A brief floating "+Xs"/"-Xs" label wherever a pellet, hazard, or speed bonus changes the time resource."""
-
-    pos: tuple[int, int]
-    text: str
-    color: tuple[int, int, int]
-    created_at: float
-
-# Breaks should always coincide with (or be subsumed by) the group cadence,
-# so a modifier or milestone maze is never a total surprise with zero
-# preceding screen -- a pacing-predictability invariant, not strictly
-# required for correctness (an unaligned interval would just show fewer
-# break screens, not crash), but worth failing loudly on if retuned
-# inconsistently.
-assert AUGMENT_INTERVAL % LABYRINTH_GROUP_SIZE == 0
-assert MILESTONE_INTERVAL % AUGMENT_INTERVAL == 0
-
-
-def _breaks_due_after(completed_index: int) -> list[str]:
-    """Which break screens (in order) should show after finishing `completed_index`, before the next maze begins."""
-    breaks = []
-    if completed_index % LABYRINTH_GROUP_SIZE == 0:
-        breaks.append("shop")
-    if completed_index % AUGMENT_INTERVAL == 0:
-        breaks.append("augment")
-    return breaks
-
-
-def _random_seed() -> int:
-    """
-    Pick a fresh run seed. Deliberately uses the bare global `random`, not a
-    `LabyrinthRun.rng` instance -- choosing *which* seed to start a run with
-    is inherently a one-off, non-reproducible decision, not part of the
-    reproducible sequence a seed is meant to pin down.
-    """
-    return random.randrange(2**32)
-
-
-def is_milestone_maze(maze_index: int) -> bool:
-    """Every MILESTONE_INTERVAL-th maze, and always the final maze -- see dimensions_for_maze()."""
-    return maze_index % MILESTONE_INTERVAL == 0 or maze_index == LABYRINTH_TOTAL_MAZES
-
-
-def dimensions_for_maze(maze_index: int) -> tuple[int, int]:
-    """
-    maze_index is 1-based (1..LABYRINTH_TOTAL_MAZES). Square mazes: starts
-    at MIN_DIMENSION, +DIMENSION_STEP per completed group of
-    LABYRINTH_GROUP_SIZE, capped at MAX_DIMENSION -- except on a milestone
-    maze (is_milestone_maze()), which gets a one-off MILESTONE_DIMENSION_BOOST
-    spike on top of that (capped separately at MILESTONE_MAX_DIMENSION,
-    since several milestones already sit at MAX_DIMENSION under the normal
-    ramp), reverting to the regular ramp on the very next maze.
-    """
-    group_index = (maze_index - 1) // LABYRINTH_GROUP_SIZE  # 0-based
-    size = min(MIN_DIMENSION + group_index * DIMENSION_STEP, MAX_DIMENSION)
-    if is_milestone_maze(maze_index):
-        size = min(size + MILESTONE_DIMENSION_BOOST, MILESTONE_MAX_DIMENSION)
-    return size, size
-
-
-class TimeResource:
-    """
-    The run's single persistent time budget. Ticks down by real elapsed
-    time (self-correcting via time.monotonic(), not a passed-in per-frame
-    delta -- avoids both frame-timing drift and a ms/s unit mismatch with
-    pygame's clock), topped up by pellets, drained by hazards.
-    """
-
-    def __init__(self, amount: float) -> None:
-        self.amount = amount
-        self._last_tick = time.monotonic()
-
-    def tick(self) -> None:
-        now = time.monotonic()
-        self.amount = max(0.0, self.amount - (now - self._last_tick))
-        self._last_tick = now
-
-    def resync(self) -> None:
-        """
-        Reset the tick reference point to now. Call after any stretch where
-        tick() wasn't invoked (a shop-choice break) before ticking resumes
-        -- otherwise the next tick() computes its
-        delta against a stale timestamp from before the pause, charging the
-        *entire* paused stretch as elapsed time in one lump the instant
-        play resumes.
-        """
-        self._last_tick = time.monotonic()
-
-    def add(self, amount: float) -> None:
-        self.amount += amount
-
-    def spend(self, amount: float) -> None:
-        self.amount = max(0.0, self.amount - amount)
-
-    @property
-    def depleted(self) -> bool:
-        return self.amount <= 0.0
-
-
-class LabyrinthRun:
+class LabyrinthRun(BreakSequenceMixin):
     """
     Owns the full progression state machine: current maze, the persistent
     time resource, this maze's pellets/hazards, the player's perk build,
@@ -191,7 +71,7 @@ class LabyrinthRun:
         # 3D arena interlude: fires exactly once per run, as a one-time break
         # right after the first group of 5 mazes clears (see _advance()).
         self._arena_shown = False
-        self.first_maze_record: FirstMazeRecord | None = None
+        self.first_maze_record = None
         self.arena_gold_pending = 0  # treasure gold from the arena, banked by finish_arena()
         self.failed = False
         self.completed_run = False
@@ -226,8 +106,8 @@ class LabyrinthRun:
         self.gold = load_gold_total(self.gold_path)
         meta_upgrades_path = meta_upgrades_path if meta_upgrades_path is not None else DEFAULT_META_UPGRADES_PATH
         # Owned meta upgrades (purchased in the Base, between runs -- see
-        # progression/meta/) seed the starting Build. Loaded from disk once
-        # here, not reloaded by restart() -- meta progress can't change
+        # progression/economy/meta/) seed the starting Build. Loaded from disk
+        # once here, not reloaded by restart() -- meta progress can't change
         # mid-run, only the Base (which always runs before a new one
         # starts) purchases -- but restart() still reseeds self.build from
         # this same self.meta_progress, so owned upgrades keep applying to
@@ -301,79 +181,6 @@ class LabyrinthRun:
         self.trail.extend(path)
         resolve_contacts(self, path)
 
-    def move_break_cursor(self, delta: int) -> None:
-        """Move the keyboard-selected break card left/right (wraps), for whichever break (shop or augment) is currently active."""
-        choices = self._current_break_choices()
-        if choices is None:
-            return
-        self.break_cursor = (self.break_cursor + delta) % len(choices)
-
-    def choose_break_card(self, index: int) -> None:
-        """Single entry point for confirming a break-card pick -- dispatches to whichever break is currently active."""
-        if self.break_kind == "shop":
-            self.choose_shop_card(index)
-        elif self.break_kind == "augment":
-            self.choose_augment_card(index)
-        elif self.break_kind == "arena":
-            # The arena is a full alternate mode, normally resolved by
-            # progression/app.py handing off to arena/app.py. With no
-            # interactive layer (a headless full-run test, or a stray
-            # confirm press), treat it as skipped and move on.
-            self.finish_arena()
-
-    def choose_shop_card(self, index: int) -> None:
-        """Apply the chosen perk, then resume (the next queued break, or the next maze)."""
-        if self.break_kind != "shop" or self.shop_choices is None:
-            return
-        self.build.acquire(self.shop_choices[index])
-        self.shop_choices = None
-        self.events.append("card_select")
-        self._resume_after_break()
-
-    def choose_augment_card(self, index: int) -> None:
-        """Apply the chosen maze modifier (augment), then resume (the next queued break, or the next maze)."""
-        if self.break_kind != "augment" or self.augment_choices is None:
-            return
-        self.augment_build.acquire(self.augment_choices[index])
-        self.augment_choices = None
-        self.events.append("card_select")
-        self._resume_after_break()
-
-    def enter_shop(self) -> None:
-        """
-        Called by ShopTile.on_contact() -- pauses the real time resource
-        (update() skips TimeResource.tick() while in_shop, mirroring
-        on_break) and starts a second, independent TimeResource just for the
-        shop's own SHOP_PAUSE_SECONDS countdown. Does not touch self.time at
-        all here; _exit_shop() resync()s it once the shop closes, same
-        staleness-avoidance pattern as _resume_after_break().
-        """
-        self.in_shop = True
-        self.shop_cursor = 0
-        self.shop_time = TimeResource(SHOP_PAUSE_SECONDS)
-        self.events.append("shop_enter")
-
-    def _exit_shop(self) -> None:
-        """The shop's own countdown hit zero -- resume the real timer exactly where it left off, never early."""
-        self.in_shop = False
-        self.shop_time = None
-        self.time.resync()
-        self.events.append("shop_exit")
-
-    def move_shop_cursor(self, delta: int) -> None:
-        """Move the keyboard-selected shop item left/right (wraps). No-op when the shop isn't open."""
-        if not self.in_shop:
-            return
-        self.shop_cursor = (self.shop_cursor + delta) % len(MAZE_SHOP_ITEMS)
-
-    def buy_shop_item(self, index: int) -> None:
-        """Attempt to purchase MAZE_SHOP_ITEMS[index] with gold. Silently no-ops if unaffordable or the shop isn't open."""
-        if not self.in_shop or not (0 <= index < len(MAZE_SHOP_ITEMS)):
-            return
-        self.shop_cursor = index
-        if purchase_maze_shop_item(self, MAZE_SHOP_ITEMS[index]):
-            self.events.append("card_select")
-
     def restart(self, same_seed: bool = False) -> None:
         """
         Start the whole run over from maze 1 (e.g. after running out of
@@ -416,10 +223,6 @@ class LabyrinthRun:
         self._begin_maze()
 
     @property
-    def on_break(self) -> bool:
-        return self.break_kind is not None
-
-    @property
     def group_number(self) -> int:
         """1-based group number for the current maze."""
         return (self.maze_index - 1) // LABYRINTH_GROUP_SIZE + 1
@@ -429,13 +232,6 @@ class LabyrinthRun:
         return -(-LABYRINTH_TOTAL_MAZES // LABYRINTH_GROUP_SIZE)  # ceil division
 
     # ── Private helpers ───────────────────────────────────────────────────
-
-    def _current_break_choices(self) -> list | None:
-        if self.break_kind == "shop":
-            return self.shop_choices
-        if self.break_kind == "augment":
-            return self.augment_choices
-        return None
 
     def _is_gated(self) -> bool:
         return bool(self.in_shop or self.on_break or self.failed or self.completed_run or self.finished)
@@ -500,68 +296,3 @@ class LabyrinthRun:
         self._maze_started_at = time.monotonic()
         self.finished = False
         self.shield_charges_remaining = self.build.hazard_shield_charges_per_maze
-
-    def _advance(self) -> None:
-        if self.maze_index >= LABYRINTH_TOTAL_MAZES:
-            self.completed_run = True
-            return
-        if self.maze_index == 1:
-            # Snapshot maze 1 *now*, before _begin_maze() overwrites grid/trail.
-            self.first_maze_record = FirstMazeRecord(
-                grid=[row[:] for row in self.grid],
-                goal=self.goal,
-                trail=list(self.trail),
-                start=START_POS,
-            )
-        breaks = _breaks_due_after(self.maze_index)
-        if self.maze_index == LABYRINTH_GROUP_SIZE and not self._arena_shown:
-            # One-time 3D replay of maze 1, ahead of this group's shop pick.
-            self._arena_shown = True
-            breaks.insert(0, "arena")
-        self._pending_breaks = breaks
-        self._resume_after_break()
-
-    def finish_arena(self) -> None:
-        """
-        Called by arena/app.py when the 3D interlude ends (win, loss, timeout
-        or quit). The arena never touches the run's time resource; the only
-        thing it carries back is treasure gold, banked here. Then the normal
-        break sequence resumes (this group's shop pick).
-        """
-        if self.break_kind != "arena":
-            return
-        if self.arena_gold_pending:
-            self.gold += self.arena_gold_pending
-            save_gold_total(self.gold, self.gold_path)
-            self.arena_gold_pending = 0
-        self.events.append("card_select")
-        self._resume_after_break()
-
-    def _resume_after_break(self) -> None:
-        """
-        Pop the next queued break (if any) and show it; once the queue is
-        empty, actually advance to the next maze. This is what makes
-        multiple breaks on the same maze index stack sequentially (e.g.
-        maze 30: power-up screen, then modifier screen, then maze 30
-        begins) instead of one replacing another -- and, critically, only
-        resyncs the clock *once* the whole queue is drained, not after each
-        individual break, avoiding the exact TimeResource staleness bug
-        docs/progression.md already documents once (a stale tick reference
-        point charging the entire paused stretch in one lump the instant
-        play resumes).
-        """
-        if self._pending_breaks:
-            self.break_kind = self._pending_breaks.pop(0)
-            self.break_cursor = 0
-            if self.break_kind == "shop":
-                self.shop_choices = offer_shop_cards(rng=self.rng)
-            elif self.break_kind == "augment":
-                self.augment_choices = offer_augment_cards(self.augment_build, rng=self.rng)
-            # "arena" is a full alternate mode, not a card-pick overlay:
-            # progression/app.py hands off to arena/app.py and calls
-            # finish_arena() when it returns. Nothing to prepare here.
-            return
-        self.break_kind = None
-        self.time.resync()  # the break(s) paused the clock; don't charge their duration on the next tick()
-        self.maze_index += 1
-        self._begin_maze()  # seamless when no break was due -- no pause within a group

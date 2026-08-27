@@ -38,8 +38,8 @@ from maze_game.constants import (
 from maze_game.presentation.media import sprites
 from maze_game.presentation.media.shapes import draw_player_marker
 from maze_game.progression.entities.hazards import HeavyHazard, ExtremeHazard
-from maze_game.progression.shop import renderer as shop_renderer
-from maze_game.progression.shop.perks import ALL_PERKS
+from maze_game.progression.economy.shop import renderer as shop_renderer
+from maze_game.progression.economy.shop.perks import ALL_PERKS
 from maze_game.progression.augments import AUGMENTS_BY_ID
 from maze_game.progression.run import LabyrinthRun
 

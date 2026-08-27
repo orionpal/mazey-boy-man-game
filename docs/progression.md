@@ -5,8 +5,8 @@ bigger, with two break cadences layered on top of each other -- a passive
 perk choice every 5 mazes, and a maze-modifier (augment) choice every 10
 mazes. A rogue-like resource layer sits underneath: time is one persistent
 budget carried across the *whole* run, topped up by pellets and drained by
-hazards. Implemented in `maze_game/progression/` (`run.py`'s
-`LabyrinthRun`, `shop/` for perks, `augments/` for maze modifiers,
+hazards. Implemented in `maze_game/progression/` (`run/` -- 
+`state.py`'s `LabyrinthRun`, `economy/shop/` for perks, `augments/` for maze modifiers,
 `entities/`), playable via `main.py` (this is now the default entry point
 — see the "Renamed" note at the bottom). Everything below is a **first
 guess to playtest**, not a balance pass — the constants live in
@@ -32,7 +32,7 @@ plateau length.
 An earlier version of this mode replaced the goal with a boss fight every
 `MILESTONE_INTERVAL`-th maze (30, 60, 90), plus always the final maze --
 that's gone (see git history if curious), and in its place those same
-maze indices (`run.py::is_milestone_maze()`, same cadence the boss used)
+maze indices (`run/model.py::is_milestone_maze()`, same cadence the boss used)
 get a one-off dimension *spike* instead: noticeably bigger than the normal
 ramp would give that specific maze index, reverting to the regular ramp
 on the very next maze. Otherwise it's a totally ordinary maze -- a real
@@ -54,7 +54,7 @@ time budget and more hazards along with its bigger footprint.
 Earlier versions of this mode estimated a fresh time *limit* for every
 maze (`estimate_time_limit()`, BFS'd from the shortest path and its turn
 count) and reset the clock at the start of each one. That's gone: time is
-now one persistent `TimeResource` (`progression/run.py`) the whole run
+now one persistent `TimeResource` (`progression/run/model.py`) the whole run
 shares, starting at `LABYRINTH_START_TIME` (15.0s, cut down from an
 original 75.0s after playtesting made the early game feel too padded) and
 ticking down continuously regardless of which maze is active. Running out
@@ -187,14 +187,14 @@ to pass.
 ### Perks: the shop, chosen every group
 
 Every group-boundary break (mazes 5, 10, ..., 95) offers cards drawn at
-random from the perk pool (`progression/shop/__init__.py::offer_shop_cards()`,
+random from the perk pool (`progression/economy/shop/__init__.py::offer_shop_cards()`,
 `random.sample` of `ALL_PERKS`, capped at whatever's actually in the pool)
 instead of a bare "press SPACE to continue" — `LabyrinthRun.choose_shop_card()`
 applies the pick; picking a card *is* the resume action.
 
 Movement is deliberately just arrow keys (plus the hold-SPACE run-to-wall
 combo, see "Movement combos" below) — there is no separate active-item
-system with its own keybinds. `progression/shop/perks.py::ALL_PERKS` holds
+system with its own keybinds. `progression/economy/shop/perks.py::ALL_PERKS` holds
 exactly two perks, and stacking is explicitly **additive** (picking the
 same perk again adds another charge/bonus unit, not a multiplier) since
 both grant a count, not a rate:
@@ -350,7 +350,7 @@ on top of a rogue-like's full-reset one is that death isn't a total loss.
 ## The Base: meta-progression between runs
 
 Gold (`GoldPellet`, `docs/assets.md`) used to be collect-and-display only.
-`progression/meta/` gives it a purpose: the Base is a screen the player
+`progression/economy/meta/` gives it a purpose: the Base is a screen the player
 visits between runs (`progression/app.py::run_progression_mode()` — always
 precedes a run, and R after a fail/complete screen now routes back into it
 instead of restarting in place) where gold buys permanent passive

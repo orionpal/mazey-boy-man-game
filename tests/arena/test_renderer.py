@@ -58,3 +58,23 @@ def test_draws_each_result_overlay():
     for outcome in ("win", "lose", "timeout", "quit"):
         state.outcome = outcome
         renderer.draw(state)
+
+
+def test_draws_the_intro_card_without_raising():
+    renderer = _renderer()
+    renderer.draw(_state(), intro=True)
+
+
+def test_camera_eases_toward_a_stepped_position_then_arrives():
+    renderer = _renderer()
+    state = _state()
+    state.pos = (3, 3)
+    renderer.draw(state)          # seeds the view at the start cell
+    state.pos = (3, 2)            # one tile north
+    renderer.draw(state)
+    partway = (renderer._vx, renderer._vy)
+    for _ in range(30):
+        renderer.draw(state)
+    assert partway != (3.5, 2.5)                      # it interpolated, didn't snap
+    assert abs(renderer._vx - 3.5) < 0.05             # and converged
+    assert abs(renderer._vy - 2.5) < 0.05

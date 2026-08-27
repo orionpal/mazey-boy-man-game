@@ -20,7 +20,7 @@ from maze_game.progression.run import dimensions_for_maze, is_milestone_maze, Ti
 from maze_game.progression.entities.hazards import (
     Pellet, GoldPellet, Hazard, HeavyHazard, ExtremeHazard, load_gold_total,
 )
-from maze_game.progression.shop.perks import ALL_PERKS, Perk
+from maze_game.progression.economy.shop.perks import ALL_PERKS, Perk
 from maze_game.progression.augments.teleporters import TeleportersAugment
 from maze_game.progression.augments.doors import DoorKeyPair, Key
 
@@ -40,9 +40,11 @@ def _isolate_gold_file(tmp_path, monkeypatch):
     single history_path-taking fixture) should never touch the real
     on-disk gold.json/meta_upgrades.json -- patching the module-level
     defaults the __init__ falls back to isolates all of them at once.
+    (LabyrinthRun.__init__ lives in run/state.py since run.py was split
+    into the run/ package -- that's the module whose globals it reads.)
     """
-    monkeypatch.setattr("maze_game.progression.run.DEFAULT_GOLD_PATH", tmp_path / "gold.json")
-    monkeypatch.setattr("maze_game.progression.run.DEFAULT_META_UPGRADES_PATH", tmp_path / "meta_upgrades.json")
+    monkeypatch.setattr("maze_game.progression.run.state.DEFAULT_GOLD_PATH", tmp_path / "gold.json")
+    monkeypatch.setattr("maze_game.progression.run.state.DEFAULT_META_UPGRADES_PATH", tmp_path / "meta_upgrades.json")
 
 
 # ── dimensions_for_maze ───────────────────────────────────────────────────
@@ -429,7 +431,7 @@ def test_restart_does_not_reset_gold():
 
 
 def test_owned_meta_upgrades_seed_the_starting_build(tmp_path):
-    from maze_game.progression.meta import ALL_META_UPGRADES, save_meta_upgrade_levels
+    from maze_game.progression.economy.meta import ALL_META_UPGRADES, save_meta_upgrade_levels
 
     upgrade = next(u for u in ALL_META_UPGRADES if u.id == "pellet_bonus")
     upgrades_path = tmp_path / "meta_upgrades.json"
@@ -440,7 +442,7 @@ def test_owned_meta_upgrades_seed_the_starting_build(tmp_path):
 
 
 def test_restart_reseeds_the_build_from_the_same_owned_meta_upgrades(tmp_path):
-    from maze_game.progression.meta import ALL_META_UPGRADES, save_meta_upgrade_levels
+    from maze_game.progression.economy.meta import ALL_META_UPGRADES, save_meta_upgrade_levels
 
     upgrade = next(u for u in ALL_META_UPGRADES if u.id == "hazard_resistance")
     upgrades_path = tmp_path / "meta_upgrades.json"

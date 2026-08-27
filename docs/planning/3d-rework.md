@@ -266,12 +266,42 @@ the point of the detour -- the existing trail rendering already makes
   banks `ARENA_TREASURE_GOLD`, paid out via `finish_arena()`. The detour
   cost is the ticking time budget + the extra trail scribble in the replay
   (no separate readability-penalty mechanic needed -- see "Treasures").
-- **Backlog / polish.** Smooth turn+move interpolation on top of the
-  discrete state; textured or sprite billboards instead of flat rects;
-  enemy variety; a proper arena intro screen; tuning pass on
-  `ARENA_*` constants once it's been playtested in a real web build.
-- **Phase 6.** Run an actual `deploy_web.py` / `pygbag --build` pass once
-  the arena exists, to confirm real-world frame rate of the per-column
-  raycast loop in the WASM runtime (not just desktop pygame) -- downscale
-  ray/column count if needed. Confirms or retires the OpenGL caveat above
-  for good measure while there.
+- **Phase 6 -- DONE (build verified; proxy for the FPS number).**
+  `tools/bench_arena_raycast.py` times a full `ArenaRenderer.draw()`
+  (ceiling/floor fill + N wall strips + sprite billboards + HUD) over
+  hundreds of frames with the camera swept through every open cell/facing,
+  then projects onto the WASM runtime with a pessimistic 3-8x slowdown
+  band. At the original `ARENA_RAY_COUNT = 240` the worst-case projection
+  sat at ~16ms -- right on the 60fps edge with no room for enemy AI, the
+  event pump, the pygbag main-loop overhead, or slower phones.
+  **Downscaled to 160, then to 144** once the polish pass replaced the flat
+  billboard rects with shaped enemy/treasure/goal sprites (which cost
+  enough to eat the 160-ray margin): worst-case projection ~14.5ms,
+  ~2ms of headroom. `ARENA_MAX_DEPTH` also dropped 24 -> 14 (a 9x9 maze's
+  longest sightline is ~13 cells, so 24 just wasted DDA iterations).
+  - A real `pygbag --build` of `main.py` (staged the same three items
+    `deploy_web.py` ships -- `main.py`, `maze_game/`, `assets/`) **was run
+    this session and succeeds** -- the arena package, raycaster and all,
+    compiles and packs into `build/web` cleanly, so the feature ships
+    through the existing pipeline with no build changes (as predicted).
+    `deploy_web.py` itself still lives only on the unmerged
+    `web-wasm-port` branch and was not touched.
+  - What still needs a human with a browser: the actual in-canvas FPS
+    trace (a headless shell has no WebGL/canvas to render into). The bench
+    script is the reproducible harness for that check; if the real number
+    disagrees, drop the ray count further (the sweep shows 112 rays
+    projects at ~13ms worst-case).
+  - The OpenGL caveat (top of this doc) is untouched -- still worth the
+    ~10-min spike next time someone has a live `pygbag --build` open.
+- **Backlog / polish -- DONE (first pass).** Smooth camera interpolation
+  (`ArenaRenderer._update_view`: the discrete tank state is unchanged; the
+  camera eases toward the current tile/facing each frame, snapping only on
+  >1-cell jumps like teleports). Shaped billboard sprites per entity
+  (`arena/entities.py::draw_enemy/treasure/goal` -- still plain
+  `pygame.draw`, no textures). Enemy variety: `arena/entities.py` ROSTER of
+  grunt / lurker / brute, each with its own wake range, move cadence and
+  hits-to-kill, cycled by spawn order. Arena intro card
+  (`ArenaRenderer._draw_intro`, held by `arena/app.py` until the first
+  keypress -- which still acts -- or `ARENA_INTRO_MS`). `ARENA_*` tuning
+  pass (time budget 90 -> 80, depth 24 -> 14, ray count -> 144).
+  Still open: real playtest in a shipped web build to re-tune from feel.

@@ -13,7 +13,7 @@ from maze_game.constants import (
     C_BG, C_TEXT, C_DIM, C_CARD_DESC, C_GOLD, C_FLASH,
     C_PANEL_LINE, C_BUTTON, C_BUTTON_HOVER,
 )
-from maze_game.progression.meta import ALL_META_UPGRADES, Base, MetaProgress
+from maze_game.progression.economy.meta import ALL_META_UPGRADES, Base, MetaProgress
 
 WINDOW_W = 640
 WINDOW_H = 440

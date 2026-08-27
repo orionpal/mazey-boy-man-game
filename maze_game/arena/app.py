@@ -20,7 +20,7 @@ from pygame._sdl2.video import Window
 
 from maze_game.constants import (
     FPS, ARENA_TIME_BUDGET, ARENA_START_HEALTH, ARENA_ENEMY_COUNT,
-    ARENA_TREASURE_COUNT, ARENA_TREASURE_GOLD,
+    ARENA_TREASURE_COUNT, ARENA_TREASURE_GOLD, ARENA_INTRO_MS,
 )
 from maze_game.presentation.media import sound
 from maze_game.progression.run import FirstMazeRecord
@@ -62,6 +62,11 @@ def run_arena(
     )
     renderer = ArenaRenderer(_sync_window_size(window, ArenaRenderer.window_size()))
 
+    # Intro card: held until the first keypress (which still acts) or
+    # ARENA_INTRO_MS elapses. The arena clock doesn't tick until it clears.
+    intro = True
+    intro_until = pygame.time.get_ticks() + ARENA_INTRO_MS
+
     while True:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -70,6 +75,12 @@ def run_arena(
                 return state
             if event.type != pygame.KEYDOWN:
                 continue
+            if intro:
+                intro = False
+                if event.key == pygame.K_ESCAPE:
+                    state.outcome = "quit"
+                    return state
+                # fall through: this same keypress also drives the first action
             if state.over:
                 return state  # any key dismisses the result screen
             if event.key == pygame.K_ESCAPE:
@@ -86,12 +97,16 @@ def run_arena(
             elif event.key == pygame.K_SPACE:
                 state.attack()
 
-        state.update()
-        for event_name in state.events:
-            sound.play(event_name)
-        state.events.clear()
+        if intro and pygame.time.get_ticks() >= intro_until:
+            intro = False
+
+        if not intro:
+            state.update()
+            for event_name in state.events:
+                sound.play(event_name)
+            state.events.clear()
 
         renderer.set_surface(_sync_window_size(window, ArenaRenderer.window_size()))
-        renderer.draw(state)
+        renderer.draw(state, intro=intro)
         pygame.display.flip()
         clock.tick(FPS)
