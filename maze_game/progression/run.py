@@ -55,6 +55,22 @@ START_POS: tuple[int, int] = (1, 1)
 
 
 @dataclass
+class FirstMazeRecord:
+    """
+    Immutable snapshot of the very first maze of a run, captured the moment
+    it is cleared (before _begin_maze() overwrites self.grid/self.trail for
+    maze 2). This is what the 3D arena interlude renders against after the
+    first group of 5 mazes -- same layout, same recorded route as a colour
+    trail. See docs/planning/3d-rework.md.
+    """
+
+    grid: list[list[int]]
+    goal: tuple[int, int]
+    trail: list[tuple[int, int]]
+    start: tuple[int, int]
+
+
+@dataclass
 class Popup:
     """A brief floating "+Xs"/"-Xs" label wherever a pellet, hazard, or speed bonus changes the time resource."""
 
@@ -172,6 +188,11 @@ class LabyrinthRun:
         self.maze_index = 1
         self.break_kind: str | None = None
         self._pending_breaks: list[str] = []
+        # 3D arena interlude: fires exactly once per run, as a one-time break
+        # right after the first group of 5 mazes clears (see _advance()).
+        self._arena_shown = False
+        self.first_maze_record: FirstMazeRecord | None = None
+        self.arena_gold_pending = 0  # treasure gold from the arena, banked by finish_arena()
         self.failed = False
         self.completed_run = False
         self.time = TimeResource(LABYRINTH_START_TIME)
@@ -277,6 +298,7 @@ class LabyrinthRun:
         teleported = len(path) >= 2 and self._teleport_map.get(path[-2]) == path[-1]
         self.events.append("teleport" if teleported else "move")
         self.player = path[-1]
+        self.trail.extend(path)
         resolve_contacts(self, path)
 
     def move_break_cursor(self, delta: int) -> None:
@@ -292,6 +314,12 @@ class LabyrinthRun:
             self.choose_shop_card(index)
         elif self.break_kind == "augment":
             self.choose_augment_card(index)
+        elif self.break_kind == "arena":
+            # The arena is a full alternate mode, normally resolved by
+            # progression/app.py handing off to arena/app.py. With no
+            # interactive layer (a headless full-run test, or a stray
+            # confirm press), treat it as skipped and move on.
+            self.finish_arena()
 
     def choose_shop_card(self, index: int) -> None:
         """Apply the chosen perk, then resume (the next queued break, or the next maze)."""
@@ -362,6 +390,9 @@ class LabyrinthRun:
         self.maze_index = 1
         self.break_kind = None
         self._pending_breaks = []
+        self._arena_shown = False
+        self.first_maze_record = None
+        self.arena_gold_pending = 0
         self.failed = False
         self.completed_run = False
         self.shop_choices = None
@@ -417,6 +448,12 @@ class LabyrinthRun:
         self.cols, self.rows = cols, rows
         self.grid = generate_maze(cols, rows, rng=self.rng)
         self.player = START_POS
+        # Every cell the player has passed through this maze, in visit order
+        # (duplicates included on backtracking) -- rendered as a thin colour
+        # streak (see progression/renderer.py::_draw_trail) so the route taken
+        # stays visible. Reset fresh each maze; see docs/planning/3d-rework.md
+        # for why this data (not just the rendering) is being introduced now.
+        self.trail: list[tuple[int, int]] = [START_POS]
 
         # Augments (e.g. teleporting squares) are a post-process over the
         # freshly-generated grid -- generate_maze() itself stays untouched.
@@ -468,7 +505,36 @@ class LabyrinthRun:
         if self.maze_index >= LABYRINTH_TOTAL_MAZES:
             self.completed_run = True
             return
-        self._pending_breaks = _breaks_due_after(self.maze_index)
+        if self.maze_index == 1:
+            # Snapshot maze 1 *now*, before _begin_maze() overwrites grid/trail.
+            self.first_maze_record = FirstMazeRecord(
+                grid=[row[:] for row in self.grid],
+                goal=self.goal,
+                trail=list(self.trail),
+                start=START_POS,
+            )
+        breaks = _breaks_due_after(self.maze_index)
+        if self.maze_index == LABYRINTH_GROUP_SIZE and not self._arena_shown:
+            # One-time 3D replay of maze 1, ahead of this group's shop pick.
+            self._arena_shown = True
+            breaks.insert(0, "arena")
+        self._pending_breaks = breaks
+        self._resume_after_break()
+
+    def finish_arena(self) -> None:
+        """
+        Called by arena/app.py when the 3D interlude ends (win, loss, timeout
+        or quit). The arena never touches the run's time resource; the only
+        thing it carries back is treasure gold, banked here. Then the normal
+        break sequence resumes (this group's shop pick).
+        """
+        if self.break_kind != "arena":
+            return
+        if self.arena_gold_pending:
+            self.gold += self.arena_gold_pending
+            save_gold_total(self.gold, self.gold_path)
+            self.arena_gold_pending = 0
+        self.events.append("card_select")
         self._resume_after_break()
 
     def _resume_after_break(self) -> None:
@@ -489,8 +555,11 @@ class LabyrinthRun:
             self.break_cursor = 0
             if self.break_kind == "shop":
                 self.shop_choices = offer_shop_cards(rng=self.rng)
-            else:  # "augment"
+            elif self.break_kind == "augment":
                 self.augment_choices = offer_augment_cards(self.augment_build, rng=self.rng)
+            # "arena" is a full alternate mode, not a card-pick overlay:
+            # progression/app.py hands off to arena/app.py and calls
+            # finish_arena() when it returns. Nothing to prepare here.
             return
         self.break_kind = None
         self.time.resync()  # the break(s) paused the clock; don't charge their duration on the next tick()

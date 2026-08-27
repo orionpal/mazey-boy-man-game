@@ -25,9 +25,9 @@ import pygame
 from pygame._sdl2.video import Window
 
 from maze_game.constants import FPS
-from maze_game.media import sound
-from maze_game.menu import MainMenu
-from maze_game.menu.renderer import MenuRenderer
+from maze_game.presentation.media import sound
+from maze_game.presentation.menu import MainMenu
+from maze_game.presentation.menu.renderer import MenuRenderer
 from maze_game.progression.app import run_progression_mode
 from maze_game.freeplay.app import run_freeplay
 

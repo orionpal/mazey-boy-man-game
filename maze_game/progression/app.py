@@ -17,11 +17,12 @@ import pygame
 from pygame._sdl2.video import Window
 
 from maze_game.constants import FPS
-from maze_game.media import sound
+from maze_game.presentation.media import sound
 from maze_game.progression.run import LabyrinthRun
 from maze_game.progression.renderer import Renderer, Layout
 from maze_game.progression.meta import Base, MetaProgress, ALL_META_UPGRADES
 from maze_game.progression.meta.renderer import BaseRenderer
+from maze_game.arena import run_arena
 
 DIRECTION_MAP: dict[int, tuple[int, int]] = {
     pygame.K_UP:    ( 0, -1),
@@ -109,6 +110,16 @@ def run_labyrinth(window: Window, clock: pygame.time.Clock) -> str:
         for event_name in run.events:
             sound.play(event_name)
         run.events.clear()
+
+        if run.break_kind == "arena":
+            # One-time 3D replay of maze 1 (see run.py::_advance). A full
+            # alternate rendering/control mode, so hand off to its own loop
+            # rather than drawing it as a break card; bank any treasure gold
+            # and resume the normal break sequence when it returns.
+            final = run_arena(window, clock, run.first_maze_record, run.rng)
+            run.arena_gold_pending = final.gold_collected
+            run.finish_arena()
+            continue
 
         renderer.set_surface(sync_window_size(window, Renderer.window_size(run.cols, run.rows)))
         renderer.draw(run)

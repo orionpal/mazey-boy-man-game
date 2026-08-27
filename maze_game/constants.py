@@ -269,6 +269,7 @@ C_HAZARD     = (220, 60,   60)
 C_HAZARD_HEAVY   = (255, 110,  10)  # deeper orange-red -- reads as "worse than the base hazard" while staying in the same danger hue
 C_HAZARD_EXTREME = (140,  20, 120)  # magenta-purple -- deliberately the odd one out among hazard colours, so it never reads as "just a bigger red square"
 C_SPEED_BONUS = (100, 220, 255)  # distinct from C_PELLET, so a maze-clear time bonus reads as its own thing
+C_TRAIL       = (255, 255, 255)  # thin streak marking every cell the player has passed through this maze (see run.py's `trail`) -- white so it reads consistently over both floor and the eventual 3D wall/floor colouring
 C_DOOR_LOCKED   = (170, 70,  40)   # brick -- was (140,40,40), colliding with C_HAZARD/C_GOAL
 C_DOOR_UNLOCKED = (60, 190, 170)   # teal -- was (90,180,90), colliding with C_PLAYER
 C_SHIELD        = (190, 210, 230)  # pale blue/silver -- Bulwark's "Shielded!" popup, distinct from C_HAZARD's red
@@ -311,3 +312,22 @@ C_STAIRS_PAIRS = [
     (190, 150, 120),
     (130, 180, 160),
 ]
+
+# ── Arena (3D maze-1 replay -- see docs/planning/3d-rework.md) ──────────────
+# The arena reuses C_WALL/C_FLOOR/C_TRAIL for its raycast strips (tinted by
+# distance at render time); these are the few extra things it draws.
+ARENA_WIN_W, ARENA_WIN_H = 960, 600
+ARENA_FOV_DEG = 66.0            # horizontal field of view
+ARENA_RAY_COUNT = 240           # one wall-distance calc per ~4px column -- cheap enough for the WASM runtime, downscale in Phase 6 if a real pygbag build disagrees
+ARENA_MAX_DEPTH = 24            # cells; rays that hit nothing within this fade to fog
+ARENA_CEILING = (24, 26, 40)
+ARENA_FLOOR_FILL = (30, 28, 26)
+ARENA_FOG = (10, 10, 16)
+ARENA_TIME_BUDGET = 90.0        # seconds to reach the exit before the interlude times out
+ARENA_START_HEALTH = 3
+ARENA_ENEMY_COUNT = 3          # placed along the recorded route -- fight through them to follow the trail
+ARENA_TREASURE_COUNT = 2      # placed at far dead-ends off the route
+ARENA_TREASURE_GOLD = 5      # gold per treasure collected, paid out on finish_arena()
+C_ARENA_ENEMY = (230, 60, 60)
+C_ARENA_TREASURE = (255, 205, 60)
+C_ARENA_GOAL = (230, 90, 200)

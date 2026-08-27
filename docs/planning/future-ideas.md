@@ -90,3 +90,17 @@ the augment pool and pacing, nothing more. Pull one into an actual design
 (generation-time pass, run-time hook, rendering) when it's time to build it
 -- teleporting squares is the concrete template for what that involves.
 
+## 7. 3D maze-1 arena replay -- IN PROGRESS, see docs/planning/3d-rework.md
+
+After clearing the first group of 5 mazes in a Labyrinth Run, drop the
+player into a 3D (raycast) replay of the very first maze, with their
+earlier route shown as a colour trail, enemies to fight through, and
+optional far-flung treasures that cost time (and trail readability) to
+grab. Engine research, architecture, and phased plan are all in
+`docs/planning/3d-rework.md`. Phases 1-5 have shipped a playable first
+pass: trail recording/2D rendering, the `maze_game/arena/` raycaster
+package, the one-time `"arena"` break after group 1, tile movement,
+chasing enemies you fight through, and dead-end treasures. Remaining:
+smooth-movement/visual polish and a real pygbag frame-rate check
+(Phase 6).
+

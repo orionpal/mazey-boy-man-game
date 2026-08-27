@@ -24,7 +24,7 @@ from pathlib import Path
 
 import pygame
 
-SOUNDS_DIR = Path(__file__).resolve().parent.parent.parent / "assets" / "sounds"
+SOUNDS_DIR = Path(__file__).resolve().parent.parent.parent.parent / "assets" / "sounds"
 SOUND_EXTENSIONS = (".wav", ".ogg")
 
 _mixer_ready: bool | None = None  # None = not attempted yet

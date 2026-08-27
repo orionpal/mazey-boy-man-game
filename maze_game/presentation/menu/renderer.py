@@ -10,7 +10,7 @@ a mode -- and therefore a maze -- actually exists).
 import pygame
 
 from maze_game.constants import C_BG, C_TEXT, C_DIM, C_BUTTON, C_BUTTON_HOVER, C_FLASH
-from maze_game.menu import MainMenu, MENU_OPTIONS
+from maze_game.presentation.menu import MainMenu, MENU_OPTIONS
 
 WINDOW_W = 480
 WINDOW_H = 360
