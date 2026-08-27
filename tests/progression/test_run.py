@@ -249,6 +249,37 @@ def test_completing_a_non_group_boundary_maze_advances_seamlessly(run):
     assert run.finished is False  # finished is per-maze; the new maze isn't finished
 
 
+def _clear_first_group(run) -> None:
+    """
+    Complete the first 5 mazes and skip past the one-time 3D arena break
+    that now fires right after them (see run.py::_advance / finish_arena),
+    leaving the run sitting on that group's shop break -- the state most of
+    the tests below were written against before the arena existed.
+    """
+    for _ in range(LABYRINTH_GROUP_SIZE):
+        run.player = run.goal
+        run.update()
+    assert run.break_kind == "arena"
+    run.finish_arena()
+
+
+def test_completing_the_last_maze_of_a_group_queues_the_arena_then_shop():
+    """The first group boundary now stacks the one-time arena ahead of the shop pick."""
+    # Explicit seed: keeps this new test from consuming a global random draw
+    # and shifting every later fixed-path move() test's entity placement (see
+    # the trail-tests note at the end of this file).
+    run = LabyrinthRun(seed=1)
+    for _ in range(LABYRINTH_GROUP_SIZE):
+        assert run.on_break is False
+        run.player = run.goal
+        run.update()
+    assert run.break_kind == "arena"
+    assert run.maze_index == LABYRINTH_GROUP_SIZE
+    run.finish_arena()
+    assert run.break_kind == "shop"
+    assert run.maze_index == LABYRINTH_GROUP_SIZE
+
+
 def test_completing_the_last_maze_of_a_group_offers_shop_choices():
     """
     Shop choices are a random draw of 3 from the full perk pool (confirmed:
@@ -256,10 +287,7 @@ def test_completing_the_last_maze_of_a_group_offers_shop_choices():
     checks length and pool membership, not exact identity.
     """
     run = LabyrinthRun()
-    for _ in range(LABYRINTH_GROUP_SIZE):
-        assert run.on_break is False
-        run.player = run.goal
-        run.update()
+    _clear_first_group(run)
     assert run.on_break is True
     assert run.maze_index == LABYRINTH_GROUP_SIZE  # doesn't advance until choose_shop_card()
     assert len(run.shop_choices) == min(3, len(ALL_PERKS))
@@ -268,9 +296,7 @@ def test_completing_the_last_maze_of_a_group_offers_shop_choices():
 
 def test_choose_shop_card_applies_the_card_and_advances_past_the_break():
     run = LabyrinthRun()
-    for _ in range(LABYRINTH_GROUP_SIZE):
-        run.player = run.goal
-        run.update()
+    _clear_first_group(run)
     assert run.on_break is True
 
     chosen = run.shop_choices[0]
@@ -292,9 +318,7 @@ def test_choose_shop_card_is_a_no_op_when_not_on_break(run):
 
 def test_break_cursor_starts_at_zero_and_wraps_with_move_break_cursor():
     run = LabyrinthRun()
-    for _ in range(LABYRINTH_GROUP_SIZE):
-        run.player = run.goal
-        run.update()
+    _clear_first_group(run)
     assert run.on_break is True
     assert run.break_cursor == 0
 
@@ -364,9 +388,7 @@ def test_move_is_a_no_op_while_on_break():
 
 def test_restart_resets_time_and_build():
     run = LabyrinthRun()
-    for _ in range(LABYRINTH_GROUP_SIZE):
-        run.player = run.goal
-        run.update()
+    _clear_first_group(run)
     run.choose_shop_card(0)
     run.time.amount = 0.0
     run.update()
@@ -446,15 +468,61 @@ def test_completing_the_final_maze_sets_completed_run_not_on_break():
 # ── New pacing: power-up / modifier cadence ───────────────────────────────
 
 
-def test_maze_5_completion_shows_shop_break_only():
-    """5 is a group boundary but not an AUGMENT_INTERVAL(10) multiple -- shop only, no augment break."""
+def test_maze_5_completion_shows_arena_then_shop_break_only():
+    """
+    5 is a group boundary but not an AUGMENT_INTERVAL(10) multiple -- so the
+    only card-pick break is the shop. It's now preceded by the one-time 3D
+    arena break (see run.py::_advance).
+    """
     run = LabyrinthRun()
     run.maze_index = 5
     run._advance()
+    assert run.break_kind == "arena"
+    run.finish_arena()
     assert run.break_kind == "shop"
     run.choose_break_card(0)
     assert run.on_break is False
     assert run.maze_index == 6
+
+
+def test_arena_break_fires_only_once_per_run():
+    run = LabyrinthRun(seed=2)  # explicit seed -- see note above
+    run.maze_index = 5
+    run._advance()
+    assert run.break_kind == "arena"
+    run.finish_arena()
+    run.choose_break_card(0)  # clear the shop
+    # Second group boundary: no arena, straight to the shop break.
+    run.maze_index = 10
+    run._advance()
+    assert run.break_kind == "shop"
+
+
+def test_first_maze_is_snapshotted_when_maze_1_clears():
+    run = LabyrinthRun(seed=3)  # explicit seed -- see note above
+    assert run.first_maze_record is None
+    grid_before = [row[:] for row in run.grid]
+    goal_before = run.goal
+    run.player = run.goal
+    run.update()  # clears maze 1
+    rec = run.first_maze_record
+    assert rec is not None
+    assert rec.grid == grid_before
+    assert rec.goal == goal_before
+    assert rec.trail[0] == START_POS
+
+
+def test_finish_arena_banks_pending_treasure_gold(tmp_path, monkeypatch):
+    run = LabyrinthRun(seed=4)  # explicit seed -- see note above
+    monkeypatch.setattr(run, "gold_path", tmp_path / "gold.json")
+    run.maze_index = 5
+    run._advance()
+    assert run.break_kind == "arena"
+    gold_before = run.gold
+    run.arena_gold_pending = 10
+    run.finish_arena()
+    assert run.gold == gold_before + 10
+    assert run.arena_gold_pending == 0
 
 
 def test_maze_10_completion_stacks_shop_then_augment():
@@ -603,9 +671,7 @@ def test_group_number_and_total_groups(run):
     assert run.group_number == 1
     assert run.total_groups == LABYRINTH_TOTAL_MAZES // LABYRINTH_GROUP_SIZE
 
-    for _ in range(LABYRINTH_GROUP_SIZE):
-        run.player = run.goal
-        run.update()
+    _clear_first_group(run)
     run.choose_shop_card(0)
     assert run.group_number == 2
 

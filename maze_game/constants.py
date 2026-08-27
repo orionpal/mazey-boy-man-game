@@ -312,3 +312,22 @@ C_STAIRS_PAIRS = [
     (190, 150, 120),
     (130, 180, 160),
 ]
+
+# ── Arena (3D maze-1 replay -- see docs/planning/3d-rework.md) ──────────────
+# The arena reuses C_WALL/C_FLOOR/C_TRAIL for its raycast strips (tinted by
+# distance at render time); these are the few extra things it draws.
+ARENA_WIN_W, ARENA_WIN_H = 960, 600
+ARENA_FOV_DEG = 66.0            # horizontal field of view
+ARENA_RAY_COUNT = 240           # one wall-distance calc per ~4px column -- cheap enough for the WASM runtime, downscale in Phase 6 if a real pygbag build disagrees
+ARENA_MAX_DEPTH = 24            # cells; rays that hit nothing within this fade to fog
+ARENA_CEILING = (24, 26, 40)
+ARENA_FLOOR_FILL = (30, 28, 26)
+ARENA_FOG = (10, 10, 16)
+ARENA_TIME_BUDGET = 90.0        # seconds to reach the exit before the interlude times out
+ARENA_START_HEALTH = 3
+ARENA_ENEMY_COUNT = 3          # placed along the recorded route -- fight through them to follow the trail
+ARENA_TREASURE_COUNT = 2      # placed at far dead-ends off the route
+ARENA_TREASURE_GOLD = 5      # gold per treasure collected, paid out on finish_arena()
+C_ARENA_ENEMY = (230, 60, 60)
+C_ARENA_TREASURE = (255, 205, 60)
+C_ARENA_GOAL = (230, 90, 200)

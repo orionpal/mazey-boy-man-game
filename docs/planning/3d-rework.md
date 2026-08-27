@@ -237,16 +237,39 @@ the point of the detour -- the existing trail rendering already makes
   `LabyrinthRun.trail` recording + `_draw_trail()` 2D rendering, tested
   (`tests/progression/test_run.py`), manually smoke-tested against a real
   `Renderer.draw()` call.
-- **Phase 2.** `presentation/` reorg (prerequisite, no behaviour change).
-  `first_maze_record` snapshot in `run.py`. Wire the one-time `"arena"`
-  break into `_breaks_due_after()`/`_resume_after_break()` -- can land
-  with a trivial placeholder screen (e.g. "Arena incoming" + press-to-continue)
-  before the raycaster exists at all, to prove the flow independently.
-- **Phase 3.** `arena/` package: raycaster renderer against the
-  snapshotted grid + trail overlay, tile-based movement, win condition
-  (reach the goal cell).
-- **Phase 4.** Enemies + contact/attack resolution.
-- **Phase 5.** Treasures + detour cost.
+- **Phase 2 -- DONE.** `presentation/` reorg (media/ + menu/ grouped under
+  `maze_game/presentation/`, pure move + import update, its own commit).
+  `FirstMazeRecord` snapshot captured in `run.py::_advance()` the moment
+  maze 1 clears. One-time `"arena"` break wired in: `_advance()` prepends
+  `"arena"` to the break queue at the first group boundary (guarded by
+  `self._arena_shown`), `_resume_after_break()` sets `break_kind` without a
+  card offer, `finish_arena()` banks treasure gold and resumes the queue.
+  `choose_break_card()` treats `"arena"` as skip, so headless full-run
+  tests don't hang on it.
+- **Phase 3 -- DONE.** `maze_game/arena/` package:
+  - `state.py` -- pure tile-based state machine (turn / step / attack /
+    update), wall collision straight off the snapshotted grid, win on
+    reaching the goal cell, timeout on the time budget.
+  - `renderer.py` -- DDA software raycaster: one wall-distance calc per of
+    `ARENA_RAY_COUNT` columns, distance + side shading, strips whose hit
+    cell is on the recorded route tinted toward `C_TRAIL`, enemy/treasure/
+    goal billboards depth-tested against the wall strips. Plain
+    `pygame.draw` only -- no engine/deploy change.
+  - `app.py` -- the event loop (arrows/WASD + SPACE), `run_arena()` entry
+    point that `progression/app.py` hands off to.
+- **Phase 4 -- DONE (first pass).** Enemies spawn along the recorded route
+  (`state._place_enemies`), block movement, wake and greedily chase within
+  range, strike every other tick while adjacent; `attack()` clears the one
+  directly ahead. Health 0 -> `"lose"`.
+- **Phase 5 -- DONE (first pass).** Treasures spawn at the farthest
+  dead-ends off the route (`state._place_treasures`); walking onto one
+  banks `ARENA_TREASURE_GOLD`, paid out via `finish_arena()`. The detour
+  cost is the ticking time budget + the extra trail scribble in the replay
+  (no separate readability-penalty mechanic needed -- see "Treasures").
+- **Backlog / polish.** Smooth turn+move interpolation on top of the
+  discrete state; textured or sprite billboards instead of flat rects;
+  enemy variety; a proper arena intro screen; tuning pass on
+  `ARENA_*` constants once it's been playtested in a real web build.
 - **Phase 6.** Run an actual `deploy_web.py` / `pygbag --build` pass once
   the arena exists, to confirm real-world frame rate of the per-column
   raycast loop in the WASM runtime (not just desktop pygame) -- downscale
