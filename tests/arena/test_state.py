@@ -6,6 +6,7 @@ import pytest
 
 from maze_game.progression.run import FirstMazeRecord
 from maze_game.arena.state import ArenaState, Enemy, FACINGS
+from maze_game.arena.entities import BRUTE, LURKER, ROSTER
 
 # 7x7 hand maze. grid[y][x], 1 = wall, 0 = open.
 _GRID = [
@@ -101,6 +102,36 @@ def test_cannot_walk_through_a_live_enemy_but_can_after_killing_it():
     assert s.enemies[0].alive is False
     s.step(1)
     assert s.pos == (2, 1)
+
+
+def test_enemy_kinds_cycle_the_roster_by_spawn_order():
+    s = _state(enemy_count=3)
+    kinds = [e.kind for e in s.enemies]
+    assert kinds == [ROSTER[i % len(ROSTER)] for i in range(len(kinds))]
+
+
+def test_a_brute_takes_two_strikes_to_put_down():
+    s = _state(enemy_count=0)
+    s.pos, s.facing = (1, 1), FACINGS.index((1, 0))
+    s.enemies = [Enemy(pos=(2, 1), kind=BRUTE)]
+    s.attack()
+    assert s.enemies[0].alive is True   # wounded, not down
+    assert s.enemies[0].wounds == 1
+    s.attack()
+    assert s.enemies[0].alive is False
+
+
+def test_a_lurker_stays_asleep_until_you_are_almost_on_top_of_it():
+    s = _state(enemy_count=0)
+    s.pos, s.facing = (1, 1), FACINGS.index((1, 0))
+    s.enemies = [Enemy(pos=(3, 1), kind=LURKER)]  # Manhattan 2, == LURKER.wake_range
+    s.turn(1); s.turn(1)  # two actions -> one active enemy tick
+    assert s.enemies[0].awake is True
+    s2 = _state(enemy_count=0)
+    s2.pos, s2.facing = (1, 1), FACINGS.index((1, 0))
+    s2.enemies = [Enemy(pos=(3, 3), kind=LURKER)]  # Manhattan 4, out of range
+    s2.turn(1); s2.turn(1)
+    assert s2.enemies[0].awake is False
 
 
 def test_an_adjacent_enemy_strikes_every_tick_until_killed():

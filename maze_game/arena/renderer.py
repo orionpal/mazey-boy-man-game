@@ -22,14 +22,17 @@ import pygame
 
 from maze_game.constants import (
     ARENA_WIN_W, ARENA_WIN_H, ARENA_FOV_DEG, ARENA_RAY_COUNT, ARENA_MAX_DEPTH,
-    ARENA_CEILING, ARENA_FLOOR_FILL, ARENA_FOG, C_WALL, C_TRAIL, C_TEXT, C_DIM,
+    ARENA_CEILING, ARENA_FLOOR_FILL, ARENA_FOG, ARENA_MOVE_SMOOTH, ARENA_TURN_SMOOTH,
+    C_WALL, C_TRAIL, C_TEXT, C_DIM,
     C_ARENA_ENEMY, C_ARENA_TREASURE, C_ARENA_GOAL,
 )
 from maze_game.arena.state import ArenaState
+from maze_game.arena.entities import draw_enemy, draw_treasure, draw_goal
 
 _ANGLE_FOR_FACING = [-math.pi / 2, 0.0, math.pi / 2, math.pi]
 _HALF_FOV = math.radians(ARENA_FOV_DEG) / 2
 _COL_W = ARENA_WIN_W / ARENA_RAY_COUNT
+_TWO_PI = 2 * math.pi
 
 
 def _lerp(a: tuple[int, int, int], b: tuple[int, int, int], t: float) -> tuple[int, int, int]:
@@ -45,6 +48,12 @@ class ArenaRenderer:
         self.surface = surface
         self.font = pygame.font.Font(None, 26)
         self.big_font = pygame.font.Font(None, 64)
+        # Interpolated camera pose -- eases toward the discrete tile
+        # position/facing each frame so tank steps and 90-degree turns read
+        # as smooth motion (the sim underneath stays strictly grid-based).
+        self._vx: float | None = None
+        self._vy = 0.0
+        self._va = 0.0
 
     @staticmethod
     def window_size() -> tuple[int, int]:
@@ -53,7 +62,8 @@ class ArenaRenderer:
     def set_surface(self, surface: pygame.Surface) -> None:
         self.surface = surface
 
-    def draw(self, state: ArenaState) -> None:
+    def draw(self, state: ArenaState, intro: bool = False) -> None:
+        self._update_view(state)
         self.surface.fill(ARENA_CEILING)
         pygame.draw.rect(
             self.surface, ARENA_FLOOR_FILL,
@@ -62,18 +72,38 @@ class ArenaRenderer:
         depth = self._draw_walls(state)
         self._draw_billboards(state, depth)
         self._draw_hud(state)
-        if state.over:
+        if intro:
+            self._draw_intro(state)
+        elif state.over:
             self._draw_result(state)
+
+    # ── Camera interpolation ─────────────────────────────────────────────
+
+    def _update_view(self, state: ArenaState) -> None:
+        tx, ty = state.pos[0] + 0.5, state.pos[1] + 0.5
+        ta = _ANGLE_FOR_FACING[state.facing]
+        if self._vx is None:
+            self._vx, self._vy, self._va = tx, ty, ta
+            return
+        # A jump of more than ~1 cell isn't a step (teleport / test warp) --
+        # snap rather than gliding through walls.
+        if math.hypot(tx - self._vx, ty - self._vy) > 1.6:
+            self._vx, self._vy = tx, ty
+        else:
+            self._vx += (tx - self._vx) * ARENA_MOVE_SMOOTH
+            self._vy += (ty - self._vy) * ARENA_MOVE_SMOOTH
+        d_ang = (ta - self._va + math.pi) % _TWO_PI - math.pi
+        self._va += d_ang * ARENA_TURN_SMOOTH
 
     # ── Walls ─────────────────────────────────────────────────────────────
 
     def _camera(self, state: ArenaState):
-        va = _ANGLE_FOR_FACING[state.facing]
+        va = self._va
         dir_x, dir_y = math.cos(va), math.sin(va)
         plane_len = math.tan(_HALF_FOV)
         plane_x, plane_y = -dir_y * plane_len, dir_x * plane_len
-        px = state.pos[0] + 0.5
-        py = state.pos[1] + 0.5
+        px = self._vx if self._vx is not None else state.pos[0] + 0.5
+        py = self._vy
         return px, py, dir_x, dir_y, plane_x, plane_y
 
     def _draw_walls(self, state: ArenaState) -> list[float]:
@@ -133,45 +163,53 @@ class ArenaRenderer:
 
     # ── Billboards (enemies + treasures + the goal marker) ────────────────
 
-    def _draw_billboards(self, state: ArenaState, depth: list[float]) -> None:
-        px, py, dir_x, dir_y, plane_x, plane_y = self._camera(state)
-        sprites: list[tuple[float, tuple[int, int], tuple[int, int, int], float]] = []
+    def _sprite_list(self, state: ArenaState):
+        """(cell, base_colour, width_scale, height_scale, painter) per visible entity."""
+        out = []
         for enemy in state.enemies:
             if enemy.alive:
-                sprites.append((0.0, enemy.pos, C_ARENA_ENEMY, 0.8))
+                out.append((
+                    enemy.pos, enemy.kind.colour, 0.62, enemy.kind.height,
+                    lambda s, r, tint, k=enemy.kind: draw_enemy(s, r, k, tint),
+                ))
         for treasure in state.treasures:
             if not treasure.collected:
-                sprites.append((0.0, treasure.pos, C_ARENA_TREASURE, 0.5))
-        sprites.append((0.0, state.goal, C_ARENA_GOAL, 1.0))
+                out.append((treasure.pos, C_ARENA_TREASURE, 0.55, 0.5, draw_treasure))
+        out.append((state.goal, C_ARENA_GOAL, 0.9, 0.95, draw_goal))
+        return out
 
+    def _draw_billboards(self, state: ArenaState, depth: list[float]) -> None:
+        px, py, dir_x, dir_y, plane_x, plane_y = self._camera(state)
         det = plane_x * dir_y - dir_x * plane_y
         if abs(det) < 1e-9:
             return
         inv_det = 1 / det
         projected = []
-        for _, cell, colour, scale in sprites:
+        for cell, colour, w_scale, h_scale, painter in self._sprite_list(state):
             rel_x = cell[0] + 0.5 - px
             rel_y = cell[1] + 0.5 - py
             tx = inv_det * (dir_y * rel_x - dir_x * rel_y)
             ty = inv_det * (-plane_y * rel_x + plane_x * rel_y)
             if ty <= 0.15:
                 continue
-            projected.append((ty, tx, colour, scale))
+            projected.append((ty, tx, colour, w_scale, h_scale, painter))
         projected.sort(reverse=True)
 
-        for ty, tx, colour, scale in projected:
+        for ty, tx, colour, w_scale, h_scale, painter in projected:
             screen_x = int((ARENA_WIN_W / 2) * (1 + tx / ty))
-            size = int(abs(ARENA_WIN_H / ty) * scale)
-            if size < 2:
+            full = abs(ARENA_WIN_H / ty)
+            h = int(full * h_scale)
+            w = int(full * w_scale)
+            if h < 2 or w < 1:
                 continue
             col_idx = min(ARENA_RAY_COUNT - 1, max(0, int(screen_x / _COL_W)))
             if ty >= depth[col_idx]:
                 continue
             fog_t = min(1.0, ty / ARENA_MAX_DEPTH)
-            shaded = _lerp(colour, ARENA_FOG, fog_t)
-            rect = pygame.Rect(0, 0, max(2, size // 2), size)
-            rect.center = (screen_x, ARENA_WIN_H // 2 + size // 6)
-            pygame.draw.rect(self.surface, shaded, rect, border_radius=max(1, size // 8))
+            tint = _lerp(colour, ARENA_FOG, fog_t)
+            rect = pygame.Rect(0, 0, w, h)
+            rect.center = (screen_x, ARENA_WIN_H // 2 + h // 6)
+            painter(self.surface, rect, tint)
 
     # ── HUD ───────────────────────────────────────────────────────────────
 
@@ -196,6 +234,28 @@ class ArenaRenderer:
         if state.enemy_ahead() is not None:
             self._text("SPACE to strike", (ARENA_WIN_W // 2 - 66, ARENA_WIN_H - 44), C_ARENA_ENEMY)
         pygame.draw.circle(self.surface, C_TEXT, (ARENA_WIN_W // 2, ARENA_WIN_H // 2), 3, 1)
+
+    def _draw_intro(self, state: ArenaState) -> None:
+        overlay = pygame.Surface((ARENA_WIN_W, ARENA_WIN_H), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 175))
+        self.surface.blit(overlay, (0, 0))
+        cx = ARENA_WIN_W // 2
+        title = self.big_font.render("MAZE I  --  REPLAY", True, C_TEXT)
+        self.surface.blit(title, title.get_rect(center=(cx, ARENA_WIN_H // 2 - 96)))
+        lines = [
+            "You cleared the first five. Now walk your very first maze back --",
+            "this time from the inside, in the dark, with company.",
+            "",
+            "Arrows / WASD  move and turn      SPACE  strike what blocks the way",
+            "Follow the pale trail to the exit.  Side dead-ends hide treasure.",
+            "",
+            "press any key",
+        ]
+        y = ARENA_WIN_H // 2 - 34
+        for line in lines:
+            colour = C_DIM if line == "press any key" else C_TEXT
+            self._text(line, None, colour=colour, center=(cx, y))
+            y += 30
 
     def _draw_result(self, state: ArenaState) -> None:
         overlay = pygame.Surface((ARENA_WIN_W, ARENA_WIN_H), pygame.SRCALPHA)

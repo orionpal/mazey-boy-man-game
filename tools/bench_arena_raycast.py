@@ -144,7 +144,7 @@ def main() -> int:
         f"WASM slowdown band {PYODIDE_SLOWDOWN_LO:g}-{PYODIDE_SLOWDOWN_HI:g}x\n"
     )
 
-    counts = [120, 160, 200, 240, 320] if args.sweep else [shipped]
+    counts = [112, 128, 144, 160, 200, 240] if args.sweep else [shipped]
     proj_hi_at_shipped = None
     for rc in counts:
         proj = _report(f"{rc} rays" + ("  (shipped)" if rc == shipped else ""), _time_draw(rc, state, args.frames))

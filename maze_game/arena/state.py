@@ -33,24 +33,13 @@ from collections import deque
 from dataclasses import dataclass, field
 
 from maze_game.progression.run import FirstMazeRecord, TimeResource
+from maze_game.arena.entities import Enemy, EnemyKind, Treasure, ROSTER
+
+# Re-exported so callers/tests can keep importing these from arena.state.
+__all__ = ["ArenaState", "Enemy", "EnemyKind", "Treasure", "FACINGS"]
 
 # Facing index -> unit (dx, dy). Clockwise from north, so turn(+1) is "right".
 FACINGS: list[tuple[int, int]] = [(0, -1), (1, 0), (0, 1), (-1, 0)]
-
-_ENEMY_WAKE_RANGE = 6  # Manhattan distance at which a parked enemy starts chasing
-
-
-@dataclass
-class Enemy:
-    pos: tuple[int, int]
-    alive: bool = True
-    awake: bool = False
-
-
-@dataclass
-class Treasure:
-    pos: tuple[int, int]
-    collected: bool = False
 
 
 @dataclass
@@ -72,6 +61,7 @@ class ArenaState:
     treasures: list[Treasure] = field(default_factory=list)
     events: list[str] = field(default_factory=list)
     _tick_parity: int = 0
+    _active_ticks: int = 0
 
     def __post_init__(self) -> None:
         self.grid = self.record.grid
@@ -136,7 +126,9 @@ class ArenaState:
             return
         enemy = self.enemy_ahead()
         if enemy is not None:
-            enemy.alive = False
+            enemy.wounds += 1
+            if enemy.down:
+                enemy.alive = False
             self.events.append("hazard")  # reuse the existing "combat-y thud" sound
         self._after_action()
 
@@ -173,14 +165,21 @@ class ArenaState:
                 self.events.append("gold")
 
     def _tick_enemies(self) -> None:
-        """Every other player action, each awake enemy greedily steps toward the player."""
+        """
+        Every other player action ("active tick"), each awake enemy acts:
+        strike if adjacent, else greedily step toward the player -- but only
+        every ``kind.move_period``-th active tick, so a brute lumbers and a
+        lurker keeps pace. Wake range is per-kind too (a lurker only stirs
+        when you're almost on top of it).
+        """
         self._tick_parity ^= 1
         if self._tick_parity == 0:
             return
+        self._active_ticks += 1
         for enemy in self.enemies:
             if not enemy.alive:
                 continue
-            if not enemy.awake and _manhattan(enemy.pos, self.pos) <= _ENEMY_WAKE_RANGE:
+            if not enemy.awake and _manhattan(enemy.pos, self.pos) <= enemy.kind.wake_range:
                 enemy.awake = True
             if not enemy.awake:
                 continue
@@ -192,6 +191,8 @@ class ArenaState:
                 # before _tick_enemies().
                 self.health -= 1
                 self.events.append("hazard")
+                continue
+            if self._active_ticks % enemy.kind.move_period != 0:
                 continue
             nxt = self._greedy_step(enemy.pos)
             if nxt is not None and not self._enemy_at(nxt) and nxt != self.pos:
@@ -242,7 +243,12 @@ class ArenaState:
         if count == 0:
             return []
         picks = [window[round(i * (len(window) - 1) / max(1, count - 1))] for i in range(count)]
-        return [Enemy(pos=p) for p in dict.fromkeys(picks)]
+        # Cycle the roster by spawn order so the mix is deterministic and a
+        # 3-enemy arena is one of each (grunt near the start, brute deepest).
+        return [
+            Enemy(pos=p, kind=ROSTER[i % len(ROSTER)])
+            for i, p in enumerate(dict.fromkeys(picks))
+        ]
 
     def _place_treasures(self, dist: dict[tuple[int, int], int]) -> list[Treasure]:
         dead_ends = [

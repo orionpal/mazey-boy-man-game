@@ -318,16 +318,19 @@ C_STAIRS_PAIRS = [
 # distance at render time); these are the few extra things it draws.
 ARENA_WIN_W, ARENA_WIN_H = 960, 600
 ARENA_FOV_DEG = 66.0            # horizontal field of view
-ARENA_RAY_COUNT = 160           # ~6px/column. Downscaled from 240 in Phase 6: tools/bench_arena_raycast.py projects the per-column loop at ~13ms/frame worst-case under an 8x WASM slowdown (vs ~16ms at 240 -- right on the 60fps edge with no room for AI/events/mobile)
-ARENA_MAX_DEPTH = 24            # cells; rays that hit nothing within this fade to fog
+ARENA_RAY_COUNT = 144           # ~6.7px/column. Phase 6: tools/bench_arena_raycast.py projects the full draw() (walls + sprite billboards + HUD) at ~14.5ms/frame worst-case under an 8x WASM slowdown -- ~2ms under the 60fps budget. Was 240 (right on the edge), then 160 before the visual-polish pass added shaped enemy/treasure/goal sprites, which cost enough to warrant another step down
+ARENA_MAX_DEPTH = 14            # cells; rays that hit nothing within this fade to fog. Maze 1 is MIN_DIMENSION (9x9) so its longest sightline is ~13 cells -- 14 keeps the far wall reachable while letting the distance fog actually close in for atmosphere (was 24: never triggered in a maze this small)
 ARENA_CEILING = (24, 26, 40)
 ARENA_FLOOR_FILL = (30, 28, 26)
 ARENA_FOG = (10, 10, 16)
-ARENA_TIME_BUDGET = 90.0        # seconds to reach the exit before the interlude times out
+ARENA_TIME_BUDGET = 80.0        # seconds to reach the exit before the interlude times out. A 9x9 maze-1 route is ~15-25 steps; 80s clears it at a walk with slack for the two optional treasure detours (was 90 -- trimmed now that movement interpolation makes stepping feel quicker)
 ARENA_START_HEALTH = 3
-ARENA_ENEMY_COUNT = 3          # placed along the recorded route -- fight through them to follow the trail
+ARENA_ENEMY_COUNT = 3          # placed along the recorded route -- fight through them to follow the trail. With enemy variety (arena/entities.py ROSTER) these cycle grunt -> lurker -> brute by spawn order
 ARENA_TREASURE_COUNT = 2      # placed at far dead-ends off the route
 ARENA_TREASURE_GOLD = 5      # gold per treasure collected, paid out on finish_arena()
+ARENA_INTRO_MS = 4000          # arena/app.py holds on the intro card this long (or until the first keypress, which also acts) before the clock starts
+ARENA_MOVE_SMOOTH = 0.32      # per-frame ease factor the renderer camera slides toward the discrete tile position with (1.0 = instant/no interpolation). ~8 frames to cover a cell at 60fps
+ARENA_TURN_SMOOTH = 0.28      # same, for the 90-degree tank turns
 C_ARENA_ENEMY = (230, 60, 60)
 C_ARENA_TREASURE = (255, 205, 60)
 C_ARENA_GOAL = (230, 90, 200)
