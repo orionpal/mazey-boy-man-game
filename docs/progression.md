@@ -187,14 +187,14 @@ to pass.
 ### Perks: the shop, chosen every group
 
 Every group-boundary break (mazes 5, 10, ..., 95) offers cards drawn at
-random from the perk pool (`progression/shop/__init__.py::offer_shop_cards()`,
+random from the perk pool (`progression/economy/shop/__init__.py::offer_shop_cards()`,
 `random.sample` of `ALL_PERKS`, capped at whatever's actually in the pool)
 instead of a bare "press SPACE to continue" — `LabyrinthRun.choose_shop_card()`
 applies the pick; picking a card *is* the resume action.
 
 Movement is deliberately just arrow keys (plus the hold-SPACE run-to-wall
 combo, see "Movement combos" below) — there is no separate active-item
-system with its own keybinds. `progression/shop/perks.py::ALL_PERKS` holds
+system with its own keybinds. `progression/economy/shop/perks.py::ALL_PERKS` holds
 exactly two perks, and stacking is explicitly **additive** (picking the
 same perk again adds another charge/bonus unit, not a multiplier) since
 both grant a count, not a rate:
@@ -350,7 +350,7 @@ on top of a rogue-like's full-reset one is that death isn't a total loss.
 ## The Base: meta-progression between runs
 
 Gold (`GoldPellet`, `docs/assets.md`) used to be collect-and-display only.
-`progression/meta/` gives it a purpose: the Base is a screen the player
+`progression/economy/meta/` gives it a purpose: the Base is a screen the player
 visits between runs (`progression/app.py::run_progression_mode()` — always
 precedes a run, and R after a fail/complete screen now routes back into it
 instead of restarting in place) where gold buys permanent passive

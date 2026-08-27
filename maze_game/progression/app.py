@@ -20,8 +20,8 @@ from maze_game.constants import FPS
 from maze_game.presentation.media import sound
 from maze_game.progression.run import LabyrinthRun
 from maze_game.progression.renderer import Renderer, Layout
-from maze_game.progression.meta import Base, MetaProgress, ALL_META_UPGRADES
-from maze_game.progression.meta.renderer import BaseRenderer
+from maze_game.progression.economy.meta import Base, MetaProgress, ALL_META_UPGRADES
+from maze_game.progression.economy.meta.renderer import BaseRenderer
 from maze_game.arena import run_arena
 
 DIRECTION_MAP: dict[int, tuple[int, int]] = {

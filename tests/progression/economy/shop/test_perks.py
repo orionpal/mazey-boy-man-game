@@ -1,11 +1,11 @@
 """
-Tests for maze_game.progression.shop.perks -- Perk/Build in isolation, no
+Tests for maze_game.progression.economy.shop.perks -- Perk/Build in isolation, no
 LabyrinthRun needed.
 """
 
 import pytest
 
-from maze_game.progression.shop.perks import Perk, Build, ALL_PERKS
+from maze_game.progression.economy.shop.perks import Perk, Build, ALL_PERKS
 
 
 def test_build_starts_with_no_picks_and_unit_multipliers():

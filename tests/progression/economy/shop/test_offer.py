@@ -1,12 +1,12 @@
 """
-Tests for maze_game.progression.shop::offer_shop_cards -- the random draw of
+Tests for maze_game.progression.economy.shop::offer_shop_cards -- the random draw of
 shop cards, in isolation.
 """
 
 import random
 
-from maze_game.progression.shop import offer_shop_cards, SHOP_CARDS_OFFERED
-from maze_game.progression.shop.perks import ALL_PERKS
+from maze_game.progression.economy.shop import offer_shop_cards, SHOP_CARDS_OFFERED
+from maze_game.progression.economy.shop.perks import ALL_PERKS
 
 
 def test_offer_shop_cards_draws_from_the_perk_pool():

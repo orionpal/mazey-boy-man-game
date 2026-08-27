@@ -46,10 +46,10 @@ from maze_game.progression.entities.hazards import (
     spawn_gold_pellets, load_gold_total, save_gold_total, DEFAULT_GOLD_PATH,
 )
 from maze_game.progression.entities.shop_tile import spawn_shop_tile
-from maze_game.progression.shop import offer_shop_cards, MAZE_SHOP_ITEMS, purchase_maze_shop_item
+from maze_game.progression.economy.shop import offer_shop_cards, MAZE_SHOP_ITEMS, purchase_maze_shop_item
 from maze_game.progression.augments import AugmentBuild, run_pipeline, offer_augment_cards
 from maze_game.progression.augments.doors import Key
-from maze_game.progression.meta import MetaProgress, DEFAULT_META_UPGRADES_PATH
+from maze_game.progression.economy.meta import MetaProgress, DEFAULT_META_UPGRADES_PATH
 
 START_POS: tuple[int, int] = (1, 1)
 

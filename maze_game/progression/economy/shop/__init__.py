@@ -22,7 +22,7 @@ from maze_game.constants import (
     SHOP_TIME_PRICE, SHOP_TIME_AMOUNT, SHOP_PERK_COST_BASE, SHOP_PERK_COST_STEP, C_SHOP,
 )
 from maze_game.progression.entities.hazards import save_gold_total
-from maze_game.progression.shop.perks import Perk, ALL_PERKS
+from maze_game.progression.economy.shop.perks import Perk, ALL_PERKS
 
 SHOP_CARDS_OFFERED = 3
 

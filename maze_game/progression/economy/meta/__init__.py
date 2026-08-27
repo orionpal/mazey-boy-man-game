@@ -27,7 +27,7 @@ from maze_game.constants import (
     META_UPGRADE_COST_BASE, META_UPGRADE_COST_STEP, APP_ROOT,
 )
 from maze_game.progression.entities.hazards import DEFAULT_GOLD_PATH, load_gold_total, save_gold_total
-from maze_game.progression.shop.perks import Build, EFFECTS
+from maze_game.progression.economy.shop.perks import Build, EFFECTS
 
 DEFAULT_META_UPGRADES_PATH = APP_ROOT / "meta_upgrades.json"
 

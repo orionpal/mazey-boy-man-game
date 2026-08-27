@@ -1,5 +1,5 @@
 """
-Tests for maze_game.progression.meta -- MetaUpgrade/MetaProgress/Base in
+Tests for maze_game.progression.economy.meta -- MetaUpgrade/MetaProgress/Base in
 isolation. Every test uses tmp_path for both gold.json and
 meta_upgrades.json, so none of this ever touches the real on-disk files.
 """
@@ -7,7 +7,7 @@ meta_upgrades.json, so none of this ever touches the real on-disk files.
 import pytest
 
 from maze_game.progression.entities.hazards import save_gold_total
-from maze_game.progression.meta import (
+from maze_game.progression.economy.meta import (
     ALL_META_UPGRADES, MetaProgress, Base,
     load_meta_upgrade_levels, save_meta_upgrade_levels,
 )
@@ -22,7 +22,7 @@ def paths(tmp_path):
 
 
 def test_all_meta_upgrades_have_distinct_ids_and_valid_effect_keys():
-    from maze_game.progression.shop.perks import EFFECTS
+    from maze_game.progression.economy.shop.perks import EFFECTS
 
     ids = [u.id for u in ALL_META_UPGRADES]
     assert len(ids) == len(set(ids))
@@ -81,8 +81,8 @@ def test_bare_construction_respects_monkeypatched_default_paths(tmp_path, monkey
     upgrades_path = tmp_path / "meta_upgrades.json"
     save_gold_total(42, gold_path)
 
-    monkeypatch.setattr("maze_game.progression.meta.DEFAULT_GOLD_PATH", gold_path)
-    monkeypatch.setattr("maze_game.progression.meta.DEFAULT_META_UPGRADES_PATH", upgrades_path)
+    monkeypatch.setattr("maze_game.progression.economy.meta.DEFAULT_GOLD_PATH", gold_path)
+    monkeypatch.setattr("maze_game.progression.economy.meta.DEFAULT_META_UPGRADES_PATH", upgrades_path)
 
     progress = MetaProgress()  # no explicit paths -- must still resolve to the monkeypatched ones
     assert progress.gold_path == gold_path

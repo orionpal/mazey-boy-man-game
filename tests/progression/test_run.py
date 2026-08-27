@@ -20,7 +20,7 @@ from maze_game.progression.run import dimensions_for_maze, is_milestone_maze, Ti
 from maze_game.progression.entities.hazards import (
     Pellet, GoldPellet, Hazard, HeavyHazard, ExtremeHazard, load_gold_total,
 )
-from maze_game.progression.shop.perks import ALL_PERKS, Perk
+from maze_game.progression.economy.shop.perks import ALL_PERKS, Perk
 from maze_game.progression.augments.teleporters import TeleportersAugment
 from maze_game.progression.augments.doors import DoorKeyPair, Key
 
@@ -429,7 +429,7 @@ def test_restart_does_not_reset_gold():
 
 
 def test_owned_meta_upgrades_seed_the_starting_build(tmp_path):
-    from maze_game.progression.meta import ALL_META_UPGRADES, save_meta_upgrade_levels
+    from maze_game.progression.economy.meta import ALL_META_UPGRADES, save_meta_upgrade_levels
 
     upgrade = next(u for u in ALL_META_UPGRADES if u.id == "pellet_bonus")
     upgrades_path = tmp_path / "meta_upgrades.json"
@@ -440,7 +440,7 @@ def test_owned_meta_upgrades_seed_the_starting_build(tmp_path):
 
 
 def test_restart_reseeds_the_build_from_the_same_owned_meta_upgrades(tmp_path):
-    from maze_game.progression.meta import ALL_META_UPGRADES, save_meta_upgrade_levels
+    from maze_game.progression.economy.meta import ALL_META_UPGRADES, save_meta_upgrade_levels
 
     upgrade = next(u for u in ALL_META_UPGRADES if u.id == "hazard_resistance")
     upgrades_path = tmp_path / "meta_upgrades.json"

@@ -20,7 +20,7 @@ from maze_game.progression.entities.hazards import (
     spawn_pellets, spawn_hazards, hazard_density_ramp, hazard_types_for_maze,
     spawn_gold_pellets, load_gold_total, save_gold_total,
 )
-from maze_game.progression.shop.perks import Build
+from maze_game.progression.economy.shop.perks import Build
 
 # A small open room, no walls except the border -- every interior cell is
 # a valid candidate for spawning.
