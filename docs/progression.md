@@ -5,8 +5,8 @@ bigger, with two break cadences layered on top of each other -- a passive
 perk choice every 5 mazes, and a maze-modifier (augment) choice every 10
 mazes. A rogue-like resource layer sits underneath: time is one persistent
 budget carried across the *whole* run, topped up by pellets and drained by
-hazards. Implemented in `maze_game/progression/` (`run.py`'s
-`LabyrinthRun`, `shop/` for perks, `augments/` for maze modifiers,
+hazards. Implemented in `maze_game/progression/` (`run/` -- 
+`state.py`'s `LabyrinthRun`, `economy/shop/` for perks, `augments/` for maze modifiers,
 `entities/`), playable via `main.py` (this is now the default entry point
 — see the "Renamed" note at the bottom). Everything below is a **first
 guess to playtest**, not a balance pass — the constants live in
@@ -32,7 +32,7 @@ plateau length.
 An earlier version of this mode replaced the goal with a boss fight every
 `MILESTONE_INTERVAL`-th maze (30, 60, 90), plus always the final maze --
 that's gone (see git history if curious), and in its place those same
-maze indices (`run.py::is_milestone_maze()`, same cadence the boss used)
+maze indices (`run/model.py::is_milestone_maze()`, same cadence the boss used)
 get a one-off dimension *spike* instead: noticeably bigger than the normal
 ramp would give that specific maze index, reverting to the regular ramp
 on the very next maze. Otherwise it's a totally ordinary maze -- a real
@@ -54,7 +54,7 @@ time budget and more hazards along with its bigger footprint.
 Earlier versions of this mode estimated a fresh time *limit* for every
 maze (`estimate_time_limit()`, BFS'd from the shortest path and its turn
 count) and reset the clock at the start of each one. That's gone: time is
-now one persistent `TimeResource` (`progression/run.py`) the whole run
+now one persistent `TimeResource` (`progression/run/model.py`) the whole run
 shares, starting at `LABYRINTH_START_TIME` (15.0s, cut down from an
 original 75.0s after playtesting made the early game feel too padded) and
 ticking down continuously regardless of which maze is active. Running out

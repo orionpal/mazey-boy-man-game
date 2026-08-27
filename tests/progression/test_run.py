@@ -40,9 +40,11 @@ def _isolate_gold_file(tmp_path, monkeypatch):
     single history_path-taking fixture) should never touch the real
     on-disk gold.json/meta_upgrades.json -- patching the module-level
     defaults the __init__ falls back to isolates all of them at once.
+    (LabyrinthRun.__init__ lives in run/state.py since run.py was split
+    into the run/ package -- that's the module whose globals it reads.)
     """
-    monkeypatch.setattr("maze_game.progression.run.DEFAULT_GOLD_PATH", tmp_path / "gold.json")
-    monkeypatch.setattr("maze_game.progression.run.DEFAULT_META_UPGRADES_PATH", tmp_path / "meta_upgrades.json")
+    monkeypatch.setattr("maze_game.progression.run.state.DEFAULT_GOLD_PATH", tmp_path / "gold.json")
+    monkeypatch.setattr("maze_game.progression.run.state.DEFAULT_META_UPGRADES_PATH", tmp_path / "meta_upgrades.json")
 
 
 # ── dimensions_for_maze ───────────────────────────────────────────────────
