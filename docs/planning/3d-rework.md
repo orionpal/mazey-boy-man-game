@@ -270,8 +270,21 @@ the point of the detour -- the existing trail rendering already makes
   discrete state; textured or sprite billboards instead of flat rects;
   enemy variety; a proper arena intro screen; tuning pass on
   `ARENA_*` constants once it's been playtested in a real web build.
-- **Phase 6.** Run an actual `deploy_web.py` / `pygbag --build` pass once
-  the arena exists, to confirm real-world frame rate of the per-column
-  raycast loop in the WASM runtime (not just desktop pygame) -- downscale
-  ray/column count if needed. Confirms or retires the OpenGL caveat above
-  for good measure while there.
+- **Phase 6 -- DONE (proxy; true in-browser check still open).**
+  `tools/bench_arena_raycast.py` times a full `ArenaRenderer.draw()`
+  (ceiling/floor fill + N wall strips + billboards + HUD) over hundreds of
+  frames with the camera swept through every open cell/facing, then
+  projects onto the WASM runtime with a pessimistic 3-8x slowdown band.
+  At the old `ARENA_RAY_COUNT = 240` the worst-case projection sat at
+  ~16ms -- right on the 60fps edge with no room for enemy AI, the event
+  pump, the pygbag main-loop overhead, or slower phones. **Downscaled to
+  160** (~6px/column, still fine for placeholder pseudo-3D): worst-case
+  projection ~13ms, comfortable headroom.
+  - `deploy_web.py` lives only on the unmerged `web-wasm-port` branch, and
+    a genuine `pygbag --build` + in-browser FPS trace needs a browser with
+    a canvas -- not runnable in a headless/unattended shell. The bench
+    script is the reproducible harness for whoever runs that check on a
+    real build; if it disagrees, drop the ray count further (the sweep
+    shows 120 rays projects at ~11ms worst-case).
+  - The OpenGL caveat (top of this doc) is untouched -- still worth the
+    ~10-min spike next time someone has a live `pygbag --build` open.

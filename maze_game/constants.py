@@ -318,7 +318,7 @@ C_STAIRS_PAIRS = [
 # distance at render time); these are the few extra things it draws.
 ARENA_WIN_W, ARENA_WIN_H = 960, 600
 ARENA_FOV_DEG = 66.0            # horizontal field of view
-ARENA_RAY_COUNT = 240           # one wall-distance calc per ~4px column -- cheap enough for the WASM runtime, downscale in Phase 6 if a real pygbag build disagrees
+ARENA_RAY_COUNT = 160           # ~6px/column. Downscaled from 240 in Phase 6: tools/bench_arena_raycast.py projects the per-column loop at ~13ms/frame worst-case under an 8x WASM slowdown (vs ~16ms at 240 -- right on the 60fps edge with no room for AI/events/mobile)
 ARENA_MAX_DEPTH = 24            # cells; rays that hit nothing within this fade to fog
 ARENA_CEILING = (24, 26, 40)
 ARENA_FLOOR_FILL = (30, 28, 26)
