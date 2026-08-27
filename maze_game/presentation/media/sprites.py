@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pygame
 
-ICONS_DIR = Path(__file__).resolve().parent.parent.parent / "assets" / "icons"
+ICONS_DIR = Path(__file__).resolve().parent.parent.parent.parent / "assets" / "icons"
 
 _raw_cache: dict[str, pygame.Surface | None] = {}
 _scaled_cache: dict[tuple[str, int], pygame.Surface] = {}

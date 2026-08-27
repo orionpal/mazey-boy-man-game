@@ -7,7 +7,7 @@ import wave
 
 import pygame
 
-from maze_game.media import sound
+from maze_game.presentation.media import sound
 
 
 def setup_function():

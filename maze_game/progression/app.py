@@ -17,7 +17,7 @@ import pygame
 from pygame._sdl2.video import Window
 
 from maze_game.constants import FPS
-from maze_game.media import sound
+from maze_game.presentation.media import sound
 from maze_game.progression.run import LabyrinthRun
 from maze_game.progression.renderer import Renderer, Layout
 from maze_game.progression.meta import Base, MetaProgress, ALL_META_UPGRADES

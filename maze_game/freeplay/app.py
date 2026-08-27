@@ -16,7 +16,7 @@ import pygame
 from pygame._sdl2.video import Window
 
 from maze_game.constants import FPS
-from maze_game.media import sound
+from maze_game.presentation.media import sound
 from maze_game.freeplay.game import Game
 from maze_game.freeplay.renderer import Renderer, Layout
 

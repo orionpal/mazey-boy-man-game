@@ -5,7 +5,7 @@ fallback (see docs/assets.md).
 
 import pygame
 
-from maze_game.media import sprites
+from maze_game.presentation.media import sprites
 
 
 def setup_function():

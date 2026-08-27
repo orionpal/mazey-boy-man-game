@@ -35,8 +35,8 @@ from maze_game.constants import (
     C_SPEED_BONUS, C_STAIRS_PAIRS, C_SHOP, C_TRAIL,
     POPUP_DURATION_SECONDS, POPUP_RISE_PIXELS,
 )
-from maze_game.media import sprites
-from maze_game.media.shapes import draw_player_marker
+from maze_game.presentation.media import sprites
+from maze_game.presentation.media.shapes import draw_player_marker
 from maze_game.progression.entities.hazards import HeavyHazard, ExtremeHazard
 from maze_game.progression.shop import renderer as shop_renderer
 from maze_game.progression.shop.perks import ALL_PERKS

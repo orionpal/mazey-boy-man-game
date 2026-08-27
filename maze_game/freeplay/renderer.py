@@ -17,8 +17,8 @@ from maze_game.constants import (
     C_TEXT, C_DIM, C_FLASH, C_HUD_BG,
     C_PANEL_BG, C_PANEL_LINE, C_BUTTON, C_BUTTON_HOVER,
 )
-from maze_game.media import sprites
-from maze_game.media.shapes import draw_player_marker
+from maze_game.presentation.media import sprites
+from maze_game.presentation.media.shapes import draw_player_marker
 
 BUTTON_SIZE = 28
 LEFT_CONTENT_HEIGHT = 260   # height needed for the (fixed) left sidebar controls

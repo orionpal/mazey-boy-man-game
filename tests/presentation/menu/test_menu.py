@@ -1,6 +1,6 @@
 """Tests for maze_game.menu -- the tiny main-menu cursor state."""
 
-from maze_game.menu import MainMenu, MENU_OPTIONS
+from maze_game.presentation.menu import MainMenu, MENU_OPTIONS
 
 
 def test_starts_at_the_first_option():
